@@ -1,276 +1,55 @@
 {
   "users": [
     {
-      "id": "admin1",
-      "email": "admin@presethub.com",
-      "password": "$2a$10$AlCOBu8ZV733UXJvyY3tjOzPNYNVoyuAAofLsNxS83EZGNpTv9rNC",
-      "name": "Admin",
-      "username": "admin",
-      "role": "admin",
-      "createdAt": "2026-07-27T16:39:17.518Z",
-      "verified": true,
-      "bio": "Platform administrator",
-      "avatar": "",
-      "socialLinks": {
-        "instagram": "",
-        "youtube": "",
-        "twitter": "",
-        "website": ""
-      },
-      "followers": [],
-      "following": [],
-      "wishlist": []
-    },
-    {
-      "id": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "email": "boy767654@gmail.com",
-      "password": "$2a$10$yoBGx7BM0wVjemv.QMzpoupoKBvz2ScBssOI7KfUiYa5D3uw8YCKK",
-      "name": "Omprakash Ahirwar",
-      "role": "user",
-      "createdAt": "2026-07-27T16:47:14.589Z",
+      "id": "uuid",
+      "email": "user@example.com",
+      "password": "hashed",
+      "name": "User Name",
+      "username": "username",
+      "role": "user|admin",
       "verified": false,
-      "bio": "Hi iam infuser ",
-      "avatar": "https://photos.app.goo.gl/zML63gmFUUYBG6Mr8",
-      "username": "preset_guru",
-      "socialLinks": {
-        "instagram": "@hey.omii.08x____",
-        "youtube": "",
-        "twitter": "",
-        "website": ""
-      },
-      "followers": [],
-      "following": [],
-      "wishlist": [
-        "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848",
-        "b55191bb-ae89-4fb9-9970-22332c0a1a61"
-      ]
-    },
-    {
-      "id": "tele_6221923358",
-      "email": "",
-      "password": "",
-      "name": "𝗢𝗺𝗽𝗿𝗮𝗸𝗮𝘀𝗵 𝗔",
-      "username": "Crezy_op",
-      "role": "user",
-      "createdAt": "2026-07-28T01:55:00.591Z",
-      "verified": false,
-      "bio": "",
-      "avatar": "",
-      "socialLinks": {
-        "instagram": "",
-        "youtube": "",
-        "twitter": "",
-        "website": ""
-      },
-      "followers": [],
-      "following": [],
-      "wishlist": [],
-      "telegram": {
-        "firstName": "𝗢𝗺𝗽𝗿𝗮𝗸𝗮𝘀𝗵 𝗔",
-        "lastName": "",
-        "username": "Crezy_op",
-        "languageCode": "en"
-      },
-      "lastActive": "2026-07-28T02:35:03.608Z",
-      "commandsCount": 6
-    },
-    {
-      "id": "tele_6221923358",
-      "email": "",
-      "password": "",
-      "name": "𝗢𝗺𝗽𝗿𝗮𝗸𝗮𝘀𝗵 𝗔",
-      "username": "Crezy_op",
-      "role": "user",
-      "createdAt": "2026-07-28T02:35:15.154Z",
-      "verified": false,
-      "bio": "",
-      "avatar": "",
-      "socialLinks": {
-        "instagram": "",
-        "youtube": "",
-        "twitter": "",
-        "website": ""
-      },
-      "followers": [],
-      "following": [],
-      "wishlist": [],
-      "telegramId": "6221923358",
-      "telegram": {
-        "firstName": "𝗢𝗺𝗽𝗿𝗮𝗸𝗮𝘀𝗵 𝗔",
-        "lastName": "",
-        "username": "Crezy_op",
-        "languageCode": "en"
-      },
-      "lastActive": "2026-07-28T03:19:09.850Z",
-      "commandsCount": 34,
-      "token": ""
+      "bio": "User bio",
+      "avatar": "url",
+      "upiId": "user@upi",           // Direct Payment
+      "qrCode": "base64_image",       // Direct Payment
+      "socialLinks": { "instagram": "", "youtube": "", "twitter": "", "website": "" },
+      "followers": ["userId1", "userId2"],
+      "following": ["userId3"],
+      "wishlist": ["presetId1", "presetId2"],
+      "telegramId": "123456789",
+      "token": "jwt_token",
+      "createdAt": "ISO_date"
     }
   ],
   "presets": [
     {
-      "id": "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848",
-      "name": "Nurture photo 2",
-      "description": "New Lightroom presets add 2",
-      "category": "नैचुरल",
-      "tags": [
-        "#nuture #newpost #newpreset"
-      ],
-      "price": 1,
-      "author": "Omprakash Ahirwar",
-      "authorId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "createdAt": "2026-07-27T16:49:36.729Z",
-      "updatedAt": "2026-07-27T16:49:36.729Z",
-      "downloads": 0,
-      "avgRating": 4,
-      "reviews": [
-        {
-          "id": "0201dad2-a6cb-4efb-a1f8-9ba2150d835c",
-          "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-          "userName": "Omprakash Ahirwar",
-          "rating": 4,
-          "comment": "Nice",
-          "createdAt": "2026-07-27T16:51:48.850Z",
-          "helpful": 0
-        }
-      ],
-      "fileUrl": "/uploads/1785170976475-356109418.dng",
-      "previewImage": "/uploads/previews/1785170976597-242424248.jpg",
-      "status": "approved",
-      "size": 3452982,
-      "originalName": "IMG20260727161415 (1).dng"
-    },
-    {
-      "id": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
-      "name": "Nurture photo ",
-      "description": "New Lightroom presets add",
-      "category": "नैचुरल",
-      "tags": [],
+      "id": "uuid",
+      "name": "Preset Name",
+      "description": "Description",
+      "category": "सनसेट",
+      "tags": ["tag1", "tag2"],
       "price": 0,
-      "author": "Omprakash Ahirwar",
-      "authorId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "createdAt": "2026-07-27T16:48:18.920Z",
-      "updatedAt": "2026-07-27T16:48:18.920Z",
-      "downloads": 8,
-      "avgRating": 0,
-      "reviews": [],
-      "fileUrl": "/uploads/1785170898667-18395039.dng",
-      "previewImage": "/uploads/previews/1785170898831-833253093.jpg",
-      "status": "approved",
-      "size": 4767236,
-      "originalName": "IMG20260727161945.dng"
+      "author": "Author Name",
+      "authorId": "userId",
+      "createdAt": "ISO_date",
+      "updatedAt": "ISO_date",
+      "downloads": 0,
+      "avgRating": 4.5,
+      "reviews": [
+        { "id": "uuid", "userId": "userId", "userName": "User", "rating": 5, "comment": "Great!", "createdAt": "ISO_date", "helpful": 0 }
+      ],
+      "fileUrl": "/uploads/filename.dng",
+      "previewImage": "/uploads/previews/preview.jpg",
+      "status": "approved|pending|rejected",
+      "size": 3452982,
+      "originalName": "original.dng"
     }
   ],
   "downloads": [
-    {
-      "id": "52640570-582f-4006-8783-a543c26e3c47",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
-      "downloadedAt": "2026-07-27T16:54:45.056Z"
-    },
-    {
-      "id": "d49e41d9-180b-4105-b364-3c39fe545d88",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
-      "downloadedAt": "2026-07-27T17:38:36.703Z"
-    },
-    {
-      "id": "5e20e926-fd7c-466f-939f-37bf4ae6dcab",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
-      "downloadedAt": "2026-07-27T17:54:57.128Z"
-    },
-    {
-      "id": "a284a860-950e-4e7e-9244-b882755aa2b0",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
-      "downloadedAt": "2026-07-27T17:55:32.736Z"
-    },
-    {
-      "id": "9e23e91f-e487-439f-b9ad-d659f16fa837",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
-      "downloadedAt": "2026-07-27T18:04:00.779Z"
-    },
-    {
-      "id": "c08bfb6e-a2a2-4a10-b672-8a1e7afef915",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
-      "downloadedAt": "2026-07-27T18:23:44.914Z"
-    },
-    {
-      "id": "c3d72d47-ebe7-4228-87c2-2e0fdb8230ab",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
-      "downloadedAt": "2026-07-28T02:10:16.977Z"
-    },
-    {
-      "id": "8aa82a55-fef8-45c1-bb14-a02e2908c5dd",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
-      "downloadedAt": "2026-07-28T03:13:50.683Z"
-    }
+    { "id": "uuid", "userId": "userId", "presetId": "presetId", "downloadedAt": "ISO_date" }
   ],
   "orders": [
-    {
-      "id": "order_TIdan8jjOsgUja",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848",
-      "amount": 1,
-      "currency": "INR",
-      "status": "created",
-      "createdAt": "2026-07-27T19:11:04.099Z"
-    },
-    {
-      "id": "order_TIdbZdLLCf4JIw",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848",
-      "amount": 1,
-      "currency": "INR",
-      "status": "created",
-      "createdAt": "2026-07-27T19:11:48.419Z"
-    },
-    {
-      "id": "order_TIdiWfariQoBdJ",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848",
-      "amount": 1,
-      "currency": "INR",
-      "status": "created",
-      "createdAt": "2026-07-27T19:18:23.312Z"
-    },
-    {
-      "id": "order_TIkjow2cvjWWTu",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848",
-      "amount": 1,
-      "currency": "INR",
-      "status": "created",
-      "createdAt": "2026-07-28T02:10:28.546Z"
-    },
-    {
-      "id": "order_TIkzsS842uKreA",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848",
-      "amount": 1,
-      "currency": "INR",
-      "status": "created",
-      "createdAt": "2026-07-28T02:25:40.183Z"
-    },
-    {
-      "id": "order_TIlodGpKnaBDeZ",
-      "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "presetId": "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848",
-      "amount": 1,
-      "currency": "INR",
-      "status": "created",
-      "createdAt": "2026-07-28T03:13:43.101Z"
-    }
+    { "id": "order_123", "userId": "userId", "presetId": "presetId", "amount": 100, "currency": "INR", "status": "paid|created|pending_verification|paid_awaiting_verification|refunded|cancelled", "createdAt": "ISO_date", "paidAt": "ISO_date", "paymentId": "pay_123", "paymentMethod": "razorpay|direct_upi" }
   ],
-  "categories": [
-    "सनसेट",
-    "ब्लैक & व्हाइट",
-    "नैचुरल",
-    "विंटेज",
-    "सिटीस्केप"
-  ]
+  "categories": ["सनसेट", "ब्लैक & व्हाइट", "नैचुरल", "विंटेज", "सिटीस्केप"]
 }
