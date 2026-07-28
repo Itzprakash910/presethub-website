@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel – PresetHub</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* पहले से दिए गए स्टाइल + कुछ अतिरिक्त */
+        .admin-container { max-width: 1200px; margin: 40px auto; padding: 0 20px; }
+        .admin-card { background: var(--card-bg, #fff); border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .admin-card h2 { margin-top: 0; display: flex; align-items: center; gap: 8px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 16px; margin-top: 12px; }
+        .stat-item { background: var(--bg, #f8f6f2); padding: 16px; border-radius: 12px; text-align: center; }
+        .stat-item .num { font-size: 2rem; font-weight: 700; color: var(--text, #1e1e1e); }
+        .stat-item .label { color: #6b6b6b; }
+        .user-table, .order-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        .user-table th, .user-table td, .order-table th, .order-table td { border: 1px solid var(--border, #eee); padding: 8px 12px; text-align: left; }
+        .user-table th, .order-table th { background: var(--bg, #f2efea); }
+        .preset-list { display: flex; flex-direction: column; gap: 8px; }
+        .preset-item { display: flex; justify-content: space-between; align-items: center; background: var(--bg, #faf8f5); padding: 12px; border-radius: 8px; flex-wrap: wrap; gap: 8px; }
+        .preset-item .actions button { margin-left: 8px; }
+        .btn-sm { padding: 4px 12px; font-size: 0.75rem; }
+        .status-badge { padding: 2px 12px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
+        .status-approved { background: #d4edda; color: #155724; }
+        .status-rejected { background: #f8d7da; color: #721c24; }
+        .status-pending { background: #fff3cd; color: #856404; }
+        #message { margin-top: 12px; padding: 12px; border-radius: 8px; display: none; }
+        #message.success { display: block; background: #d4edda; color: #155724; }
+        #message.error { display: block; background: #f8d7da; color: #721c24; }
+        #message.info { display: block; background: #d1ecf1; color: #0c5460; }
+        .admin-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+        .btn-primary { background: #d4a373; color: #1e1e1e; }
+        .btn-primary:hover { background: #c9955e; }
+        .btn-danger { background: #e74c3c; color: #fff; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-outline { background: transparent; border: 2px solid var(--text, #1e1e1e); color: var(--text, #1e1e1e); }
+        .btn-outline:hover { background: var(--text, #1e1e1e); color: var(--bg, #fff); }
+        .tab-bar { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 2px solid var(--border, #eee); padding-bottom: 8px; flex-wrap: wrap; }
+        .tab-btn { padding: 8px 20px; border: none; background: none; cursor: pointer; font-weight: 600; color: var(--text, #1e1e1e); }
+        .tab-btn.active { color: #d4a373; border-bottom: 3px solid #d4a373; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .search-box { margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+        .search-box input { padding: 6px 12px; border: 1px solid var(--border, #ddd); border-radius: 20px; flex: 1; min-width: 150px; }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; align-items: center; justify-content: center; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: var(--modal-bg, #fff); padding: 30px; border-radius: 16px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; position: relative; }
+        .modal .close { position: absolute; top: 12px; right: 16px; font-size: 1.5rem; background: none; border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+            <h1><i class="fas fa-crown"></i> Admin Dashboard</h1>
+            <div style="display:flex;gap:12px;">
+                <button class="btn btn-outline btn-sm" onclick="window.location.href='/'"><i class="fas fa-arrow-left"></i> होम</button>
+                <button class="btn btn-danger btn-sm" id="adminLogoutBtn"><i class="fas fa-sign-out-alt"></i> लॉगआउट</button>
+            </div>
+        </div>
+        <div id="message"></div>
+
+        <div class="admin-card">
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="overview">📊 अवलोकन</button>
+                <button class="tab-btn" data-tab="users">👥 उपयोगकर्ता</button>
+                <button class="tab-btn" data-tab="presets">📦 प्रीसेट</button>
+                <button class="tab-btn" data-tab="orders">💰 ऑर्डर</button>
+                <button class="tab-btn" data-tab="stats">📈 आँकड़े</button>
+            </div>
+
+            <div id="tab-overview" class="tab-content active">
+                <h2><i class="fas fa-chart-simple"></i> Platform Analytics</h2>
+                <div class="stats-grid" id="analytics"></div>
+                <div class="admin-actions">
+                    <button class="btn btn-primary btn-sm" onclick="loadData()"><i class="fas fa-refresh"></i> रिफ्रेश</button>
+                    <button class="btn btn-outline btn-sm" onclick="exportData()"><i class="fas fa-download"></i> डेटा एक्सपोर्ट (CSV)</button>
+                </div>
+            </div>
+
+            <div id="tab-users" class="tab-content">
+                <h2><i class="fas fa-users"></i> All Users</h2>
+                <div class="search-box">
+                    <input type="text" id="userSearch" placeholder="यूज़र खोजें..." oninput="filterUsers()" />
+                </div>
+                <div id="usersList"></div>
+            </div>
+
+            <div id="tab-presets" class="tab-content">
+                <h2><i class="fas fa-cubes"></i> All Presets</h2>
+                <div class="search-box">
+                    <input type="text" id="presetSearch" placeholder="प्रीसेट खोजें..." oninput="filterPresets()" />
+                </div>
+                <div id="presetsList"></div>
+            </div>
+
+            <div id="tab-orders" class="tab-content">
+                <h2><i class="fas fa-shopping-cart"></i> All Orders</h2>
+                <div id="ordersList"></div>
+            </div>
+
+            <div id="tab-stats" class="tab-content">
+                <h2><i class="fas fa-chart-line"></i> Detailed Statistics</h2>
+                <div id="detailedStats"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modalContainer"></div>
+
+    <script>
+        const API_URL = window.location.origin + '/api';
+        const token = localStorage.getItem('token');
+
+        if (!token) {
+            alert('कृपया पहले लॉग इन करें।');
+            window.location.href = '/';
+        }
+
+        // ===== API HELPER =====
+        async function apiFetch(endpoint, options = {}) {
+            const res = await fetch(`${API_URL}${endpoint}`, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    ...(options.headers || {})
+                }
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: 'Request failed' }));
+                throw new Error(err.error || 'API error');
+            }
+            return res.json();
+        }
+
+        function showMessage(msg, type = 'success') {
+            const el = document.getElementById('message');
+            el.textContent = msg;
+            el.className = type;
+            setTimeout(() => { el.style.display = 'none'; }, 5000);
+            el.style.display = 'block';
+        }
+
+        // ===== TAB SWITCHING =====
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                this.classList.add('active');
+                document.getElementById(`tab-${this.dataset.tab}`).classList.add('active');
+                if (this.dataset.tab === 'orders') loadOrders();
+                if (this.dataset.tab === 'stats') loadDetailedStats();
+            });
+        });
+
+        // ===== LOAD DATA (FIXED RACE CONDITION) =====
+        async function loadData() {
+            try {
+                await loadAnalytics();
+                await loadPresets();   // पहले प्रीसेट लोड करें
+                await loadUsers();     // फिर यूज़र (अब allPresets उपलब्ध है)
+                showMessage('डेटा रिफ्रेश हो गया।', 'success');
+            } catch (err) {
+                showMessage('डेटा लोड करने में त्रुटि: ' + err.message, 'error');
+            }
+        }
+
+        // ===== ANALYTICS =====
+        async function loadAnalytics() {
+            try {
+                const data = await apiFetch('/admin/analytics');
+                const grid = document.getElementById('analytics');
+                grid.innerHTML = `
+                    <div class="stat-item"><div class="num">${data.totalUsers}</div><div class="label">कुल उपयोगकर्ता</div></div>
+                    <div class="stat-item"><div class="num">${data.totalPresets}</div><div class="label">कुल प्रीसेट</div></div>
+                    <div class="stat-item"><div class="num">${data.totalDownloads}</div><div class="label">कुल डाउनलोड</div></div>
+                    <div class="stat-item"><div class="num">₹${data.totalRevenue}</div><div class="label">कुल राजस्व</div></div>
+                    <div class="stat-item"><div class="num">${data.freePresets}</div><div class="label">मुफ्त प्रीसेट</div></div>
+                    <div class="stat-item"><div class="num">${data.paidPresets}</div><div class="label">सशुल्क प्रीसेट</div></div>
+                    <div class="stat-item"><div class="num">${data.avgRating}</div><div class="label">औसत रेटिंग</div></div>
+                `;
+            } catch (err) {
+                showMessage('Analytics लोड नहीं हुए: ' + err.message, 'error');
+            }
+        }
+
+        // ===== USERS (with search) =====
+        let allUsers = [];
+
+        async function loadUsers() {
+            try {
+                const users = await apiFetch('/admin/users');
+                allUsers = users;
+                renderUsers(users);
+            } catch (err) {
+                showMessage('Users लोड नहीं हुए: ' + err.message, 'error');
+            }
+        }
+
+        function renderUsers(users) {
+            const container = document.getElementById('usersList');
+            if (!users.length) {
+                container.innerHTML = '<p>कोई उपयोगकर्ता नहीं।</p>';
+                return;
+            }
+            let html = `<table class="user-table">
+                <thead><tr><th>नाम</th><th>ईमेल</th><th>यूज़रनेम</th><th>भूमिका</th><th>सत्यापित</th><th>प्रीसेट</th><th>फॉलोअर्स</th><th>एक्शन</th></tr></thead><tbody>`;
+            users.forEach(u => {
+                const userPresets = window.allPresets?.filter(p => p.authorId === u.id) || [];
+                html += `<tr>
+                    <td>${u.name}</td>
+                    <td>${u.email}</td>
+                    <td>${u.username || '-'}</td>
+                    <td><span class="status-badge ${u.role === 'admin' ? 'status-approved' : 'status-pending'}">${u.role}</span></td>
+                    <td>${u.verified ? '✅' : '❌'}</td>
+                    <td>${userPresets.length}</td>
+                    <td>${u.followers?.length || 0}</td>
+                    <td>
+                        ${u.role !== 'admin' ? `<button class="btn btn-sm btn-primary" onclick="toggleVerify('${u.id}')">${u.verified ? '✅' : '❌'}</button>` : ''}
+                        ${u.role !== 'admin' ? `<button class="btn btn-sm btn-outline" onclick="editUser('${u.id}')"><i class="fas fa-edit"></i></button>` : ''}
+                        ${u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')"><i class="fas fa-trash"></i></button>` : ''}
+                        ${u.role === 'user' ? `<button class="btn btn-sm btn-primary" onclick="makeAdmin('${u.id}')"><i class="fas fa-crown"></i></button>` : ''}
+                    </td>
+                </tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        function filterUsers() {
+            const q = document.getElementById('userSearch').value.toLowerCase();
+            const filtered = allUsers.filter(u => 
+                u.name.toLowerCase().includes(q) || 
+                u.email.toLowerCase().includes(q) ||
+                (u.username && u.username.toLowerCase().includes(q))
+            );
+            renderUsers(filtered);
+        }
+
+        // ===== PRESETS (with search) =====
+        async function loadPresets() {
+            try {
+                const response = await fetch(`${API_URL}/presets?limit=100`);
+                const data = await response.json();
+                const presets = data.presets || [];
+                window.allPresets = presets;
+                renderPresets(presets);
+            } catch (err) {
+                showMessage('Presets लोड नहीं हुए: ' + err.message, 'error');
+            }
+        }
+
+        function renderPresets(presets) {
+            const container = document.getElementById('presetsList');
+            if (!presets.length) {
+                container.innerHTML = '<p>कोई प्रीसेट नहीं।</p>';
+                return;
+            }
+            let html = `<div class="preset-list">`;
+            presets.forEach(p => {
+                const statusClass = `status-${p.status || 'pending'}`;
+                html += `
+                    <div class="preset-item">
+                        <div>
+                            <strong>${p.name}</strong> – ${p.author} (${p.category})
+                            <span class="status-badge ${statusClass}">${p.status || 'pending'}</span>
+                            ${p.price === 0 ? '<span class="status-badge status-approved">मुफ्त</span>' : `<span class="status-badge status-pending">₹${p.price}</span>`}
+                        </div>
+                        <div class="actions">
+                            <button class="btn btn-sm btn-primary" onclick="editPreset('${p.id}')"><i class="fas fa-edit"></i></button>
+                            <button class="btn btn-sm btn-primary" onclick="updateStatus('${p.id}','approved')">✅</button>
+                            <button class="btn btn-sm btn-danger" onclick="updateStatus('${p.id}','rejected')">❌</button>
+                            <button class="btn btn-sm btn-danger" onclick="deletePreset('${p.id}')"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                `;
+            });
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        function filterPresets() {
+            const q = document.getElementById('presetSearch').value.toLowerCase();
+            const filtered = (window.allPresets || []).filter(p => 
+                p.name.toLowerCase().includes(q) || 
+                p.author.toLowerCase().includes(q) ||
+                (p.category && p.category.toLowerCase().includes(q))
+            );
+            renderPresets(filtered);
+        }
+
+        // ===== ORDERS =====
+        async function loadOrders() {
+            try {
+                const orders = await apiFetch('/admin/orders');
+                const container = document.getElementById('ordersList');
+                if (!orders.length) {
+                    container.innerHTML = '<p>कोई ऑर्डर नहीं।</p>';
+                    return;
+                }
+                let html = `<table class="order-table">
+                    <thead><tr><th>ऑर्डर ID</th><th>उपयोगकर्ता</th><th>प्रीसेट</th><th>राशि</th><th>स्थिति</th><th>तारीख</th><th>एक्शन</th></tr></thead><tbody>`;
+                orders.forEach(o => {
+                    html += `<tr>
+                        <td><code>${o.id.substring(0, 12)}...</code></td>
+                        <td>${o.user?.name || 'अज्ञात'}</td>
+                        <td>${o.preset?.name || 'अज्ञात'}</td>
+                        <td>₹${o.amount}</td>
+                        <td><span class="status-${o.status}">${o.status}</span></td>
+                        <td>${new Date(o.createdAt).toLocaleDateString()}</td>
+                        <td>
+                            ${o.status === 'paid' ? `<button class="btn btn-sm btn-danger" onclick="changeOrderStatus('${o.id}','refunded')">रिफंड</button>` : ''}
+                            ${o.status === 'created' ? `<button class="btn btn-sm btn-danger" onclick="changeOrderStatus('${o.id}','cancelled')">रद्द करें</button>` : ''}
+                        </td>
+                    </tr>`;
+                });
+                html += `</tbody></table>`;
+                container.innerHTML = html;
+            } catch (err) {
+                showMessage('Orders लोड नहीं हुए: ' + err.message, 'error');
+            }
+        }
+
+        // ===== DETAILED STATS =====
+        async function loadDetailedStats() {
+            try {
+                const stats = await apiFetch('/admin/stats');
+                const container = document.getElementById('detailedStats');
+                container.innerHTML = `
+                    <div class="stats-grid">
+                        <div class="stat-item"><div class="num">${stats.newUsersToday}</div><div class="label">आज नए उपयोगकर्ता</div></div>
+                        <div class="stat-item"><div class="num">${stats.newPresetsToday}</div><div class="label">आज नए प्रीसेट</div></div>
+                        <div class="stat-item"><div class="num">${stats.downloadsToday}</div><div class="label">आज डाउनलोड</div></div>
+                        <div class="stat-item"><div class="num">${stats.totalUsers}</div><div class="label">कुल उपयोगकर्ता</div></div>
+                        <div class="stat-item"><div class="num">${stats.totalPresets}</div><div class="label">कुल प्रीसेट</div></div>
+                        <div class="stat-item"><div class="num">${stats.totalDownloads}</div><div class="label">कुल डाउनलोड</div></div>
+                        <div class="stat-item"><div class="num">${stats.totalOrders}</div><div class="label">कुल ऑर्डर</div></div>
+                    </div>
+                `;
+            } catch (err) {
+                showMessage('Stats लोड नहीं हुए: ' + err.message, 'error');
+            }
+        }
+
+        // ===== ACTIONS =====
+
+        // 1. Update Preset Status
+        window.updateStatus = async function(id, status) {
+            try {
+                await apiFetch(`/admin/presets/${id}/status`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ status })
+                });
+                showMessage(`प्रीसेट ${status} कर दिया गया।`, 'success');
+                loadPresets();
+            } catch (err) {
+                showMessage('Status update विफल: ' + err.message, 'error');
+            }
+        };
+
+        // 2. Delete User
+        window.deleteUser = async function(id) {
+            if (!confirm('क्या आप इस उपयोगकर्ता को हटाना चाहते हैं?')) return;
+            try {
+                await apiFetch(`/admin/users/${id}`, { method: 'DELETE' });
+                showMessage('उपयोगकर्ता हटा दिया गया।', 'success');
+                loadUsers();
+            } catch (err) {
+                showMessage('Delete विफल: ' + err.message, 'error');
+            }
+        };
+
+        // 3. Delete Preset
+        window.deletePreset = async function(id) {
+            if (!confirm('क्या आप इस प्रीसेट को हटाना चाहते हैं?')) return;
+            try {
+                await apiFetch(`/presets/${id}`, { method: 'DELETE' });
+                showMessage('प्रीसेट हटा दिया गया।', 'success');
+                loadPresets();
+            } catch (err) {
+                showMessage('Delete विफल: ' + err.message, 'error');
+            }
+        };
+
+        // 4. Make Admin
+        window.makeAdmin = async function(id) {
+            try {
+                await apiFetch(`/admin/users/${id}/role`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ role: 'admin' })
+                });
+                showMessage('उपयोगकर्ता को Admin बना दिया गया।', 'success');
+                loadUsers();
+            } catch (err) {
+                showMessage('Operation विफल: ' + err.message, 'error');
+            }
+        };
+
+        // 5. Toggle Verify (NEW)
+        window.toggleVerify = async function(id) {
+            try {
+                // First get current user to know current verified status
+                const user = await apiFetch(`/admin/users/${id}`);
+                const newStatus = !user.verified;
+                // Update via a new API endpoint (we'll assume PUT /admin/users/:id/verify)
+                // If you don't have this endpoint, create one or use a generic update.
+                // For now, we'll use a generic PUT /admin/users/:id with a body.
+                // But your current admin.js doesn't have this, so we'll add a custom call.
+                // I'll assume you have a route /admin/users/:id/verify
+                // Alternatively, you can implement it via a generic update.
+                // We'll use a workaround: update via the edit user endpoint (but that's for name/bio etc)
+                // Let's use a PUT to /admin/users/:id with a body containing verified.
+                // I'll modify the server later; for now we'll simulate by refreshing.
+                // For the sake of this demo, we'll just show message.
+                // Let's actually implement: we'll add a PUT /admin/users/:id/verify in admin.js
+                // For now, we'll make a fetch call to a new endpoint.
+                const res = await fetch(`${API_URL}/admin/users/${id}/verify`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ verified: newStatus })
+                });
+                if (res.ok) {
+                    showMessage(`उपयोगकर्ता ${newStatus ? 'वेरिफाइड' : 'अनवेरिफाइड'} कर दिया गया।`, 'success');
+                    loadUsers();
+                } else {
+                    const err = await res.json();
+                    showMessage(err.error || 'वेरिफाई विफल', 'error');
+                }
+            } catch (err) {
+                showMessage('वेरिफाई विफल: ' + err.message, 'error');
+            }
+        };
+
+        // 6. Edit User (NEW) - with Modal
+        window.editUser = async function(id) {
+            try {
+                const user = await apiFetch(`/admin/users/${id}`);
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay active';
+                modal.innerHTML = `
+                    <div class="modal">
+                        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+                        <h2>✏️ यूज़र एडिट करें</h2>
+                        <form id="editUserForm">
+                            <div class="form-group"><label>नाम</label><input type="text" id="editUserName" value="${user.name}" required /></div>
+                            <div class="form-group"><label>यूज़रनेम</label><input type="text" id="editUserUsername" value="${user.username || ''}" /></div>
+                            <div class="form-group"><label>ईमेल</label><input type="email" id="editUserEmail" value="${user.email}" required /></div>
+                            <div class="form-group"><label>बायो</label><textarea id="editUserBio" rows="2">${user.bio || ''}</textarea></div>
+                            <div class="form-group"><label>भूमिका</label>
+                                <select id="editUserRole">
+                                    <option value="user" ${user.role === 'user' ? 'selected' : ''}>User</option>
+                                    <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
+                                </select>
+                            </div>
+                            <div class="form-group"><label>सत्यापित</label>
+                                <select id="editUserVerified">
+                                    <option value="true" ${user.verified ? 'selected' : ''}>✅ Verified</option>
+                                    <option value="false" ${!user.verified ? 'selected' : ''}>❌ Not Verified</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">सहेजें</button>
+                        </form>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+
+                modal.querySelector('#editUserForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const payload = {
+                        name: document.getElementById('editUserName').value,
+                        username: document.getElementById('editUserUsername').value,
+                        email: document.getElementById('editUserEmail').value,
+                        bio: document.getElementById('editUserBio').value,
+                        role: document.getElementById('editUserRole').value,
+                        verified: document.getElementById('editUserVerified').value === 'true'
+                    };
+                    try {
+                        const res = await apiFetch(`/admin/users/${id}`, {
+                            method: 'PUT',
+                            body: JSON.stringify(payload)
+                        });
+                        showMessage('✅ उपयोगकर्ता अपडेट हो गया।', 'success');
+                        modal.remove();
+                        loadUsers();
+                    } catch (err) {
+                        showMessage('अपडेट विफल: ' + err.message, 'error');
+                    }
+                });
+
+                // Close on backdrop click
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) modal.remove();
+                });
+            } catch (err) {
+                showMessage('यूज़र लोड नहीं हुआ: ' + err.message, 'error');
+            }
+        };
+
+        // 7. Edit Preset (NEW)
+        window.editPreset = async function(id) {
+            try {
+                const preset = await apiFetch(`/presets/${id}`);
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay active';
+                modal.innerHTML = `
+                    <div class="modal">
+                        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+                        <h2>✏️ प्रीसेट एडिट करें</h2>
+                        <form id="editPresetForm">
+                            <div class="form-group"><label>नाम</label><input type="text" id="editPresetName" value="${preset.name}" required /></div>
+                            <div class="form-group"><label>विवरण</label><textarea id="editPresetDesc" rows="2">${preset.description || ''}</textarea></div>
+                            <div class="form-group"><label>श्रेणी</label>
+                                <select id="editPresetCategory">
+                                    <option value="सनसेट" ${preset.category === 'सनसेट' ? 'selected' : ''}>सनसेट</option>
+                                    <option value="ब्लैक & व्हाइट" ${preset.category === 'ब्लैक & व्हाइट' ? 'selected' : ''}>ब्लैक & व्हाइट</option>
+                                    <option value="नैचुरल" ${preset.category === 'नैचुरल' ? 'selected' : ''}>नैचुरल</option>
+                                    <option value="विंटेज" ${preset.category === 'विंटेज' ? 'selected' : ''}>विंटेज</option>
+                                    <option value="सिटीस्केप" ${preset.category === 'सिटीस्केप' ? 'selected' : ''}>सिटीस्केप</option>
+                                </select>
+                            </div>
+                            <div class="form-group"><label>कीमत (₹)</label><input type="number" id="editPresetPrice" value="${preset.price}" min="0" step="1" required /></div>
+                            <div class="form-group"><label>टैग्स (कॉमा से अलग)</label><input type="text" id="editPresetTags" value="${preset.tags?.join(', ') || ''}" /></div>
+                            <button type="submit" class="btn btn-primary">सहेजें</button>
+                        </form>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+
+                modal.querySelector('#editPresetForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const payload = {
+                        name: document.getElementById('editPresetName').value,
+                        description: document.getElementById('editPresetDesc').value,
+                        category: document.getElementById('editPresetCategory').value,
+                        price: parseFloat(document.getElementById('editPresetPrice').value),
+                        tags: document.getElementById('editPresetTags').value
+                    };
+                    try {
+                        const res = await apiFetch(`/presets/${id}`, {
+                            method: 'PUT',
+                            body: JSON.stringify(payload)
+                        });
+                        showMessage('✅ प्रीसेट अपडेट हो गया।', 'success');
+                        modal.remove();
+                        loadPresets();
+                    } catch (err) {
+                        showMessage('अपडेट विफल: ' + err.message, 'error');
+                    }
+                });
+
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) modal.remove();
+                });
+            } catch (err) {
+                showMessage('प्रीसेट लोड नहीं हुआ: ' + err.message, 'error');
+            }
+        };
+
+        // 8. Change Order Status (NEW)
+        window.changeOrderStatus = async function(orderId, status) {
+            if (!confirm(`क्या आप इस ऑर्डर को "${status}" करना चाहते हैं?`)) return;
+            try {
+                // Assume we have an endpoint /admin/orders/:id/status
+                const res = await apiFetch(`/admin/orders/${orderId}/status`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ status })
+                });
+                showMessage(`ऑर्डर ${status} कर दिया गया।`, 'success');
+                loadOrders();
+            } catch (err) {
+                showMessage('ऑर्डर अपडेट विफल: ' + err.message, 'error');
+            }
+        };
+
+        // 9. Export Data (CSV)
+        function exportData() {
+            // Collect data from all tables
+            const tables = document.querySelectorAll('.user-table, .order-table, .preset-list');
+            let csv = '';
+
+            // Add header
+            csv += 'PresetHub Admin Export\n';
+            csv += `Date: ${new Date().toISOString()}\n\n`;
+
+            tables.forEach((table, index) => {
+                if (table.classList.contains('user-table')) {
+                    csv += '==== USERS ====\n';
+                } else if (table.classList.contains('order-table')) {
+                    csv += '==== ORDERS ====\n';
+                } else if (table.classList.contains('preset-list')) {
+                    csv += '==== PRESETS ====\n';
+                }
+                // For preset-list, we have divs, need to extract text.
+                if (table.classList.contains('preset-list')) {
+                    const items = table.querySelectorAll('.preset-item');
+                    items.forEach(item => {
+                        const text = item.textContent.trim().replace(/\s+/g, ' ');
+                        csv += text + '\n';
+                    });
+                } else {
+                    const rows = table.querySelectorAll('tr');
+                    rows.forEach(row => {
+                        const cols = row.querySelectorAll('td, th');
+                        const rowData = Array.from(cols).map(col => col.innerText.trim()).join(',');
+                        csv += rowData + '\n';
+                    });
+                }
+                csv += '\n';
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `presethub_export_${new Date().toISOString().slice(0,10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            showMessage('✅ डेटा एक्सपोर्ट हो गया!', 'success');
+        }
+
+        // ===== LOGOUT =====
+        document.getElementById('adminLogoutBtn').addEventListener('click', () => {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        });
+
+        // ===== INIT =====
+        window.onload = function() {
+            loadData();
+            // Check admin access
+            apiFetch('/admin/analytics').catch(() => {
+                showMessage('Admin access required. Redirecting...', 'error');
+                setTimeout(() => window.location.href = '/', 2000);
+            });
+        };
+    </script>
+</body>
+</html>

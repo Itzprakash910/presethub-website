@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes" />
+    <title>PresetHub – Lightroom Presets Marketplace</title>
+    <meta name="description" content="Download free and premium Lightroom presets. Edit your photos like a pro with PresetHub." />
+    <meta name="keywords" content="Lightroom presets, photo editing, presets download, free presets, premium presets" />
+    <meta name="author" content="PresetHub" />
+    <meta property="og:title" content="PresetHub – Lightroom Presets" />
+    <meta property="og:description" content="Download thousands of presets for Lightroom. Free & premium." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://presethub.site" />
+    <meta property="og:image" content="https://presethub.site/assets/images/og-image.jpg" />
+    <meta name="theme-color" content="#d4a373" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/assets/icons/icon-192.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header id="mainHeader">
+            <div class="container nav">
+                <a href="/" class="logo"><i class="fas fa-camera-retro"></i> Preset<span>Hub</span></a>
+        
+                <div class="nav-search">
+                    <input type="text" id="searchInput" placeholder="खोजें प्रीसेट, शैली, या क्रिएटर..." />
+                    <div id="searchSuggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.1);z-index:10;max-height:300px;overflow-y:auto;margin-top:4px;"></div>
+                    <button id="searchBtn"><i class="fas fa-search"></i> खोजें</button>
+                </div>
+                
+                <div class="nav-actions">
+                    <button class="icon-btn" id="wishlistBtn" aria-label="Wishlist"><i class="far fa-heart"></i></button>
+                    <button class="icon-btn" id="uploadBtn" aria-label="Upload"><i class="fas fa-cloud-upload-alt"></i></button>
+                    <button class="icon-btn" id="themeToggle" aria-label="Toggle Theme">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <div id="authSection">
+                        <button class="btn btn-sm btn-outline" id="loginBtn">लॉग इन</button>
+                        <button class="btn btn-sm btn-primary" id="signupBtn">साइन अप</button>
+                    </div>
+                    <div id="userSection" style="display:none;">
+                        <div class="user-avatar" id="userAvatar">R</div>
+                        <button class="icon-btn" id="logoutBtn"><i class="fas fa-sign-out-alt"></i></button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Hero Section -->
+            <section class="hero" id="heroSection">
+                <div class="container hero-grid">
+                    <div>
+                        <h1>अपनी फोटो को <br /><span>प्रो जैसा</span> बनाएं</h1>
+                        <p>Lightroom प्रीसेट्स की दुनिया — हजारों प्रीसेट्स, एक क्लिक में डाउनलोड, और अपनी फोटो को नया रूप दें।</p>
+                        <div class="hero-btns">
+                            <button class="btn btn-primary" id="exploreBtn"><i class="fas fa-download"></i> प्रीसेट खोजें</button>
+                            <button class="btn btn-outline" id="uploadHeroBtn"><i class="fas fa-upload"></i> अपलोड करें</button>
+                        </div>
+                        <div class="hero-stats">
+                            <div><div class="num" id="statPresets">12K+</div><div class="label">प्रीसेट्स</div></div>
+                            <div><div class="num">4.8★</div><div class="label">औसत रेटिंग</div></div>
+                            <div><div class="num" id="statUsers">50K</div><div class="label">सक्रिय यूजर्स</div></div>
+                        </div>
+                    </div>
+                    <div class="hero-visual">
+                        <svg viewBox="0 0 400 300" style="width:100%;height:auto;background:#d9d0c4;border-radius:16px;">
+                            <rect x="40" y="40" width="120" height="100" rx="12" fill="#b8aa98" />
+                            <rect x="180" y="40" width="120" height="100" rx="12" fill="#c4b5a2" />
+                            <rect x="40" y="160" width="120" height="100" rx="12" fill="#a89682" />
+                            <rect x="180" y="160" width="120" height="100" rx="12" fill="#d4c5b2" />
+                            <circle cx="330" cy="80" r="30" fill="#d4a373" opacity="0.6" />
+                            <circle cx="340" cy="210" r="24" fill="#d4a373" opacity="0.4" />
+                            <text x="120" y="280" font-family="Inter" font-weight="700" font-size="18" fill="#4a3f35">✨ प्रीसेट प्रीव्यू</text>
+                        </svg>
+                        <div class="hero-badge">
+                            <i class="fas fa-star" style="color:#f4a261;"></i> 4.8 ★ (2.3K समीक्षाएँ)
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Top Creators -->
+            <section class="container" id="topCreatorsSection">
+                <div class="section-title">
+                    <span>🏆 टॉप क्रिएटर्स</span>
+                </div>
+                <div class="top-creators-grid" id="topCreatorsGrid">
+                    <!-- Rendered by JavaScript -->
+                </div>
+            </section>
+
+            <!-- Categories -->
+            <section class="container" id="categoriesSection">
+                <div class="section-title">
+                    <span>📂 श्रेणियाँ</span>
+                    <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें →</a>
+                </div>
+                <div class="categories" id="categoryList">
+                    <div class="category-card" data-category="सनसेट"><div class="icon">🌅</div><div class="name">सनसेट</div><div class="count">1.2K</div></div>
+                    <div class="category-card" data-category="ब्लैक & व्हाइट"><div class="icon">🖤</div><div class="name">ब्लैक &amp; व्हाइट</div><div class="count">890</div></div>
+                    <div class="category-card" data-category="नैचुरल"><div class="icon">🌿</div><div class="name">नैचुरल</div><div class="count">1.5K</div></div>
+                    <div class="category-card" data-category="विंटेज"><div class="icon">🎨</div><div class="name">विंटेज</div><div class="count">760</div></div>
+                    <div class="category-card" data-category="सिटीस्केप"><div class="icon">🌆</div><div class="name">सिटीस्केप</div><div class="count">680</div></div>
+                </div>
+            </section>
+
+            <!-- Latest Presets Feed -->
+            <section class="container" id="latestSection">
+                <div class="section-title">
+                    <span>📰 ताज़ा प्रीसेट</span>
+                    <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें →</a>
+                </div>
+                <div class="preset-grid" id="latestGrid">
+                    <!-- Rendered by JavaScript -->
+                </div>
+            </section>
+
+            <!-- Presets Grid (Main) -->
+            <section class="container" id="presetsSection">
+                <div class="section-title">
+                    <span id="presetTitle">🔥 फीचर्ड प्रीसेट्स</span>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <select id="filterCategory" class="filter-select">
+                            <option value="">सभी श्रेणियाँ</option>
+                            <option value="सनसेट">सनसेट</option>
+                            <option value="ब्लैक & व्हाइट">ब्लैक & व्हाइट</option>
+                            <option value="नैचुरल">नैचुरल</option>
+                            <option value="विंटेज">विंटेज</option>
+                            <option value="सिटीस्केप">सिटीस्केप</option>
+                        </select>
+                        <select id="filterPrice" class="filter-select">
+                            <option value="">सभी</option>
+                            <option value="free">मुफ्त</option>
+                            <option value="paid">सशुल्क</option>
+                        </select>
+                        <select id="filterSort" class="filter-select">
+                            <option value="popular">सबसे लोकप्रिय</option>
+                            <option value="rating">उच्च रेटिंग</option>
+                            <option value="newest">नए</option>
+                            <option value="price-low">कीमत: कम → ज़्यादा</option>
+                            <option value="price-high">कीमत: ज़्यादा → कम</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="preset-grid" id="presetGrid">
+                    <!-- Rendered by JavaScript -->
+                </div>
+                <div id="loadMoreContainer" style="text-align:center;margin:20px 0;">
+                    <button id="loadMoreBtn" class="btn btn-outline" style="display:none;">
+                        <i class="fas fa-plus"></i> और लोड करें
+                    </button>
+                </div>
+            </section>
+
+            <!-- Featured Banner -->
+            <section class="container" id="featuredBanner">
+                <div class="featured-banner">
+                    <div>
+                        <h2>🎯 प्रो पैक — 50 प्रीसेट्स</h2>
+                        <p>एक साथ 50 प्रीसेट्स पाएं। पोर्ट्रेट, लैंडस्केप, फैशन — सब कुछ कवर।</p>
+                        <button class="btn" id="featuredDownloadBtn"><i class="fas fa-download"></i> अभी डाउनलोड करें</button>
+                    </div>
+                    <div class="badge-group">
+                        <div><div class="num">50</div><div class="label">प्रीसेट्स</div></div>
+                        <div><div class="num">₹499</div><div class="label">कीमत</div></div>
+                        <div><div class="num">4.9★</div><div class="label">रेटिंग</div></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Testimonials -->
+            <section class="container testimonials" id="testimonialsSection">
+                <div class="section-title"><span>💬 यूजर्स की राय</span></div>
+                <div class="testimonial-grid">
+                    <div class="testimonial-card">
+                        <div class="stars">★★★★★</div>
+                        <p>"PresetHub ने मेरी एडिटिंग को पूरी तरह बदल दिया। एक क्लिक में प्रो लुक!"</p>
+                        <div class="user"><div class="avatar">A</div><div><div class="name">अंकित सिंह</div><div class="role">फोटोग्राफर</div></div></div>
+                    </div>
+                    <div class="testimonial-card">
+                        <div class="stars">★★★★★</div>
+                        <p>"बहुत आसानी से डाउनलोड और इंपोर्ट। हर प्रीसेट की क्वालिटी शानदार।"</p>
+                        <div class="user"><div class="avatar">P</div><div><div class="name">प्रियंका मेहरा</div><div class="role">कंटेंट क्रिएटर</div></div></div>
+                    </div>
+                    <div class="testimonial-card">
+                        <div class="stars">★★★★☆</div>
+                        <p>"मुझे विंटेज कलेक्शन सबसे पसंद आया। बार-बार यहीं से डाउनलोड करता हूँ।"</p>
+                        <div class="user"><div class="avatar">R</div><div><div class="name">राहुल वर्मा</div><div class="role">एडिटर</div></div></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer>
+            <div class="container">
+                <div class="footer-grid">
+                    <div class="footer-brand">
+                        <div class="logo"><i class="fas fa-camera-retro"></i> Preset<span>Hub</span></div>
+                        <p>भारत का पहला Lightroom प्रीसेट मार्केटप्लेस। हर क्रिएटर के लिए, हर स्टाइल के लिए।</p>
+                    </div>
+                    <div class="footer-col">
+                        <h4>ब्राउज़ करें</h4>
+                        <ul>
+                            <li><a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'});">सभी प्रीसेट</a></li>
+                            <li><a href="#" onclick="document.getElementById('categoriesSection').scrollIntoView({behavior:'smooth'});">श्रेणियाँ</a></li>
+                            <li><a href="#" onclick="document.getElementById('latestSection').scrollIntoView({behavior:'smooth'});">नए प्रीसेट</a></li>
+                            <li><a href="#" onclick="filterSort.value='popular'; loadPresets();">ट्रेंडिंग</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-col">
+                        <h4>सहायता</h4>
+                        <ul>
+                            <li><a href="#" onclick="showToast('डाउनलोड गाइड: प्रीसेट कार्ड पर क्लिक करें, फिर डाउनलोड बटन दबाएं।', 'info')">कैसे डाउनलोड करें</a></li>
+                            <li><a href="#" onclick="showToast('Lightroom में प्रीसेट इंपोर्ट करने के लिए वीडियो ट्यूटोरियल जल्द आ रहा है।', 'info')">Lightroom गाइड</a></li>
+                            <li><a href="#" onclick="showToast('FAQ – जल्द आ रहा है।', 'info')">FAQ</a></li>
+                            <li><a href="#" onclick="showToast('संपर्क करें: support@presethub.site', 'info')">संपर्क करें</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-col">
+                        <h4>कंपनी</h4>
+                        <ul>
+                            <li><a href="#" onclick="showToast('PresetHub – भारत का पहला Lightroom प्रीसेट मार्केटप्लेस।', 'info')">हमारे बारे में</a></li>
+                            <li><a href="#" onclick="showToast('ब्लॉग – जल्द आ रहा है।', 'info')">ब्लॉग</a></li>
+                            <li><a href="#" onclick="showToast('क्रिएटर प्रोग्राम – अपने प्रीसेट अपलोड करें और कमाएं।', 'info')">क्रिएटर प्रोग्राम</a></li>
+                            <li><a href="#" onclick="showToast('प्राइवेसी पॉलिसी – हम आपकी जानकारी सुरक्षित रखते हैं।', 'info')">प्राइवेसी</a></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <span>© 2026 PresetHub. सभी अधिकार सुरक्षित।</span>
+                    <div class="socials">
+                        <a href="#" target="_blank"><i class="fab fa-instagram"></i></a>
+                        <a href="#" target="_blank"><i class="fab fa-youtube"></i></a>
+                        <a href="#" target="_blank"><i class="fab fa-twitter"></i></a>
+                        <a href="#" target="_blank"><i class="fab fa-github"></i></a>
+                    </div>
+                </div>
+            </div>
+        </footer>
+
+        <!-- Modal Container -->
+        <div id="modalContainer"></div>
+        <!-- Toast Container -->
+        <div id="toastContainer"></div>
+    </div>
+
+    <!-- Razorpay SDK -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <!-- Main App -->
+    <script src="app.js"></script>
+</body>
+</html>
