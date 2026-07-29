@@ -36,6 +36,7 @@ const searchSuggestions = $('#searchSuggestions');
 const themeToggle = $('#themeToggle');
 const loadMoreBtn = $('#loadMoreBtn');
 const offlineIndicator = $('#offlineIndicator');
+const userDropdown = document.getElementById('userDropdown');
 
 // ============================================================
 // ===== OFFLINE QUEUE UTILITY =====
@@ -205,6 +206,8 @@ function showLoggedInUI(user) {
     userAvatar.textContent = '';
   }
   fetchWishlist();
+  // Hide dropdown when login
+  if (userDropdown) userDropdown.style.display = 'none';
 }
 
 function logout() {
@@ -215,6 +218,7 @@ function logout() {
   userSection.style.display = 'none';
   wishlist = [];
   updateWishlistUI();
+  if (userDropdown) userDropdown.style.display = 'none';
   showToast('लॉगआउट हो गया', 'info');
 }
 
@@ -222,7 +226,120 @@ loginBtn.addEventListener('click', () => openAuthModal('login'));
 signupBtn.addEventListener('click', () => openAuthModal('signup'));
 logoutBtn.addEventListener('click', logout);
 
+// ============================================================
+// ===== USER DROPDOWN TOGGLE =====
+// ============================================================
+
+userAvatar.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!currentUser) return;
+  if (userDropdown.style.display === 'block') {
+    userDropdown.style.display = 'none';
+  } else {
+    userDropdown.style.display = 'block';
+  }
+});
+
+// Click outside to close
+document.addEventListener('click', () => {
+  if (userDropdown) userDropdown.style.display = 'none';
+});
+
+// ============================================================
+// ===== MY PRESETS (Web) =====
+// ============================================================
+
+window.showMyPresets = async function() {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/users/${currentUser.id}/presets`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to load presets');
+    const presets = await res.json();
+    if (!presets.length) {
+      showToast('आपने अभी तक कोई प्रीसेट अपलोड नहीं किया।', 'info');
+      return;
+    }
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:600px;">
+        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+        <h2>📦 मेरे प्रीसेट</h2>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+          ${presets.map(p => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
+              <div>
+                <strong>${p.name}</strong> – ${p.category}
+                <span style="font-size:0.8rem;color:#888;">(${p.status})</span>
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')">देखें</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  } catch (err) {
+    console.error(err);
+    showToast('प्रीसेट लोड नहीं हुए', 'error');
+  }
+};
+
+// ============================================================
+// ===== MY DOWNLOADS =====
+// ============================================================
+
+window.showMyDownloads = async function() {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/users/me/downloads`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to load downloads');
+    const presets = await res.json();
+    if (!presets.length) {
+      showToast('आपने अभी तक कोई प्रीसेट डाउनलोड नहीं किया।', 'info');
+      return;
+    }
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:600px;">
+        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+        <h2>⬇️ मेरे डाउनलोड</h2>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+          ${presets.map(p => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
+              <div>
+                <strong>${p.name}</strong> – ${p.author}
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')">देखें</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  } catch (err) {
+    console.error(err);
+    showToast('डाउनलोड लोड नहीं हुए', 'error');
+  }
+};
+
+// ============================================================
 // ===== AUTH MODAL =====
+// ============================================================
+
 function openAuthModal(mode) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
@@ -342,7 +459,10 @@ function updateWishlistUI() {
   wishlistBtn.innerHTML = `<i class="fa${count > 0 ? 's' : 'r'} fa-heart"></i>${count > 0 ? count : ''}`;
 }
 
+// ============================================================
 // ===== WISHLIST MODAL =====
+// ============================================================
+
 async function showWishlist() {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
@@ -400,7 +520,6 @@ function renderPresetsToContainer(presets, container) {
       `<span class="price free">मुफ्त</span>` :
       `<span class="price">₹${p.price}</span>`;
     const stars = '★'.repeat(Math.floor(p.avgRating || 0)) + (p.avgRating % 1 >= 0.5 ? '½' : '');
-    // ✅ Fix: Preview image with onerror fallback
     const previewImg = p.previewImage ? 
       `<img src="${p.previewImage}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'">` :
       `<svg viewBox="0 0 270 200" style="background:#d9d0c4;width:100%;height:100%;">
@@ -435,7 +554,10 @@ function renderPresetsToContainer(presets, container) {
   }).join('');
 }
 
+// ============================================================
 // ===== EVENT DELEGATION FOR PRESET GRID =====
+// ============================================================
+
 presetGrid.addEventListener('click', function(e) {
   const card = e.target.closest('.preset-card');
   if (!card) return;
@@ -461,7 +583,10 @@ loadMoreBtn.addEventListener('click', () => {
   loadPresets(currentPage + 1, true);
 });
 
-// ===== LOAD PRESETS (with offline cache fallback) =====
+// ============================================================
+// ===== LOAD PRESETS =====
+// ============================================================
+
 async function loadPresets(page = 1, append = false) {
   try {
     const params = new URLSearchParams();
@@ -540,7 +665,10 @@ async function loadPresets(page = 1, append = false) {
   }
 }
 
+// ============================================================
 // ===== LOAD LATEST PRESETS =====
+// ============================================================
+
 async function loadLatestPresets() {
   try {
     const res = await fetch(`${API_URL}/presets?sort=newest&limit=6`);
@@ -622,7 +750,6 @@ async function openPresetModal(presetId) {
     const isLiked = wishlist.includes(preset.id);
     const isFree = preset.price === 0;
 
-    // ✅ Reviews Sorting: helpful ↓, then recent ↓; show top 5
     const reviews = preset.reviews || [];
     const sortedReviews = [...reviews].sort((a, b) => (b.helpful || 0) - (a.helpful || 0) || new Date(b.createdAt) - new Date(a.createdAt));
     const topReviews = sortedReviews.slice(0, 5);
@@ -1155,7 +1282,10 @@ window.openProfile = async function(userId) {
   }
 };
 
+// ============================================================
 // ===== FOLLOW / UNFOLLOW =====
+// ============================================================
+
 async function toggleFollow(userId) {
   const url = `${API_URL}/users/${userId}/follow`;
   const options = {
@@ -1300,10 +1430,6 @@ window.openEditProfile = async function() {
   }
 };
 
-userAvatar.addEventListener('click', () => {
-  if (currentUser) openEditProfile();
-});
-
 // ============================================================
 // ===== EXPLORE BUTTON =====
 // ============================================================
@@ -1366,4 +1492,4 @@ if ('serviceWorker' in navigator) {
     .catch(err => console.error('❌ SW failed', err));
 }
 
-console.log('🚀 PresetHub frontend loaded with offline support');
+console.log('🚀 PresetHub frontend loaded with offline support and user dropdown menu');
