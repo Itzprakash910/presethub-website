@@ -14,8 +14,8 @@ if (!BOT_TOKEN) {
 }
 
 const bot = new Telegraf(BOT_TOKEN);
-const API_BASE = process.env.API_BASE || 'https://presethub-website.onrender.com/api';
-
+// backend/bot.js – लाइन ~13
+const API_BASE = process.env.API_BASE || 'https://presethub.site/api';
 // ==================== HELPERS ====================
 
 // In-memory login state: chatId -> { step: 'email', email: null }

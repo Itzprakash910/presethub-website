@@ -29,8 +29,8 @@ const PORT = process.env.PORT || 4000;
 // Security middleware
 app.use(helmet());
 
-// CORS – ✅ Render URL को अनुमति दें
-const allowedOrigin = process.env.CLIENT_URL || 'https://preset-hub.onrender.com';
+// CORS – ✅ Allow CLIENT_URL (presethub.site)
+const allowedOrigin = process.env.CLIENT_URL || 'https://presethub.site';
 app.use(cors({
   origin: allowedOrigin,
   credentials: true,
