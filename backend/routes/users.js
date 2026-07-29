@@ -15,6 +15,9 @@ async function createNotification(userId, type, message, link) {
   const user = db.data.users.find(u => u.id === userId);
   if (!user) return;
   if (!user.notifications) user.notifications = [];
+  // Avoid duplicates (optional)
+  const exists = user.notifications.some(n => n.message === message && n.type === type && !n.read);
+  if (exists) return;
   user.notifications.push({
     id: uuidv4(),
     type,
@@ -50,7 +53,21 @@ const uploadAvatar = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 }).single('avatar');
 
-// ===== EXISTING ROUTES (me, update, top, etc.) =====
+// ===== GET /users (public - for follower counts) =====
+router.get('/', async (req, res) => {
+  const db = await getDB();
+  const users = db.data.users.map(({ password, ...rest }) => ({
+    id: rest.id,
+    name: rest.name,
+    username: rest.username,
+    avatar: rest.avatar,
+    followers: rest.followers?.length || 0,
+    presetCount: db.data.presets.filter(p => p.authorId === rest.id).length
+  }));
+  res.json(users);
+});
+
+// ===== GET own profile =====
 router.get('/me', auth, async (req, res) => {
   const db = await getDB();
   const user = db.data.users.find(u => u.id === req.user.id);
@@ -59,6 +76,7 @@ router.get('/me', auth, async (req, res) => {
   res.json(safeUser);
 });
 
+// ===== UPDATE profile =====
 router.put('/me', auth, async (req, res) => {
   const { name, username, bio, avatar, socialLinks, email } = req.body;
   const db = await getDB();
@@ -83,6 +101,7 @@ router.put('/me', auth, async (req, res) => {
   res.json(safeUser);
 });
 
+// ===== UPLOAD avatar =====
 router.put('/me/avatar', auth, (req, res) => {
   uploadAvatar(req, res, async function (err) {
     if (err) return res.status(400).json({ error: err.message });
@@ -100,6 +119,7 @@ router.put('/me/avatar', auth, (req, res) => {
   });
 });
 
+// ===== GET top creators =====
 router.get('/top', async (req, res) => {
   const db = await getDB();
   const users = db.data.users;
@@ -121,6 +141,7 @@ router.get('/top', async (req, res) => {
   res.json(top);
 });
 
+// ===== GET public profile =====
 router.get('/:id', async (req, res) => {
   const db = await getDB();
   const user = db.data.users.find(u => u.id === req.params.id);
@@ -137,12 +158,14 @@ router.get('/:id', async (req, res) => {
   });
 });
 
+// ===== GET presets by user =====
 router.get('/:id/presets', async (req, res) => {
   const db = await getDB();
   const presets = db.data.presets.filter(p => p.authorId === req.params.id);
   res.json(presets);
 });
 
+// ===== FOLLOW / UNFOLLOW =====
 router.post('/:id/follow', auth, async (req, res) => {
   const db = await getDB();
   const target = db.data.users.find(u => u.id === req.params.id);
@@ -167,6 +190,7 @@ router.post('/:id/follow', auth, async (req, res) => {
   }
 });
 
+// ===== GET downloads history =====
 router.get('/me/downloads', auth, async (req, res) => {
   const db = await getDB();
   const downloads = db.data.downloads.filter(d => d.userId === req.user.id);
@@ -175,6 +199,7 @@ router.get('/me/downloads', auth, async (req, res) => {
   res.json(presets);
 });
 
+// ===== TOGGLE wishlist =====
 router.post('/me/wishlist/:presetId', auth, async (req, res) => {
   const db = await getDB();
   const user = db.data.users.find(u => u.id === req.user.id);
@@ -187,7 +212,7 @@ router.post('/me/wishlist/:presetId', auth, async (req, res) => {
   res.json({ wishlist: user.wishlist });
 });
 
-// ===== SUBSCRIPTION & REFERRAL =====
+// ===== SUBSCRIPTION =====
 router.get('/me/subscription', auth, async (req, res) => {
   const db = await getDB();
   const user = db.data.users.find(u => u.id === req.user.id);
@@ -207,6 +232,7 @@ router.get('/me/subscription', auth, async (req, res) => {
   });
 });
 
+// ===== AD WATCHED =====
 router.post('/ads/watched', auth, async (req, res) => {
   const db = await getDB();
   const user = db.data.users.find(u => u.id === req.user.id);
@@ -231,6 +257,7 @@ router.post('/ads/watched', auth, async (req, res) => {
   res.json({ adWatchCount: sub.adWatchCount, expiry: sub.expiry, daysEarned: sub.adRewardDays || 0 });
 });
 
+// ===== GENERATE REFERRAL =====
 router.post('/referrals/generate', auth, async (req, res) => {
   const db = await getDB();
   const user = db.data.users.find(u => u.id === req.user.id);

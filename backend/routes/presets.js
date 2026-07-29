@@ -10,7 +10,7 @@ const { createNotification } = require('./users');
 
 const router = express.Router();
 
-// GET all presets (with filters)
+// ===== GET all presets (with filters) =====
 router.get('/', async (req, res) => {
   const db = await getDB();
   let presets = db.data.presets || [];
@@ -41,6 +41,7 @@ router.get('/', async (req, res) => {
   res.json({ presets: paginated, total: presets.length, page: parseInt(page), totalPages: Math.ceil(presets.length / parseInt(limit)), limit: parseInt(limit) });
 });
 
+// ===== GET single preset =====
 router.get('/:id', async (req, res) => {
   const db = await getDB();
   const preset = db.data.presets.find(p => p.id === req.params.id);
@@ -48,6 +49,7 @@ router.get('/:id', async (req, res) => {
   res.json(preset);
 });
 
+// ===== SMART SEARCH =====
 router.get('/search', async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 2) return res.json([]);
@@ -70,7 +72,7 @@ router.get('/search', async (req, res) => {
   res.json(results);
 });
 
-// Upload preset – status 'approved' instantly
+// ===== UPLOAD preset =====
 router.post('/', auth, uploadFields, validate(presetValidation), async (req, res) => {
   const { name, description, category, tags, price } = req.body;
   const userId = req.user.id;
@@ -79,6 +81,12 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
   if (!user) return res.status(404).json({ error: 'User not found' });
   const file = req.files?.file?.[0];
   const preview = req.files?.previewImage?.[0];
+  
+  const uploadsDir = path.join(__dirname, '../../uploads');
+  const previewsDir = path.join(uploadsDir, 'previews');
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  if (!fs.existsSync(previewsDir)) fs.mkdirSync(previewsDir, { recursive: true });
+
   const newPreset = {
     id: uuidv4(),
     name,
@@ -109,18 +117,31 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
   res.status(201).json(newPreset);
 });
 
-// Download – no payment check
+// ===== DOWNLOAD preset (with payment check) =====
 router.post('/:id/download', auth, async (req, res) => {
   const db = await getDB();
   const preset = db.data.presets.find(p => p.id === req.params.id);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
+
+  // ✅ FIX: Check if paid preset requires purchase
+  if (preset.price > 0 && preset.authorId !== req.user.id) {
+    const paidOrder = (db.data.orders || []).find(
+      o => o.presetId === preset.id && o.userId === req.user.id && o.status === 'paid'
+    );
+    if (!paidOrder) {
+      return res.status(403).json({ error: 'Please purchase this preset first' });
+    }
+  }
+
   preset.downloads = (preset.downloads || 0) + 1;
   if (!db.data.downloads) db.data.downloads = [];
   db.data.downloads.push({ id: uuidv4(), userId: req.user.id, presetId: preset.id, downloadedAt: new Date().toISOString() });
   await db.write();
+
   if (preset.authorId !== req.user.id) {
     await createNotification(preset.authorId, 'download', `${req.user.name} downloaded your preset "${preset.name}"`, `/preset/${preset.id}`);
   }
+
   const projectRoot = path.join(__dirname, '../..');
   let filePath = null;
   if (preset.fileUrl) {
@@ -140,6 +161,7 @@ router.post('/:id/download', auth, async (req, res) => {
   return res.status(404).json({ error: 'Preset file missing. Contact support.' });
 });
 
+// ===== DELETE preset =====
 router.delete('/:id', auth, async (req, res) => {
   const db = await getDB();
   const index = db.data.presets.findIndex(p => p.id === req.params.id);
@@ -161,6 +183,7 @@ router.delete('/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
+// ===== UPDATE preset =====
 router.put('/:id', auth, async (req, res) => {
   const { name, description, category, tags, price } = req.body;
   const db = await getDB();
@@ -179,6 +202,7 @@ router.put('/:id', auth, async (req, res) => {
   res.json(preset);
 });
 
+// ===== FEATURED download =====
 router.post('/featured/download', auth, (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="featured-pack.zip"');
   res.setHeader('Content-Type', 'application/zip');

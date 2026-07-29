@@ -21,7 +21,6 @@ router.get('/users', async (req, res) => {
   res.json(users);
 });
 
-// Get user by ID
 router.get('/users/:id', async (req, res) => {
   const db = await getDB();
   const user = db.data.users.find(u => u.id === req.params.id);
@@ -30,7 +29,6 @@ router.get('/users/:id', async (req, res) => {
   res.json(safeUser);
 });
 
-// Update user role
 router.put('/users/:id/role', async (req, res) => {
   const { role } = req.body;
   if (!['user', 'admin'].includes(role)) {
@@ -45,7 +43,6 @@ router.put('/users/:id/role', async (req, res) => {
   res.json(safeUser);
 });
 
-// Delete user
 router.delete('/users/:id', async (req, res) => {
   const db = await getDB();
   const index = db.data.users.findIndex(u => u.id === req.params.id);
@@ -58,7 +55,6 @@ router.delete('/users/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-// Verify user toggle
 router.put('/users/:id/verify', async (req, res) => {
   const { verified } = req.body;
   const db = await getDB();
@@ -69,26 +65,19 @@ router.put('/users/:id/verify', async (req, res) => {
   res.json({ success: true, verified });
 });
 
-// Update user (full) – with uniqueness checks
 router.put('/users/:id', async (req, res) => {
   const { name, username, email, bio, role, verified } = req.body;
   const db = await getDB();
   const user = db.data.users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  // Check username uniqueness (if changed)
   if (username && username !== user.username) {
     const existing = db.data.users.find(u => u.username === username && u.id !== req.params.id);
-    if (existing) {
-      return res.status(409).json({ error: 'Username already taken' });
-    }
+    if (existing) return res.status(409).json({ error: 'Username already taken' });
   }
-  // Check email uniqueness (if changed)
   if (email && email !== user.email) {
     const existing = db.data.users.find(u => u.email === email && u.id !== req.params.id);
-    if (existing) {
-      return res.status(409).json({ error: 'Email already taken' });
-    }
+    if (existing) return res.status(409).json({ error: 'Email already taken' });
   }
 
   if (name) user.name = name;
@@ -101,7 +90,6 @@ router.put('/users/:id', async (req, res) => {
   res.json(user);
 });
 
-// Change order status
 router.put('/orders/:id/status', async (req, res) => {
   const { status } = req.body;
   if (!['refunded', 'cancelled', 'paid', 'created'].includes(status)) {
@@ -115,7 +103,6 @@ router.put('/orders/:id/status', async (req, res) => {
   res.json(order);
 });
 
-// Approve/reject preset
 router.put('/presets/:id/status', async (req, res) => {
   const { status } = req.body;
   if (!['approved', 'rejected', 'pending'].includes(status)) {
@@ -129,13 +116,12 @@ router.put('/presets/:id/status', async (req, res) => {
   res.json(preset);
 });
 
-// Get all presets (admin view)
 router.get('/presets', async (req, res) => {
   const db = await getDB();
   res.json(db.data.presets);
 });
 
-// ===== ANALYTICS with extra stats =====
+// ===== ANALYTICS with fixed avgRating =====
 router.get('/analytics', async (req, res) => {
   const db = await getDB();
   const totalUsers = db.data.users.length;
@@ -146,9 +132,13 @@ router.get('/analytics', async (req, res) => {
     .reduce((sum, o) => sum + (o.amount || 0), 0);
   const freePresets = db.data.presets.filter(p => p.price === 0).length;
   const paidPresets = db.data.presets.filter(p => p.price > 0).length;
-  const avgRating = db.data.presets.reduce((sum, p) => sum + (p.avgRating || 0), 0) / (db.data.presets.length || 1);
+  
+  // ✅ FIX: avgRating only from presets with rating > 0
+  const ratedPresets = db.data.presets.filter(p => p.avgRating > 0);
+  const avgRating = ratedPresets.length 
+    ? ratedPresets.reduce((sum, p) => sum + p.avgRating, 0) / ratedPresets.length
+    : 0;
 
-  // === NEW STATS ===
   const totalSubscribed = db.data.users.filter(u => {
     const expiry = u.subscription?.expiry ? new Date(u.subscription.expiry) : null;
     return expiry && expiry > new Date();
@@ -158,7 +148,6 @@ router.get('/analytics', async (req, res) => {
   const totalPlatformRevenue = db.data.presets.reduce((sum, p) => sum + (p.totalRevenue || 0), 0);
   const totalAdImpressions = db.data.presets.reduce((sum, p) => sum + (p.adImpressions || 0), 0);
 
-  // Top creators by revenue
   const creatorEarnings = {};
   db.data.presets.forEach(p => {
     if (!creatorEarnings[p.authorId]) {
@@ -188,7 +177,6 @@ router.get('/analytics', async (req, res) => {
   });
 });
 
-// Get all orders (populated)
 router.get('/orders', async (req, res) => {
   const db = await getDB();
   const orders = db.data.orders || [];
@@ -204,7 +192,6 @@ router.get('/orders', async (req, res) => {
   res.json(populatedOrders);
 });
 
-// System stats
 router.get('/stats', async (req, res) => {
   const db = await getDB();
   const now = new Date();
