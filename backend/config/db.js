@@ -9,7 +9,6 @@ let dbPromise = null;
 function migrateData(data) {
   let changed = false;
 
-  // Users: subscription, referral, notifications
   data.users.forEach(user => {
     if (!user.subscription) {
       user.subscription = { tier: 'free', expiry: null, adWatchCount: 0, adRewardDays: 0, lastAdWatch: null };
@@ -25,7 +24,6 @@ function migrateData(data) {
     }
   });
 
-  // Presets: views, likes, shares, adImpressions, totalRevenue
   data.presets.forEach(preset => {
     if (preset.views === undefined) { preset.views = 0; changed = true; }
     if (!preset.likes) { preset.likes = []; changed = true; }
@@ -42,7 +40,6 @@ function migrateData(data) {
 
 function loadData() {
   if (!fs.existsSync(DB_PATH)) {
-    // Create fresh db with all fields
     dbData = {
       users: [],
       presets: [],
@@ -54,7 +51,6 @@ function loadData() {
   } else {
     const content = fs.readFileSync(DB_PATH, 'utf8');
     dbData = JSON.parse(content);
-    // Run migration to add missing fields
     migrateData(dbData);
   }
 }
