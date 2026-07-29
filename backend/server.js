@@ -29,9 +29,10 @@ const PORT = process.env.PORT || 4000;
 // Security middleware
 app.use(helmet());
 
-// CORS
+// CORS – ✅ Render URL को अनुमति दें
+const allowedOrigin = process.env.CLIENT_URL || 'https://preset-hub.onrender.com';
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:4000',
+  origin: allowedOrigin,
   credentials: true,
 }));
 
@@ -50,10 +51,10 @@ app.use('/api/', limiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Serve frontend static files (now correct path)
+// ✅ Serve frontend static files
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Serve uploaded preset files (uploads is inside backend)
+// Serve uploaded preset files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // API routes
@@ -73,52 +74,33 @@ app.get('/admin', (req, res) => {
 // ✅ STATIC PAGES (Legal, Info, Help, etc.)
 // ============================================================
 
-// Terms of Use
 app.get('/terms.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/terms.html'));
 });
-
-// Privacy Policy
 app.get('/privacy.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/privacy.html'));
 });
-
-// About Us
 app.get('/about.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/about.html'));
 });
-
-// Blog
 app.get('/blog.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/blog.html'));
 });
-
-// Creator Program
 app.get('/creator-program.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/creator-program.html'));
 });
-
-// FAQ
 app.get('/faq.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/faq.html'));
 });
-
-// Contact
 app.get('/contact.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/contact.html'));
 });
-
-// Download Guide
 app.get('/download-guide.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/download-guide.html'));
 });
-
-// Lightroom Guide
 app.get('/lightroom-guide.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/lightroom-guide.html'));
 });
-
-// Common CSS for all static pages (terms.css)
 app.get('/terms.css', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/terms.css'));
 });
@@ -135,16 +117,16 @@ app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`🚀 PresetHub server running on port ${PORT}`);
-  console.log(`📱 Frontend: http://localhost:${PORT}`);
-  console.log(`🔧 Admin: http://localhost:${PORT}/admin`);
-  console.log(`📄 Terms: http://localhost:${PORT}/terms.html`);
-  console.log(`🔒 Privacy: http://localhost:${PORT}/privacy.html`);
-  console.log(`ℹ️  About: http://localhost:${PORT}/about.html`);
-  console.log(`📝 Blog: http://localhost:${PORT}/blog.html`);
-  console.log(`🚀 Creator Program: http://localhost:${PORT}/creator-program.html`);
-  console.log(`❓ FAQ: http://localhost:${PORT}/faq.html`);
-  console.log(`📧 Contact: http://localhost:${PORT}/contact.html`);
-  console.log(`⬇️  Download Guide: http://localhost:${PORT}/download-guide.html`);
-  console.log(`📷 Lightroom Guide: http://localhost:${PORT}/lightroom-guide.html`);
+  console.log(`📱 Frontend: ${allowedOrigin}`);
+  console.log(`🔧 Admin: ${allowedOrigin}/admin`);
+  console.log(`📄 Terms: ${allowedOrigin}/terms.html`);
+  console.log(`🔒 Privacy: ${allowedOrigin}/privacy.html`);
+  console.log(`ℹ️  About: ${allowedOrigin}/about.html`);
+  console.log(`📝 Blog: ${allowedOrigin}/blog.html`);
+  console.log(`🚀 Creator Program: ${allowedOrigin}/creator-program.html`);
+  console.log(`❓ FAQ: ${allowedOrigin}/faq.html`);
+  console.log(`📧 Contact: ${allowedOrigin}/contact.html`);
+  console.log(`⬇️  Download Guide: ${allowedOrigin}/download-guide.html`);
+  console.log(`📷 Lightroom Guide: ${allowedOrigin}/lightroom-guide.html`);
   console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
 });

@@ -14,7 +14,7 @@ if (!BOT_TOKEN) {
 }
 
 const bot = new Telegraf(BOT_TOKEN);
-const API_BASE = process.env.API_BASE || 'http://localhost:4000/api';
+const API_BASE = process.env.API_BASE || 'https://presethub-website.onrender.com/api';
 
 // ==================== HELPERS ====================
 
