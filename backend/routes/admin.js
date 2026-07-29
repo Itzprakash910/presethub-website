@@ -135,7 +135,7 @@ router.get('/presets', async (req, res) => {
   res.json(db.data.presets);
 });
 
-// Platform analytics – revenue now only paid orders
+// ===== ANALYTICS with extra stats =====
 router.get('/analytics', async (req, res) => {
   const db = await getDB();
   const totalUsers = db.data.users.length;
@@ -144,19 +144,47 @@ router.get('/analytics', async (req, res) => {
   const totalRevenue = (db.data.orders || [])
     .filter(o => o.status === 'paid')
     .reduce((sum, o) => sum + (o.amount || 0), 0);
-  
   const freePresets = db.data.presets.filter(p => p.price === 0).length;
   const paidPresets = db.data.presets.filter(p => p.price > 0).length;
   const avgRating = db.data.presets.reduce((sum, p) => sum + (p.avgRating || 0), 0) / (db.data.presets.length || 1);
-  
-  res.json({ 
-    totalUsers, 
-    totalPresets, 
-    totalDownloads, 
+
+  // === NEW STATS ===
+  const totalSubscribed = db.data.users.filter(u => {
+    const expiry = u.subscription?.expiry ? new Date(u.subscription.expiry) : null;
+    return expiry && expiry > new Date();
+  }).length;
+  const totalReferrals = db.data.users.reduce((sum, u) => sum + (u.referral?.referralCount || 0), 0);
+  const totalAdWatches = db.data.users.reduce((sum, u) => sum + (u.subscription?.adWatchCount || 0), 0);
+  const totalPlatformRevenue = db.data.presets.reduce((sum, p) => sum + (p.totalRevenue || 0), 0);
+  const totalAdImpressions = db.data.presets.reduce((sum, p) => sum + (p.adImpressions || 0), 0);
+
+  // Top creators by revenue
+  const creatorEarnings = {};
+  db.data.presets.forEach(p => {
+    if (!creatorEarnings[p.authorId]) {
+      creatorEarnings[p.authorId] = { name: p.author, revenue: 0, presets: 0 };
+    }
+    creatorEarnings[p.authorId].revenue += p.totalRevenue || 0;
+    creatorEarnings[p.authorId].presets += 1;
+  });
+  const topCreators = Object.values(creatorEarnings)
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
+
+  res.json({
+    totalUsers,
+    totalPresets,
+    totalDownloads,
     totalRevenue,
     freePresets,
     paidPresets,
-    avgRating: avgRating.toFixed(1)
+    avgRating: avgRating.toFixed(1),
+    totalSubscribed,
+    totalReferrals,
+    totalAdWatches,
+    totalPlatformRevenue,
+    totalAdImpressions,
+    topCreators
   });
 });
 

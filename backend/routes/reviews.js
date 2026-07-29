@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const { getDB } = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 const { body, validationResult } = require('express-validator');
+const { createNotification } = require('./users'); // ✅ added import
 
 const router = express.Router();
 
@@ -55,6 +56,12 @@ router.post('/:presetId', auth, [
   const total = preset.reviews.reduce((sum, r) => sum + r.rating, 0);
   preset.avgRating = total / preset.reviews.length;
   await db.write();
+
+  // ✅ Send notification to author
+  if (preset.authorId !== userId) {
+    await createNotification(preset.authorId, 'review', `${user.name} reviewed your preset "${preset.name}" (${rating}★)`, `/preset/${preset.id}`);
+  }
+
   res.status(201).json(review);
 });
 
