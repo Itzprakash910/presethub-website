@@ -3,6 +3,9 @@ require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const { getDB } = require('./config/db');
 const axios = require('axios');
+const FormData = require('form-data');
+const path = require('path');
+const fs = require('fs');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
@@ -15,15 +18,18 @@ const API_BASE = process.env.API_BASE || 'http://localhost:4000/api';
 
 // ==================== HELPERS ====================
 
-// In-memory login state (chatId -> { step, email })
+// In-memory login state: chatId -> { step: 'email', email: null }
 const loginStates = new Map();
+
+// In-memory upload state: chatId -> { step, data: { name, description, category, tags, price, file, preview } }
+const uploadStates = new Map();
 
 async function getUserByTelegramId(telegramId) {
   const db = await getDB();
   return db.data.users.find(u => u.telegramId === String(telegramId));
 }
 
-// Save or update Telegram user details (temporary or linked)
+// Save or update Telegram user (temporary account)
 async function saveTelegramUser(ctx) {
   const db = await getDB();
   const from = ctx.from;
@@ -73,7 +79,7 @@ async function saveTelegramUser(ctx) {
   return user;
 }
 
-// Link temporary telegram user to actual registered user
+// Link temporary Telegram user to actual registered user
 async function linkTelegramId(userId, telegramId, token, ctx) {
   const db = await getDB();
   const from = ctx.from;
@@ -85,11 +91,9 @@ async function linkTelegramId(userId, telegramId, token, ctx) {
     if (tempIndex > -1) db.data.users.splice(tempIndex, 1);
   }
 
-  // Find actual user
   const user = db.data.users.find(u => u.id === userId);
   if (!user) throw new Error('User not found');
 
-  // Update with telegram data
   user.telegramId = String(telegramId);
   user.token = token;
   user.telegram = {
@@ -130,6 +134,7 @@ const mainMenu = Markup.keyboard([
   ['🔍 खोजें', '📂 श्रेणियाँ'],
   ['🔥 लोकप्रिय', '🆕 नए'],
   ['👤 मेरा अकाउंट', '🛒 मेरे ऑर्डर'],
+  ['📤 अपलोड करें', '📋 मेरे प्रीसेट'],
   ['📊 एडमिन पैनल']
 ]).resize();
 
@@ -142,7 +147,7 @@ bot.start(async (ctx) => {
 🎨 *PresetHub Bot – Lightroom Presets*
 
 नमस्ते ${ctx.from.first_name}! 👋
-मैं आपको हजारों प्रीसेट्स खोजने, डाउनलोड करने और प्रबंधित करने में मदद करूँगा।
+मैं आपको हजारों प्रीसेट्स खोजने, डाउनलोड करने, अपलोड करने और प्रबंधित करने में मदद करूँगा।
 
 🔹 *कमांड्स:*
 /search <क्वेरी> – प्रीसेट खोजें
@@ -156,38 +161,17 @@ bot.start(async (ctx) => {
 /login – अकाउंट लिंक करें
 /logout – अकाउंट अनलिंक करें
 /myorders – मेरे ऑर्डर
-/admin – एडमिन पैनल
+/admin – एडमिन पैनल (केवल एडमिन)
+/upload – प्रीसेट अपलोड करें
+/mypresets – मेरे द्वारा अपलोड किए गए प्रीसेट
+/deletepreset <आईडी> – अपना प्रीसेट डिलीट करें
 
 📌 *नीचे दिए बटन भी इस्तेमाल करें*
   `;
   await ctx.replyWithMarkdown(welcome, mainMenu);
 });
 
-// ==================== LOGIN (MANUAL STATE WITH MAP) ====================
-
-bot.command('login', async (ctx) => {
-  await ctx.sendChatAction('typing');
-  
-  if (ctx.dbUser && ctx.dbUser.token) {
-    return ctx.reply('✅ आप पहले से लिंक हैं।', mainMenu);
-  }
-
-  loginStates.set(ctx.chat.id, { step: 'email', email: null });
-  await ctx.reply('📧 कृपया अपना ईमेल दर्ज करें (रद्द करने के लिए /cancel):');
-});
-
-// Logout
-bot.command('logout', async (ctx) => {
-  await ctx.sendChatAction('typing');
-  if (!ctx.dbUser || !ctx.dbUser.telegramId) {
-    return ctx.reply('आप लॉगिन नहीं हैं।', mainMenu);
-  }
-  await unlinkTelegramId(ctx.from.id);
-  ctx.dbUser = null;
-  ctx.reply('✅ आप लॉगआउट हो गए।', mainMenu);
-});
-
-// Search
+// ===== SEARCH =====
 bot.command('search', async (ctx) => {
   await ctx.sendChatAction('typing');
   const query = ctx.message.text.split(' ').slice(1).join(' ');
@@ -208,11 +192,11 @@ bot.command('search', async (ctx) => {
     await ctx.replyWithMarkdown(msg);
   } catch (err) {
     console.error(err);
-    ctx.reply('❌ खोज में त्रुटि। कृपया बाद में प्रयास करें।');
+    ctx.reply('❌ खोज में त्रुटि।');
   }
 });
 
-// Categories
+// ===== CATEGORIES =====
 bot.command('categories', async (ctx) => {
   await ctx.sendChatAction('typing');
   try {
@@ -227,7 +211,7 @@ bot.command('categories', async (ctx) => {
   }
 });
 
-// Category
+// ===== CATEGORY =====
 bot.command('category', async (ctx) => {
   await ctx.sendChatAction('typing');
   const cat = ctx.message.text.split(' ').slice(1).join(' ');
@@ -250,12 +234,13 @@ bot.command('category', async (ctx) => {
   }
 });
 
-// Popular
+// ===== POPULAR =====
 bot.command('popular', async (ctx) => {
   await ctx.sendChatAction('typing');
   try {
     const res = await axios.get(`${API_BASE}/presets?sort=popular&limit=10`);
     const presets = res.data.presets || [];
+    if (!presets.length) return ctx.reply('कोई लोकप्रिय प्रीसेट नहीं।');
     let msg = '🔥 *लोकप्रिय प्रीसेट:*\n\n';
     presets.forEach(p => {
       msg += `• *${p.name}* – ${p.author} (${p.category})\n   ⭐ ${p.avgRating||0} | डाउनलोड: ${p.downloads||0}\n   \`${p.id}\`\n`;
@@ -267,12 +252,13 @@ bot.command('popular', async (ctx) => {
   }
 });
 
-// Recent
+// ===== RECENT =====
 bot.command('recent', async (ctx) => {
   await ctx.sendChatAction('typing');
   try {
     const res = await axios.get(`${API_BASE}/presets?sort=newest&limit=10`);
     const presets = res.data.presets || [];
+    if (!presets.length) return ctx.reply('कोई नए प्रीसेट नहीं।');
     let msg = '🆕 *नए प्रीसेट:*\n\n';
     presets.forEach(p => {
       msg += `• *${p.name}* – ${p.author} (${p.category})\n   ⭐ ${p.avgRating||0} | डाउनलोड: ${p.downloads||0}\n   \`${p.id}\`\n`;
@@ -284,7 +270,7 @@ bot.command('recent', async (ctx) => {
   }
 });
 
-// Top creators
+// ===== TOP CREATORS =====
 bot.command('top', async (ctx) => {
   await ctx.sendChatAction('typing');
   try {
@@ -301,7 +287,7 @@ bot.command('top', async (ctx) => {
   }
 });
 
-// Preset details
+// ===== PRESET DETAILS =====
 bot.command('preset', async (ctx) => {
   await ctx.sendChatAction('typing');
   const id = ctx.message.text.split(' ')[1];
@@ -326,7 +312,7 @@ bot.command('preset', async (ctx) => {
   }
 });
 
-// Download command
+// ===== DOWNLOAD COMMAND =====
 bot.command('download', async (ctx) => {
   await ctx.sendChatAction('typing');
   const id = ctx.message.text.split(' ')[1];
@@ -334,7 +320,28 @@ bot.command('download', async (ctx) => {
   await handleDownload(ctx, id);
 });
 
-// My orders
+// ===== LOGIN (STATE) =====
+bot.command('login', async (ctx) => {
+  await ctx.sendChatAction('typing');
+  if (ctx.dbUser && ctx.dbUser.token) {
+    return ctx.reply('✅ आप पहले से लिंक हैं।', mainMenu);
+  }
+  loginStates.set(ctx.chat.id, { step: 'email', email: null });
+  await ctx.reply('📧 कृपया अपना ईमेल दर्ज करें (रद्द करने के लिए /cancel):');
+});
+
+// ===== LOGOUT =====
+bot.command('logout', async (ctx) => {
+  await ctx.sendChatAction('typing');
+  if (!ctx.dbUser || !ctx.dbUser.telegramId) {
+    return ctx.reply('आप लॉगिन नहीं हैं।', mainMenu);
+  }
+  await unlinkTelegramId(ctx.from.id);
+  ctx.dbUser = null;
+  ctx.reply('✅ आप लॉगआउट हो गए।', mainMenu);
+});
+
+// ===== MY ORDERS =====
 bot.command('myorders', async (ctx) => {
   await ctx.sendChatAction('typing');
   if (!ctx.dbUser || !ctx.dbUser.token) {
@@ -353,21 +360,19 @@ bot.command('myorders', async (ctx) => {
     await ctx.replyWithMarkdown(msg);
   } catch (err) {
     console.error(err);
-    ctx.reply('❌ ऑर्डर लोड नहीं हुए। कृपया बाद में प्रयास करें।');
+    ctx.reply('❌ ऑर्डर लोड नहीं हुए।');
   }
 });
 
-// Admin
+// ===== ADMIN PANEL =====
 bot.command('admin', async (ctx) => {
   await ctx.sendChatAction('typing');
-  
   if (!ctx.dbUser || !ctx.dbUser.token) {
     return ctx.reply('⛔ कृपया पहले `/login` करें।', { parse_mode: 'Markdown' });
   }
   if (ctx.dbUser.role !== 'admin') {
     return ctx.reply('⛔ आप एडमिन नहीं हैं।');
   }
-
   try {
     const res = await axios.get(`${API_BASE}/admin/analytics`, {
       headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
@@ -386,7 +391,6 @@ bot.command('admin', async (ctx) => {
     msg += `/users – सभी उपयोगकर्ता\n`;
     msg += `/stats – विस्तृत आँकड़े\n`;
     msg += `/user <id> – किसी यूज़र की जानकारी`;
-
     await ctx.replyWithMarkdown(msg, Markup.inlineKeyboard([
       [Markup.button.callback('📊 लंबित प्रीसेट', 'admin_pending')],
       [Markup.button.callback('👥 सभी यूज़र', 'admin_users')],
@@ -394,12 +398,11 @@ bot.command('admin', async (ctx) => {
     ]));
   } catch (err) {
     console.error(err);
-    ctx.reply('❌ एडमिन डेटा नहीं मिला। कृपया बाद में प्रयास करें।');
+    ctx.reply('❌ एडमिन डेटा नहीं मिला।');
   }
 });
 
-// ==================== ADMIN COMMANDS ====================
-
+// ===== ADMIN: PENDING =====
 bot.command('pending', async (ctx) => {
   await ctx.sendChatAction('typing');
   if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
@@ -420,6 +423,7 @@ bot.command('pending', async (ctx) => {
   }
 });
 
+// ===== ADMIN: APPROVE =====
 bot.command('approve', async (ctx) => {
   await ctx.sendChatAction('typing');
   if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
@@ -435,6 +439,7 @@ bot.command('approve', async (ctx) => {
   }
 });
 
+// ===== ADMIN: REJECT =====
 bot.command('reject', async (ctx) => {
   await ctx.sendChatAction('typing');
   if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
@@ -450,23 +455,20 @@ bot.command('reject', async (ctx) => {
   }
 });
 
+// ===== ADMIN: STATS =====
 bot.command('stats', async (ctx) => {
   await ctx.sendChatAction('typing');
-  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') {
-    return ctx.reply('⛔ आप एडमिन नहीं हैं।');
-  }
+  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
   try {
     const db = await getDB();
     const users = db.data.users;
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
-
     const activeToday = users.filter(u => u.lastActive && new Date(u.lastActive) >= today).length;
     const onlineNow = users.filter(u => u.lastActive && new Date(u.lastActive) >= fiveMinAgo).length;
     const totalCommands = users.reduce((sum, u) => sum + (u.commandsCount || 0), 0);
     const linkedUsers = users.filter(u => u.telegramId && u.token).length;
-
     let msg = `📊 *बॉट आँकड़े*\n\n`;
     msg += `👥 कुल उपयोगकर्ता: ${users.length}\n`;
     msg += `🔗 लिंक किए गए: ${linkedUsers}\n`;
@@ -475,7 +477,6 @@ bot.command('stats', async (ctx) => {
     msg += `📝 कुल कमांड्स: ${totalCommands}\n`;
     msg += `📦 कुल प्रीसेट: ${db.data.presets.length}\n`;
     msg += `💰 राजस्व: ₹${(db.data.orders || []).filter(o => o.status === 'paid').reduce((s,o) => s + o.amount, 0)}`;
-
     await ctx.replyWithMarkdown(msg);
   } catch (err) {
     console.error(err);
@@ -483,6 +484,7 @@ bot.command('stats', async (ctx) => {
   }
 });
 
+// ===== ADMIN: USERS =====
 bot.command('users', async (ctx) => {
   await ctx.sendChatAction('typing');
   if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
@@ -506,11 +508,10 @@ bot.command('users', async (ctx) => {
   }
 });
 
+// ===== ADMIN: USER DETAIL =====
 bot.command('user', async (ctx) => {
   await ctx.sendChatAction('typing');
-  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') {
-    return ctx.reply('⛔ आप एडमिन नहीं हैं।');
-  }
+  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
   const tgId = ctx.message.text.split(' ')[1];
   if (!tgId) return ctx.reply('कृपया Telegram ID दें: `/user 123456789`');
   try {
@@ -543,90 +544,286 @@ bot.command('user', async (ctx) => {
   }
 });
 
-// ==================== ADMIN INLINE BUTTON HANDLERS ====================
+// ===== UPLOAD PRESET (CONVERSATION) =====
 
-bot.action('admin_pending', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.sendChatAction('typing');
-  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') {
-    return ctx.reply('⛔ आप एडमिन नहीं हैं।');
+bot.command('upload', async (ctx) => {
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('कृपया पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
+  uploadStates.set(ctx.chat.id, { step: 'name', data: {} });
+  await ctx.reply('📝 प्रीसेट का नाम दें (रद्द करने के लिए /cancel):');
+});
+
+bot.command('cancel', async (ctx) => {
+  const chatId = ctx.chat.id;
+  if (uploadStates.has(chatId)) {
+    uploadStates.delete(chatId);
+    await ctx.reply('❌ अपलोड रद्द किया।', mainMenu);
+  } else if (loginStates.has(chatId)) {
+    loginStates.delete(chatId);
+    await ctx.reply('❌ लॉगिन रद्द किया।', mainMenu);
+  } else {
+    await ctx.reply('कोई सक्रिय कार्य नहीं।');
+  }
+});
+
+// Text handler for login and upload steps
+bot.on('text', async (ctx, next) => {
+  const chatId = ctx.chat.id;
+  const text = ctx.message.text.trim();
+
+  // ---- LOGIN STATE ----
+  const loginState = loginStates.get(chatId);
+  if (loginState) {
+    if (text === '/cancel') {
+      loginStates.delete(chatId);
+      return ctx.reply('❌ लॉगिन रद्द किया।', mainMenu);
+    }
+    if (loginState.step === 'email') {
+      loginState.email = text;
+      loginState.step = 'password';
+      return ctx.reply('🔑 अब अपना पासवर्ड दर्ज करें:');
+    }
+    if (loginState.step === 'password') {
+      const email = loginState.email;
+      const password = text;
+      loginStates.delete(chatId);
+      await ctx.sendChatAction('typing');
+      try {
+        const res = await axios.post(`${API_BASE}/auth/login`, { email, password });
+        if (res.data.token) {
+          const user = res.data.user;
+          const updatedUser = await linkTelegramId(user.id, ctx.from.id, res.data.token, ctx);
+          ctx.dbUser = updatedUser;
+          await ctx.reply(
+            `✅ आपका अकाउंट लिंक हो गया! स्वागत है ${user.name} 🎉\n\nअब आप /download, /myorders, /admin, /upload आदि का उपयोग कर सकते हैं।`,
+            mainMenu
+          );
+        } else {
+          ctx.reply('❌ गलत ईमेल या पासवर्ड। /login फिर से करें।');
+        }
+      } catch (err) {
+        console.error('Login error:', err.response?.data || err.message);
+        let errorMsg = '❌ लॉगिन विफल।';
+        if (err.response && err.response.status === 401) {
+          errorMsg = '❌ गलत ईमेल या पासवर्ड। कृपया /login से पुनः प्रयास करें।';
+        } else if (err.response && err.response.status === 404) {
+          errorMsg = '❌ यह ईमेल पंजीकृत नहीं है। कृपया पहले साइन अप करें।';
+        } else {
+          errorMsg = '❌ सर्वर से कनेक्ट नहीं हो पाया। कृपया बाद में प्रयास करें।';
+        }
+        ctx.reply(errorMsg);
+      }
+      return;
+    }
+  }
+
+  // ---- UPLOAD STATE ----
+  const uploadState = uploadStates.get(chatId);
+  if (uploadState) {
+    if (text === '/cancel') {
+      uploadStates.delete(chatId);
+      return ctx.reply('❌ अपलोड रद्द किया।', mainMenu);
+    }
+
+    const data = uploadState.data;
+
+    switch (uploadState.step) {
+      case 'name':
+        data.name = text;
+        uploadState.step = 'description';
+        await ctx.reply('📝 विवरण (वैकल्पिक, /skip छोड़ें):');
+        break;
+      case 'description':
+        data.description = text === '/skip' ? '' : text;
+        uploadState.step = 'category';
+        const db = await getDB();
+        const cats = db.data.categories || [];
+        const catList = cats.map(c => `• ${c}`).join('\n');
+        await ctx.reply(`📂 श्रेणी चुनें (नाम लिखें):\n${catList}`);
+        break;
+      case 'category':
+        data.category = text;
+        uploadState.step = 'tags';
+        await ctx.reply('🏷️ टैग्स (कॉमा से अलग, वैकल्पिक, /skip छोड़ें):');
+        break;
+      case 'tags':
+        data.tags = text === '/skip' ? '' : text;
+        uploadState.step = 'price';
+        await ctx.reply('💰 कीमत (0 = मुफ्त, पूर्णांक में):');
+        break;
+      case 'price':
+        const price = parseInt(text);
+        if (isNaN(price) || price < 0) {
+          return ctx.reply('❌ कृपया एक वैध संख्या दें (0 या अधिक):');
+        }
+        data.price = price;
+        uploadState.step = 'file';
+        await ctx.reply('📎 अब प्रीसेट फ़ाइल भेजें (.xmp, .dng, .lrtemplate):');
+        break;
+      default:
+        ctx.reply('❌ अज्ञात स्टेप। /cancel करें।');
+    }
+    return;
+  }
+
+  // ---- Not in any state, handle keyboard buttons ----
+  const actions = {
+    '🔍 खोजें': () => ctx.reply('खोज शब्द टाइप करें: /search <क्वेरी>'),
+    '📂 श्रेणियाँ': () => ctx.reply('/categories'),
+    '🔥 लोकप्रिय': () => ctx.reply('/popular'),
+    '🆕 नए': () => ctx.reply('/recent'),
+    '👤 मेरा अकाउंट': () => showProfile(ctx),
+    '🛒 मेरे ऑर्डर': () => ctx.reply('/myorders'),
+    '📤 अपलोड करें': () => ctx.reply('/upload'),
+    '📋 मेरे प्रीसेट': () => ctx.reply('/mypresets'),
+    '📊 एडमिन पैनल': () => ctx.reply('/admin'),
+  };
+  if (actions[text]) {
+    await actions[text]();
+    return;
+  }
+
+  await next();
+});
+
+// ===== FILE HANDLING (document, photo) =====
+
+bot.on('document', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const state = uploadStates.get(chatId);
+  if (!state || state.step !== 'file') return;
+
+  const file = ctx.message.document;
+  const ext = path.extname(file.file_name).toLowerCase();
+  if (!['.xmp', '.dng', '.lrtemplate'].includes(ext)) {
+    return ctx.reply('❌ केवल .xmp, .dng, .lrtemplate फ़ाइलें स्वीकार हैं।');
+  }
+
+  state.data.file = file;
+  state.step = 'preview';
+  await ctx.reply('🖼️ अब प्रीव्यू इमेज भेजें (वैकल्पिक, /skip छोड़ें):');
+});
+
+bot.on('photo', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const state = uploadStates.get(chatId);
+  if (!state || state.step !== 'preview') return;
+
+  const photos = ctx.message.photo;
+  const largest = photos[photos.length - 1];
+  state.data.preview = largest;
+  state.step = 'submit';
+  await finalizeUpload(ctx);
+});
+
+// ===== /skip command for preview =====
+bot.command('skip', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const state = uploadStates.get(chatId);
+  if (!state || state.step !== 'preview') {
+    return ctx.reply('स्किप करने के लिए कोई अपलोड नहीं।');
+  }
+  state.data.preview = null;
+  state.step = 'submit';
+  await finalizeUpload(ctx);
+});
+
+async function finalizeUpload(ctx) {
+  const chatId = ctx.chat.id;
+  const state = uploadStates.get(chatId);
+  if (!state) return;
+
+  const data = state.data;
+  const user = ctx.dbUser;
+
+  try {
+    await ctx.sendChatAction('upload_document');
+    const form = new FormData();
+    form.append('name', data.name);
+    form.append('description', data.description || '');
+    form.append('category', data.category || 'General');
+    form.append('tags', data.tags || '');
+    form.append('price', data.price);
+
+    // Download file from Telegram
+    const fileLink = await ctx.telegram.getFileLink(data.file.file_id);
+    const fileResp = await axios.get(fileLink, { responseType: 'stream' });
+    form.append('file', fileResp.data, { filename: data.file.file_name });
+
+    if (data.preview) {
+      const previewLink = await ctx.telegram.getFileLink(data.preview.file_id);
+      const previewResp = await axios.get(previewLink, { responseType: 'stream' });
+      form.append('previewImage', previewResp.data, { filename: 'preview.jpg' });
+    }
+
+    const res = await axios.post(`${API_BASE}/presets`, form, {
+      headers: {
+        ...form.getHeaders(),
+        'Authorization': `Bearer ${user.token}`
+      }
+    });
+
+    uploadStates.delete(chatId);
+    await ctx.reply(`✅ प्रीसेट "${data.name}" अपलोड हो गया! (ID: ${res.data.id})`, mainMenu);
+  } catch (err) {
+    console.error('Upload error:', err.response?.data || err.message);
+    uploadStates.delete(chatId);
+    ctx.reply('❌ अपलोड विफल। कृपया बाद में प्रयास करें।');
+  }
+}
+
+// ===== MY PRESETS =====
+bot.command('mypresets', async (ctx) => {
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('कृपया पहले `/login` करें।', { parse_mode: 'Markdown' });
   }
   try {
-    const res = await axios.get(`${API_BASE}/admin/presets`, {
+    const res = await axios.get(`${API_BASE}/users/${ctx.dbUser.id}/presets`, {
       headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
     });
-    const presets = res.data.filter(p => p.status === 'pending');
+    const presets = res.data;
     if (!presets.length) {
-      return ctx.reply('✅ कोई लंबित प्रीसेट नहीं।');
+      return ctx.reply('आपने अभी तक कोई प्रीसेट अपलोड नहीं किया।');
     }
-    let msg = '⏳ *लंबित प्रीसेट:*\n\n';
-    presets.forEach(p => {
-      msg += `• *${p.name}* – ${p.author}\n   \`${p.id}\`\n`;
+
+    let msg = `📋 *आपके प्रीसेट (${presets.length})*\n\n`;
+    presets.slice(0, 20).forEach(p => {
+      msg += `• *${p.name}* – ${p.category} (${p.status})\n   \`${p.id}\`\n`;
     });
-    msg += '\nस्वीकार/अस्वीकार: `/approve <id>` या `/reject <id>`';
-    await ctx.replyWithMarkdown(msg);
-  } catch (err) {
-    ctx.reply('❌ लोड नहीं हुए।');
-  }
-});
+    if (presets.length > 20) msg += `\n... और ${presets.length - 20} प्रीसेट।`;
 
-bot.action('admin_users', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.sendChatAction('typing');
-  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
-  try {
-    const db = await getDB();
-    const users = db.data.users;
-    if (!users.length) return ctx.reply('कोई उपयोगकर्ता नहीं।');
-    let msg = '👥 *सभी उपयोगकर्ता*\n\n';
-    users.slice(0, 20).forEach(u => {
-      const name = u.name || u.telegram?.firstName || 'Unknown';
-      const tg = u.telegram?.username ? `@${u.telegram.username}` : (u.telegramId ? '✅' : '❌');
-      const linked = u.token ? '🔗' : '⛔';
-      msg += `• ${name} (${u.email || 'no email'}) ${tg} ${linked}\n`;
-    });
-    if (users.length > 20) msg += `\n... और ${users.length - 20} उपयोगकर्ता।`;
-    msg += '\n\nकिसी specific user की detail के लिए `/user <telegramId>`';
-    await ctx.replyWithMarkdown(msg);
-  } catch (err) {
-    ctx.reply('❌ नहीं मिले।');
-  }
-});
-
-bot.action('admin_stats', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.sendChatAction('typing');
-  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
-  try {
-    const db = await getDB();
-    const users = db.data.users;
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
-
-    const activeToday = users.filter(u => u.lastActive && new Date(u.lastActive) >= today).length;
-    const onlineNow = users.filter(u => u.lastActive && new Date(u.lastActive) >= fiveMinAgo).length;
-    const totalCommands = users.reduce((sum, u) => sum + (u.commandsCount || 0), 0);
-    const linkedUsers = users.filter(u => u.telegramId && u.token).length;
-
-    let msg = `📊 *बॉट आँकड़े*\n\n`;
-    msg += `👥 कुल उपयोगकर्ता: ${users.length}\n`;
-    msg += `🔗 लिंक किए गए: ${linkedUsers}\n`;
-    msg += `🟢 ऑनलाइन (5 मिनट): ${onlineNow}\n`;
-    msg += `📅 आज सक्रिय: ${activeToday}\n`;
-    msg += `📝 कुल कमांड्स: ${totalCommands}\n`;
-    msg += `📦 कुल प्रीसेट: ${db.data.presets.length}\n`;
-    msg += `💰 राजस्व: ₹${(db.data.orders || []).filter(o => o.status === 'paid').reduce((s,o) => s + o.amount, 0)}`;
-
-    await ctx.replyWithMarkdown(msg);
+    const buttons = presets.slice(0, 10).map(p => [
+      Markup.button.callback(`🗑️ ${p.name}`, `delete_${p.id}`)
+    ]);
+    await ctx.replyWithMarkdown(msg, Markup.inlineKeyboard(buttons));
   } catch (err) {
     console.error(err);
-    ctx.reply('❌ आँकड़े लोड नहीं हुए।');
+    ctx.reply('❌ प्रीसेट लोड नहीं हुए।');
   }
 });
 
-// ==================== INLINE KEYBOARD HANDLERS ====================
+// ===== DELETE PRESET (command) =====
+bot.command('deletepreset', async (ctx) => {
+  const id = ctx.message.text.split(' ')[1];
+  if (!id) return ctx.reply('आईडी दें: `/deletepreset <आईडी>`', { parse_mode: 'Markdown' });
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('कृपया पहले `/login` करें।');
+  }
+  try {
+    await axios.delete(`${API_BASE}/presets/${id}`, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    ctx.reply(`✅ प्रीसेट ${id} डिलीट कर दिया गया।`);
+  } catch (err) {
+    console.error(err);
+    ctx.reply('❌ डिलीट विफल। कृपया सही आईडी दें या यह आपका प्रीसेट नहीं है।');
+  }
+});
 
+// ===== INLINE ACTION HANDLERS =====
+
+// Download
 bot.action(/download_(.+)/, async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.sendChatAction('typing');
@@ -634,6 +831,7 @@ bot.action(/download_(.+)/, async (ctx) => {
   await handleDownload(ctx, id);
 });
 
+// Wishlist
 bot.action(/wishlist_(.+)/, async (ctx) => {
   await ctx.answerCbQuery();
   const id = ctx.match[1];
@@ -651,8 +849,107 @@ bot.action(/wishlist_(.+)/, async (ctx) => {
   }
 });
 
-// ==================== DOWNLOAD LOGIC ====================
+// Delete preset (from mypresets)
+bot.action(/delete_(.+)/, async (ctx) => {
+  const id = ctx.match[1];
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.answerCbQuery('कृपया पहले /login करें', { show_alert: true });
+  }
+  try {
+    await axios.delete(`${API_BASE}/presets/${id}`, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    ctx.answerCbQuery('🗑️ प्रीसेट डिलीट हो गया!');
+    await ctx.reply('✅ प्रीसेट हटा दिया गया।');
+  } catch (err) {
+    console.error(err);
+    ctx.answerCbQuery('❌ डिलीट विफल', { show_alert: true });
+  }
+});
 
+// Admin inline buttons
+bot.action('admin_pending', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.sendChatAction('typing');
+  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
+  // Reuse pending command logic
+  const res = await axios.get(`${API_BASE}/admin/presets`, {
+    headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+  });
+  const presets = res.data.filter(p => p.status === 'pending');
+  if (!presets.length) return ctx.reply('✅ कोई लंबित प्रीसेट नहीं।');
+  let msg = '⏳ *लंबित प्रीसेट:*\n\n';
+  presets.forEach(p => {
+    msg += `• *${p.name}* – ${p.author}\n   \`${p.id}\`\n`;
+  });
+  msg += '\nस्वीकार/अस्वीकार: `/approve <id>` या `/reject <id>`';
+  await ctx.replyWithMarkdown(msg);
+});
+
+bot.action('admin_users', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.sendChatAction('typing');
+  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
+  const db = await getDB();
+  const users = db.data.users;
+  if (!users.length) return ctx.reply('कोई उपयोगकर्ता नहीं।');
+  let msg = '👥 *सभी उपयोगकर्ता*\n\n';
+  users.slice(0, 20).forEach(u => {
+    const name = u.name || u.telegram?.firstName || 'Unknown';
+    const tg = u.telegram?.username ? `@${u.telegram.username}` : (u.telegramId ? '✅' : '❌');
+    const linked = u.token ? '🔗' : '⛔';
+    msg += `• ${name} (${u.email || 'no email'}) ${tg} ${linked}\n`;
+  });
+  if (users.length > 20) msg += `\n... और ${users.length - 20} उपयोगकर्ता।`;
+  msg += '\n\nकिसी specific user की detail के लिए `/user <telegramId>`';
+  await ctx.replyWithMarkdown(msg);
+});
+
+bot.action('admin_stats', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.sendChatAction('typing');
+  if (!ctx.dbUser || ctx.dbUser.role !== 'admin') return;
+  const db = await getDB();
+  const users = db.data.users;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
+  const activeToday = users.filter(u => u.lastActive && new Date(u.lastActive) >= today).length;
+  const onlineNow = users.filter(u => u.lastActive && new Date(u.lastActive) >= fiveMinAgo).length;
+  const totalCommands = users.reduce((sum, u) => sum + (u.commandsCount || 0), 0);
+  const linkedUsers = users.filter(u => u.telegramId && u.token).length;
+  let msg = `📊 *बॉट आँकड़े*\n\n`;
+  msg += `👥 कुल उपयोगकर्ता: ${users.length}\n`;
+  msg += `🔗 लिंक किए गए: ${linkedUsers}\n`;
+  msg += `🟢 ऑनलाइन (5 मिनट): ${onlineNow}\n`;
+  msg += `📅 आज सक्रिय: ${activeToday}\n`;
+  msg += `📝 कुल कमांड्स: ${totalCommands}\n`;
+  msg += `📦 कुल प्रीसेट: ${db.data.presets.length}\n`;
+  msg += `💰 राजस्व: ₹${(db.data.orders || []).filter(o => o.status === 'paid').reduce((s,o) => s + o.amount, 0)}`;
+  await ctx.replyWithMarkdown(msg);
+});
+
+// ===== PROFILE (for keyboard) =====
+async function showProfile(ctx) {
+  if (ctx.dbUser && ctx.dbUser.token) {
+    const user = ctx.dbUser;
+    const isAdmin = user.role === 'admin' ? '✅ हाँ' : '❌ नहीं';
+    const linked = user.telegramId ? '✅ हाँ' : '❌ नहीं';
+    let msg = `👤 *आपका प्रोफ़ाइल*\n\n`;
+    msg += `👤 नाम: ${user.name || 'N/A'}\n`;
+    msg += `📧 ईमेल: ${user.email || 'N/A'}\n`;
+    msg += `📛 यूज़रनेम: ${user.username || 'N/A'}\n`;
+    msg += `🔗 लिंक: ${linked}\n`;
+    msg += `🛡️ एडमिन: ${isAdmin}\n`;
+    msg += `📝 कमांड्स: ${user.commandsCount || 0}\n`;
+    msg += `📦 विशलिस्ट: ${user.wishlist?.length || 0}\n`;
+    await ctx.replyWithMarkdown(msg);
+  } else {
+    ctx.reply('आप लॉगिन नहीं हैं। /login करें।');
+  }
+}
+
+// ===== DOWNLOAD LOGIC =====
 async function handleDownload(ctx, presetId) {
   if (!ctx.dbUser || !ctx.dbUser.token) {
     return ctx.reply('कृपया पहले `/login` करें।', { parse_mode: 'Markdown' });
@@ -679,106 +976,6 @@ async function handleDownload(ctx, presetId) {
     }
   }
 }
-
-// ==================== PROFILE (for keyboard) ====================
-
-async function showProfile(ctx) {
-  if (ctx.dbUser && ctx.dbUser.token) {
-    const user = ctx.dbUser;
-    const isAdmin = user.role === 'admin' ? '✅ हाँ' : '❌ नहीं';
-    const linked = user.telegramId ? '✅ हाँ' : '❌ नहीं';
-    let msg = `👤 *आपका प्रोफ़ाइल*\n\n`;
-    msg += `👤 नाम: ${user.name || 'N/A'}\n`;
-    msg += `📧 ईमेल: ${user.email || 'N/A'}\n`;
-    msg += `📛 यूज़रनेम: ${user.username || 'N/A'}\n`;
-    msg += `🔗 लिंक: ${linked}\n`;
-    msg += `🛡️ एडमिन: ${isAdmin}\n`;
-    msg += `📝 कमांड्स: ${user.commandsCount || 0}\n`;
-    msg += `📦 विशलिस्ट: ${user.wishlist?.length || 0}\n`;
-    await ctx.replyWithMarkdown(msg);
-  } else {
-    ctx.reply('आप लॉगिन नहीं हैं। /login करें।');
-  }
-}
-
-// ==================== TEXT HANDLER (FALLBACK – Keyboard & Login) ====================
-// This must be defined AFTER all command handlers, so it acts as a fallback
-bot.on('text', async (ctx, next) => {
-  const text = ctx.message.text.trim();
-  const chatId = ctx.chat.id;
-
-  // ---- Check Login State ----
-  const state = loginStates.get(chatId);
-  if (state) {
-    // Cancel
-    if (text === '/cancel') {
-      loginStates.delete(chatId);
-      return ctx.reply('❌ लॉगिन रद्द किया।', mainMenu);
-    }
-
-    if (state.step === 'email') {
-      state.email = text;
-      state.step = 'password';
-      return ctx.reply('🔑 अब अपना पासवर्ड दर्ज करें:');
-    }
-
-    if (state.step === 'password') {
-      const email = state.email;
-      const password = text;
-      
-      // Clear state immediately to avoid re-trigger
-      loginStates.delete(chatId);
-      
-      await ctx.sendChatAction('typing');
-      
-      try {
-        const res = await axios.post(`${API_BASE}/auth/login`, { email, password });
-        if (res.data.token) {
-          const user = res.data.user;
-          const updatedUser = await linkTelegramId(user.id, ctx.from.id, res.data.token, ctx);
-          ctx.dbUser = updatedUser;
-          await ctx.reply(
-            `✅ आपका अकाउंट लिंक हो गया! स्वागत है ${user.name} 🎉\n\nअब आप /download, /myorders, /admin आदि का उपयोग कर सकते हैं।`,
-            mainMenu
-          );
-        } else {
-          ctx.reply('❌ गलत ईमेल या पासवर्ड। /login फिर से करें।');
-        }
-      } catch (err) {
-        console.error('Login error:', err.response?.data || err.message);
-        let errorMsg = '❌ लॉगिन विफल।';
-        if (err.response && err.response.status === 401) {
-          errorMsg = '❌ गलत ईमेल या पासवर्ड। कृपया /login से पुनः प्रयास करें।';
-        } else if (err.response && err.response.status === 404) {
-          errorMsg = '❌ यह ईमेल पंजीकृत नहीं है। कृपया पहले साइन अप करें।';
-        } else {
-          errorMsg = '❌ सर्वर से कनेक्ट नहीं हो पाया। कृपया बाद में प्रयास करें।';
-        }
-        ctx.reply(errorMsg);
-      }
-      return;
-    }
-  }
-
-  // ---- Not in login – handle keyboard actions ----
-  const actions = {
-    '🔍 खोजें': () => ctx.reply('खोज शब्द टाइप करें: /search <क्वेरी>'),
-    '📂 श्रेणियाँ': () => ctx.reply('/categories'),
-    '🔥 लोकप्रिय': () => ctx.reply('/popular'),
-    '🆕 नए': () => ctx.reply('/recent'),
-    '👤 मेरा अकाउंट': () => showProfile(ctx),
-    '🛒 मेरे ऑर्डर': () => ctx.reply('/myorders'),
-    '📊 एडमिन पैनल': () => ctx.reply('/admin'),
-  };
-  
-  if (actions[text]) {
-    await actions[text]();
-    return; // handled, don't call next
-  }
-
-  // ---- If not handled, let other handlers (commands) process ----
-  await next();
-});
 
 // ==================== START BOT ====================
 

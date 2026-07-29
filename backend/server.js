@@ -50,7 +50,7 @@ app.use('/api/', limiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ FIXED: Serve frontend static files (now correct path)
+// ✅ Serve frontend static files (now correct path)
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // Serve uploaded preset files (uploads is inside backend)
@@ -64,12 +64,68 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 
-// ✅ FIXED: Admin page route
+// ✅ Admin page route
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/admin.html'));
 });
 
-// ✅ FIXED: Catch-all for SPA
+// ============================================================
+// ✅ STATIC PAGES (Legal, Info, Help, etc.)
+// ============================================================
+
+// Terms of Use
+app.get('/terms.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/terms.html'));
+});
+
+// Privacy Policy
+app.get('/privacy.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/privacy.html'));
+});
+
+// About Us
+app.get('/about.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/about.html'));
+});
+
+// Blog
+app.get('/blog.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/blog.html'));
+});
+
+// Creator Program
+app.get('/creator-program.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/creator-program.html'));
+});
+
+// FAQ
+app.get('/faq.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/faq.html'));
+});
+
+// Contact
+app.get('/contact.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/contact.html'));
+});
+
+// Download Guide
+app.get('/download-guide.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/download-guide.html'));
+});
+
+// Lightroom Guide
+app.get('/lightroom-guide.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/lightroom-guide.html'));
+});
+
+// Common CSS for all static pages (terms.css)
+app.get('/terms.css', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/terms.css'));
+});
+
+// ============================================================
+// ✅ CATCH-ALL: Serve index.html for any other route (SPA support)
+// ============================================================
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
@@ -81,5 +137,14 @@ app.listen(PORT, () => {
   console.log(`🚀 PresetHub server running on port ${PORT}`);
   console.log(`📱 Frontend: http://localhost:${PORT}`);
   console.log(`🔧 Admin: http://localhost:${PORT}/admin`);
+  console.log(`📄 Terms: http://localhost:${PORT}/terms.html`);
+  console.log(`🔒 Privacy: http://localhost:${PORT}/privacy.html`);
+  console.log(`ℹ️  About: http://localhost:${PORT}/about.html`);
+  console.log(`📝 Blog: http://localhost:${PORT}/blog.html`);
+  console.log(`🚀 Creator Program: http://localhost:${PORT}/creator-program.html`);
+  console.log(`❓ FAQ: http://localhost:${PORT}/faq.html`);
+  console.log(`📧 Contact: http://localhost:${PORT}/contact.html`);
+  console.log(`⬇️  Download Guide: http://localhost:${PORT}/download-guide.html`);
+  console.log(`📷 Lightroom Guide: http://localhost:${PORT}/lightroom-guide.html`);
   console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
