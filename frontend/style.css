@@ -50,6 +50,40 @@ body {
   color: var(--text);
 }
 
+/* ===== DROPDOWN MENU ===== */
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    color: var(--text, #1e1e1e);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: background 0.2s;
+    cursor: pointer;
+}
+.dropdown-item:hover {
+    background: var(--bg, #f8f6f2);
+}
+.dropdown-item i {
+    width: 20px;
+    text-align: center;
+    color: #d4a373;
+}
+#userSection {
+    position: relative;
+}
+#userAvatar {
+    cursor: pointer;
+}
+@media (max-width: 480px) {
+    #userDropdown {
+        right: 0;
+        left: auto;
+        min-width: 160px;
+    }
+}
+
 /* Apply variables */
 header { background: var(--header-bg); }
 .preset-card, .category-card, .testimonial-card, .creator-card, .modal, .admin-card {
