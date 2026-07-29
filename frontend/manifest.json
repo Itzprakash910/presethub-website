@@ -35,5 +35,49 @@
       "sizes": "1280x720",
       "type": "image/png"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Home",
+      "short_name": "Home",
+      "description": "Go to homepage",
+      "url": "/",
+      "icons": [{ "src": "/favicon-32x32.png", "sizes": "32x32" }]
+    },
+    {
+      "name": "Search",
+      "short_name": "Search",
+      "description": "Search presets",
+      "url": "/?action=search",
+      "icons": [{ "src": "/favicon-32x32.png", "sizes": "32x32" }]
+    },
+    {
+      "name": "Wishlist",
+      "short_name": "Wishlist",
+      "description": "Your saved presets",
+      "url": "/?action=wishlist",
+      "icons": [{ "src": "/favicon-32x32.png", "sizes": "32x32" }]
+    },
+    {
+      "name": "Upload",
+      "short_name": "Upload",
+      "description": "Upload a preset",
+      "url": "/?action=upload",
+      "icons": [{ "src": "/favicon-32x32.png", "sizes": "32x32" }]
+    },
+    {
+      "name": "Inbox",
+      "short_name": "Inbox",
+      "description": "Your notifications",
+      "url": "/?action=inbox",
+      "icons": [{ "src": "/favicon-32x32.png", "sizes": "32x32" }]
+    },
+    {
+      "name": "Profile",
+      "short_name": "Profile",
+      "description": "Your profile",
+      "url": "/?action=profile",
+      "icons": [{ "src": "/favicon-32x32.png", "sizes": "32x32" }]
+    }
   ]
 }

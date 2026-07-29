@@ -168,7 +168,7 @@
             }
         }
 
-        // ===== ANALYTICS =====
+        // ===== ANALYTICS (UPDATED WITH EXTRA STATS) =====
         async function loadAnalytics() {
             try {
                 const data = await apiFetch('/admin/analytics');
@@ -177,10 +177,28 @@
                     <div class="stat-item"><div class="num">${data.totalUsers}</div><div class="label">कुल उपयोगकर्ता</div></div>
                     <div class="stat-item"><div class="num">${data.totalPresets}</div><div class="label">कुल प्रीसेट</div></div>
                     <div class="stat-item"><div class="num">${data.totalDownloads}</div><div class="label">कुल डाउनलोड</div></div>
-                    <div class="stat-item"><div class="num">₹${data.totalRevenue}</div><div class="label">कुल राजस्व</div></div>
+                    <div class="stat-item"><div class="num">₹${data.totalRevenue}</div><div class="label">कुल राजस्व (पेमेंट)</div></div>
                     <div class="stat-item"><div class="num">${data.freePresets}</div><div class="label">मुफ्त प्रीसेट</div></div>
                     <div class="stat-item"><div class="num">${data.paidPresets}</div><div class="label">सशुल्क प्रीसेट</div></div>
                     <div class="stat-item"><div class="num">${data.avgRating}</div><div class="label">औसत रेटिंग</div></div>
+                    <!-- ===== NEW EXTRA STATS ===== -->
+                    <div class="stat-item"><div class="num">${data.totalSubscribed}</div><div class="label">Premium Users</div></div>
+                    <div class="stat-item"><div class="num">${data.totalReferrals}</div><div class="label">Total Referrals</div></div>
+                    <div class="stat-item"><div class="num">${data.totalAdWatches}</div><div class="label">Ad Watches</div></div>
+                    <div class="stat-item"><div class="num">₹${data.totalPlatformRevenue}</div><div class="label">Platform Ad Revenue</div></div>
+                    <div class="stat-item"><div class="num">${data.totalAdImpressions}</div><div class="label">Ad Impressions</div></div>
+                    <!-- ===== TOP CREATORS (optional) ===== -->
+                    ${data.topCreators && data.topCreators.length ? `
+                        <div class="stat-item" style="grid-column:1/-1; text-align:left;">
+                            <div class="label" style="font-weight:700;font-size:1.1rem;color:var(--text);">🏆 Top Earning Creators</div>
+                            ${data.topCreators.map(c => `
+                                <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border,#eee);">
+                                    <span>${c.name}</span>
+                                    <span style="color:#2a9d8f;">₹${c.revenue.toFixed(2)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
                 `;
             } catch (err) {
                 showMessage('Analytics लोड नहीं हुए: ' + err.message, 'error');
@@ -399,24 +417,11 @@
             }
         };
 
-        // 5. Toggle Verify (NEW)
+        // 5. Toggle Verify
         window.toggleVerify = async function(id) {
             try {
-                // First get current user to know current verified status
                 const user = await apiFetch(`/admin/users/${id}`);
                 const newStatus = !user.verified;
-                // Update via a new API endpoint (we'll assume PUT /admin/users/:id/verify)
-                // If you don't have this endpoint, create one or use a generic update.
-                // For now, we'll use a generic PUT /admin/users/:id with a body.
-                // But your current admin.js doesn't have this, so we'll add a custom call.
-                // I'll assume you have a route /admin/users/:id/verify
-                // Alternatively, you can implement it via a generic update.
-                // We'll use a workaround: update via the edit user endpoint (but that's for name/bio etc)
-                // Let's use a PUT to /admin/users/:id with a body containing verified.
-                // I'll modify the server later; for now we'll simulate by refreshing.
-                // For the sake of this demo, we'll just show message.
-                // Let's actually implement: we'll add a PUT /admin/users/:id/verify in admin.js
-                // For now, we'll make a fetch call to a new endpoint.
                 const res = await fetch(`${API_URL}/admin/users/${id}/verify`, {
                     method: 'PUT',
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -434,7 +439,7 @@
             }
         };
 
-        // 6. Edit User (NEW) - with Modal
+        // 6. Edit User
         window.editUser = async function(id) {
             try {
                 const user = await apiFetch(`/admin/users/${id}`);
@@ -490,7 +495,6 @@
                     }
                 });
 
-                // Close on backdrop click
                 modal.addEventListener('click', (e) => {
                     if (e.target === modal) modal.remove();
                 });
@@ -499,7 +503,7 @@
             }
         };
 
-        // 7. Edit Preset (NEW)
+        // 7. Edit Preset
         window.editPreset = async function(id) {
             try {
                 const preset = await apiFetch(`/presets/${id}`);
@@ -559,11 +563,10 @@
             }
         };
 
-        // 8. Change Order Status (NEW)
+        // 8. Change Order Status
         window.changeOrderStatus = async function(orderId, status) {
             if (!confirm(`क्या आप इस ऑर्डर को "${status}" करना चाहते हैं?`)) return;
             try {
-                // Assume we have an endpoint /admin/orders/:id/status
                 const res = await apiFetch(`/admin/orders/${orderId}/status`, {
                     method: 'PUT',
                     body: JSON.stringify({ status })
@@ -577,23 +580,13 @@
 
         // 9. Export Data (CSV)
         function exportData() {
-            // Collect data from all tables
             const tables = document.querySelectorAll('.user-table, .order-table, .preset-list');
-            let csv = '';
-
-            // Add header
-            csv += 'PresetHub Admin Export\n';
+            let csv = 'PresetHub Admin Export\n';
             csv += `Date: ${new Date().toISOString()}\n\n`;
-
-            tables.forEach((table, index) => {
-                if (table.classList.contains('user-table')) {
-                    csv += '==== USERS ====\n';
-                } else if (table.classList.contains('order-table')) {
-                    csv += '==== ORDERS ====\n';
-                } else if (table.classList.contains('preset-list')) {
-                    csv += '==== PRESETS ====\n';
-                }
-                // For preset-list, we have divs, need to extract text.
+            tables.forEach((table) => {
+                if (table.classList.contains('user-table')) csv += '==== USERS ====\n';
+                else if (table.classList.contains('order-table')) csv += '==== ORDERS ====\n';
+                else if (table.classList.contains('preset-list')) csv += '==== PRESETS ====\n';
                 if (table.classList.contains('preset-list')) {
                     const items = table.querySelectorAll('.preset-item');
                     items.forEach(item => {
@@ -610,7 +603,6 @@
                 }
                 csv += '\n';
             });
-
             const blob = new Blob([csv], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -632,7 +624,6 @@
         // ===== INIT =====
         window.onload = function() {
             loadData();
-            // Check admin access
             apiFetch('/admin/analytics').catch(() => {
                 showMessage('Admin access required. Redirecting...', 'error');
                 setTimeout(() => window.location.href = '/', 2000);

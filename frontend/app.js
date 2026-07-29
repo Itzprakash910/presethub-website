@@ -10,6 +10,9 @@ let currentPage = 1;
 let totalPages = 1;
 let currentFilters = {};
 let isOnline = navigator.onLine;
+let subscriptionData = {};
+let notifications = [];
+let viewedPresets = new Set();
 
 // ===== DOM REFS =====
 const $ = (sel) => document.querySelector(sel);
@@ -41,7 +44,6 @@ const userDropdown = document.getElementById('userDropdown');
 // ============================================================
 // ===== OFFLINE QUEUE UTILITY =====
 // ============================================================
-
 function openOfflineDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('PresetHubOffline', 1);
@@ -99,7 +101,6 @@ async function addToQueue(action, url, options = {}) {
 // ============================================================
 // ===== ONLINE / OFFLINE INDICATOR =====
 // ============================================================
-
 window.addEventListener('online', async () => {
   isOnline = true;
   if (offlineIndicator) offlineIndicator.style.display = 'none';
@@ -133,6 +134,8 @@ navigator.serviceWorker.addEventListener('message', (event) => {
     } else if (event.data.action === 'upload') {
       loadPresets();
       loadLatestPresets();
+    } else if (event.data.action === 'download' || event.data.action === 'follow' || event.data.action === 'order') {
+      fetchUserProfile();
     }
   }
 });
@@ -140,7 +143,6 @@ navigator.serviceWorker.addEventListener('message', (event) => {
 // ============================================================
 // ===== TOAST SYSTEM =====
 // ============================================================
-
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
@@ -158,7 +160,6 @@ window.showToast = showToast;
 // ============================================================
 // ===== DARK MODE =====
 // ============================================================
-
 const currentTheme = localStorage.getItem('theme') || 'light';
 if (currentTheme === 'dark') {
   document.body.classList.add('dark');
@@ -174,7 +175,6 @@ themeToggle.addEventListener('click', () => {
 // ============================================================
 // ===== AUTH =====
 // ============================================================
-
 if (token) {
   fetchUserProfile();
 }
@@ -206,8 +206,10 @@ function showLoggedInUI(user) {
     userAvatar.textContent = '';
   }
   fetchWishlist();
-  // Hide dropdown when login
+  fetchSubscription();
+  fetchNotifications();
   if (userDropdown) userDropdown.style.display = 'none';
+  requestNotificationPermission();
 }
 
 function logout() {
@@ -217,6 +219,8 @@ function logout() {
   authSection.style.display = 'flex';
   userSection.style.display = 'none';
   wishlist = [];
+  notifications = [];
+  subscriptionData = {};
   updateWishlistUI();
   if (userDropdown) userDropdown.style.display = 'none';
   showToast('लॉगआउट हो गया', 'info');
@@ -229,7 +233,6 @@ logoutBtn.addEventListener('click', logout);
 // ============================================================
 // ===== USER DROPDOWN TOGGLE =====
 // ============================================================
-
 userAvatar.addEventListener('click', (e) => {
   e.stopPropagation();
   if (!currentUser) return;
@@ -240,7 +243,6 @@ userAvatar.addEventListener('click', (e) => {
   }
 });
 
-// Click outside to close
 document.addEventListener('click', () => {
   if (userDropdown) userDropdown.style.display = 'none';
 });
@@ -248,7 +250,6 @@ document.addEventListener('click', () => {
 // ============================================================
 // ===== MY PRESETS (Web) =====
 // ============================================================
-
 window.showMyPresets = async function() {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
@@ -294,7 +295,6 @@ window.showMyPresets = async function() {
 // ============================================================
 // ===== MY DOWNLOADS =====
 // ============================================================
-
 window.showMyDownloads = async function() {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
@@ -339,10 +339,12 @@ window.showMyDownloads = async function() {
 // ============================================================
 // ===== AUTH MODAL =====
 // ============================================================
-
 function openAuthModal(mode) {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
+  const urlParams = new URLSearchParams(window.location.search);
+  const ref = urlParams.get('ref') || '';
+  const refInput = ref ? `<input type="hidden" id="authRef" value="${ref}" />` : '';
   modal.innerHTML = `
     <div class="modal" style="max-width:450px;">
       <button class="close">&times;</button>
@@ -351,6 +353,7 @@ function openAuthModal(mode) {
         ${mode === 'signup' ? `<div class="form-group"><input type="text" id="authName" placeholder="आपका नाम" required /></div>` : ''}
         <div class="form-group"><input type="email" id="authEmail" placeholder="ईमेल" required /></div>
         <div class="form-group"><input type="password" id="authPassword" placeholder="पासवर्ड (6+ अक्षर)" required minlength="6" /></div>
+        ${refInput}
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
           ${mode === 'login' ? 'लॉग इन करें' : 'साइन अप करें'}
         </button>
@@ -366,10 +369,15 @@ function openAuthModal(mode) {
     const email = document.getElementById('authEmail').value;
     const password = document.getElementById('authPassword').value;
     const name = document.getElementById('authName')?.value;
+    const refCode = document.getElementById('authRef')?.value || '';
+    let url = `${API_URL}/auth/${mode}`;
+    if (mode === 'signup' && refCode) {
+      url += `?ref=${encodeURIComponent(refCode)}`;
+    }
     const payload = { email, password };
     if (mode === 'signup') payload.name = name;
     try {
-      const res = await fetch(`${API_URL}/auth/${mode}`, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -385,6 +393,10 @@ function openAuthModal(mode) {
         loadLatestPresets();
         loadTopCreators();
         showToast(mode === 'login' ? 'स्वागत है! 🎉' : 'अकाउंट बन गया! 🎉', 'success');
+        if (window.history && window.history.replaceState) {
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
+        }
       } else {
         showToast(data.error || 'कुछ गलत हो गया', 'error');
       }
@@ -398,7 +410,6 @@ window.openAuthModal = openAuthModal;
 // ============================================================
 // ===== WISHLIST =====
 // ============================================================
-
 async function fetchWishlist() {
   if (!currentUser) return;
   try {
@@ -418,13 +429,11 @@ async function toggleWishlist(presetId) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
     return;
   }
-  
   const url = `${API_URL}/users/me/wishlist/${presetId}`;
   const options = {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` }
   };
-
   try {
     if (!navigator.onLine) {
       await addToQueue('wishlist', url, options);
@@ -436,7 +445,6 @@ async function toggleWishlist(presetId) {
       loadLatestPresets();
       return;
     }
-
     const res = await fetch(url, options);
     if (res.ok) {
       const data = await res.json();
@@ -462,7 +470,6 @@ function updateWishlistUI() {
 // ============================================================
 // ===== WISHLIST MODAL =====
 // ============================================================
-
 async function showWishlist() {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
@@ -505,9 +512,8 @@ async function showWishlist() {
 wishlistBtn.addEventListener('click', showWishlist);
 
 // ============================================================
-// ===== PRESETS CRUD =====
+// ===== PRESETS CRUD (with engagement stats) =====
 // ============================================================
-
 function renderPresetsToContainer(presets, container) {
   if (!container) return;
   if (!presets || presets.length === 0) {
@@ -543,10 +549,19 @@ function renderPresetsToContainer(presets, container) {
         <div class="info">
           <span class="tag">${p.category || 'General'}</span>
           <h3>${p.name}</h3>
-          <div class="author" style="cursor:pointer;color:#d4a373;" onclick="event.stopPropagation(); window.openProfile('${p.authorId}')">${p.author}</div>
-          <div class="meta">
+          <div class="author" style="cursor:pointer;color:#d4a373;" onclick="event.stopPropagation(); window.openProfile('${p.authorId}')">
+            ${p.author}
+            <span style="font-size:0.7rem;color:#888;margin-left:6px;"><i class="fas fa-users"></i> ${p.authorFollowers || 0}</span>
+          </div>
+          <div class="meta" style="flex-wrap:wrap;gap:4px;">
             ${priceDisplay}
             <span class="rating">${stars} ${p.avgRating ? p.avgRating.toFixed(1) : '0'}</span>
+          </div>
+          <div style="display:flex;gap:10px;font-size:0.75rem;color:#888;margin-top:6px;flex-wrap:wrap;">
+            <span><i class="fas fa-eye"></i> ${p.views || 0}</span>
+            <span><i class="fas fa-heart" style="color:#e74c3c;"></i> ${p.likes?.length || 0}</span>
+            <span><i class="fas fa-share-alt"></i> ${p.shares || 0}</span>
+            <span><i class="fas fa-comment"></i> ${p.reviews?.length || 0}</span>
           </div>
         </div>
       </div>
@@ -557,7 +572,6 @@ function renderPresetsToContainer(presets, container) {
 // ============================================================
 // ===== EVENT DELEGATION FOR PRESET GRID =====
 // ============================================================
-
 presetGrid.addEventListener('click', function(e) {
   const card = e.target.closest('.preset-card');
   if (!card) return;
@@ -584,9 +598,8 @@ loadMoreBtn.addEventListener('click', () => {
 });
 
 // ============================================================
-// ===== LOAD PRESETS =====
+// ===== LOAD PRESETS (with follower counts enrichment) =====
 // ============================================================
-
 async function loadPresets(page = 1, append = false) {
   try {
     const params = new URLSearchParams();
@@ -606,6 +619,21 @@ async function loadPresets(page = 1, append = false) {
     
     if (res.ok) {
       const data = await res.json();
+      let userMap = {};
+      try {
+        const usersRes = await fetch(`${API_URL}/users?limit=100`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (usersRes.ok) {
+          const users = await usersRes.json();
+          users.forEach(u => {
+            userMap[u.id] = { followers: u.followers?.length || 0, name: u.name };
+          });
+        }
+      } catch (e) { console.warn('Could not load follower counts', e); }
+      data.presets.forEach(p => {
+        p.authorFollowers = userMap[p.authorId]?.followers || 0;
+      });
       allPresets = data.presets || [];
       totalPages = data.totalPages || 1;
       currentPage = data.page || 1;
@@ -668,12 +696,26 @@ async function loadPresets(page = 1, append = false) {
 // ============================================================
 // ===== LOAD LATEST PRESETS =====
 // ============================================================
-
 async function loadLatestPresets() {
   try {
     const res = await fetch(`${API_URL}/presets?sort=newest&limit=6`);
     const data = await res.json();
     const presets = data.presets || [];
+    let userMap = {};
+    try {
+      const usersRes = await fetch(`${API_URL}/users?limit=100`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      if (usersRes.ok) {
+        const users = await usersRes.json();
+        users.forEach(u => {
+          userMap[u.id] = { followers: u.followers?.length || 0, name: u.name };
+        });
+      }
+    } catch (e) { console.warn('Could not load follower counts', e); }
+    presets.forEach(p => {
+      p.authorFollowers = userMap[p.authorId]?.followers || 0;
+    });
     renderPresetsToContainer(presets, latestGrid);
   } catch (err) {
     console.warn('⚠️ Load latest failed, trying cache');
@@ -694,7 +736,6 @@ async function loadLatestPresets() {
 // ============================================================
 // ===== SMART SEARCH =====
 // ============================================================
-
 let searchTimeout = null;
 searchInput.addEventListener('input', function() {
   const query = this.value.trim();
@@ -739,9 +780,8 @@ document.addEventListener('click', (e) => {
 });
 
 // ============================================================
-// ===== PRESET MODAL (with Reviews Sort & Top 5) =====
+// ===== PRESET MODAL (with like, share, view, ad-impression) =====
 // ============================================================
-
 async function openPresetModal(presetId) {
   try {
     const res = await fetch(`${API_URL}/presets/${presetId}`);
@@ -749,6 +789,16 @@ async function openPresetModal(presetId) {
     const preset = await res.json();
     const isLiked = wishlist.includes(preset.id);
     const isFree = preset.price === 0;
+
+    if (!viewedPresets.has(presetId) && currentUser && preset.authorId !== currentUser.id) {
+      viewedPresets.add(presetId);
+      try {
+        await fetch(`${API_URL}/presets/${presetId}/view`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      } catch (e) { console.warn('View tracking failed:', e); }
+      try {
+        await fetch(`${API_URL}/presets/${presetId}/ad-impression`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      } catch (e) { console.warn('Ad impression tracking failed:', e); }
+    }
 
     const reviews = preset.reviews || [];
     const sortedReviews = [...reviews].sort((a, b) => (b.helpful || 0) - (a.helpful || 0) || new Date(b.createdAt) - new Date(a.createdAt));
@@ -783,9 +833,17 @@ async function openPresetModal(presetId) {
               <button class="btn btn-outline wishlist-btn" data-id="${preset.id}">
                 <i class="fa${isLiked ? 's' : 'r'} fa-heart"></i> ${isLiked ? 'पसंद में' : 'पसंद करें'}
               </button>
+              <button class="btn btn-outline like-btn" data-id="${preset.id}">
+                <i class="fa${preset.likes && preset.likes.includes(currentUser?.id) ? 's' : 'r'} fa-heart"></i>
+                <span class="like-count">${preset.likes?.length || 0}</span>
+              </button>
+              <button class="btn btn-outline share-btn" data-id="${preset.id}">
+                <i class="fas fa-share-alt"></i> <span class="share-count">${preset.shares || 0}</span>
+              </button>
             </div>
             <div class="meta-list">
-              <span><i class="fas fa-download"></i> ${preset.downloads || 0} डाउनलोड</span>
+              <span><i class="fas fa-eye"></i> ${preset.views || 0} views</span>
+              <span><i class="fas fa-download"></i> ${preset.downloads || 0} downloads</span>
               <span><i class="fas fa-star" style="color:#f4a261;"></i> ${preset.avgRating ? preset.avgRating.toFixed(1) : '0'} (${preset.reviews?.length || 0})</span>
               <span><i class="fas fa-tag"></i> ${preset.tags?.join(', ') || '—'}</span>
             </div>
@@ -835,14 +893,47 @@ async function openPresetModal(presetId) {
         showToast('कृपया लॉग इन करें', 'warning');
         return;
       }
-      if (isFree) await downloadPreset(preset.id);
-      else await buyPreset(preset.id);
+      await downloadPreset(preset.id);
     });
 
     modal.querySelector('.wishlist-btn').addEventListener('click', async () => {
       await toggleWishlist(preset.id);
       modal.remove();
       openPresetModal(preset.id);
+    });
+
+    modal.querySelector('.like-btn')?.addEventListener('click', async () => {
+      if (!currentUser) { showToast('Please login', 'warning'); return; }
+      const res = await fetch(`${API_URL}/presets/${preset.id}/like`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const likeSpan = modal.querySelector('.like-count');
+        const icon = modal.querySelector('.like-btn i');
+        icon.className = data.liked ? 'fas fa-heart' : 'far fa-heart';
+        likeSpan.textContent = data.likes;
+        await fetchNotifications();
+      }
+    });
+
+    modal.querySelector('.share-btn')?.addEventListener('click', async () => {
+      if (!currentUser) { showToast('Please login', 'warning'); return; }
+      const res = await fetch(`${API_URL}/presets/${preset.id}/share`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        modal.querySelector('.share-count').textContent = data.shares;
+        const shareLink = `${window.location.origin}/preset/${preset.id}`;
+        if (navigator.share) {
+          navigator.share({ title: preset.name, text: 'Check out this preset!', url: shareLink });
+        } else {
+          navigator.clipboard.writeText(shareLink).then(() => showToast('Link copied!', 'success'));
+        }
+      }
     });
 
     const reviewForm = modal.querySelector('#reviewForm');
@@ -864,7 +955,6 @@ window.openPresetModal = openPresetModal;
 // ============================================================
 // ===== REVIEW SUBMIT =====
 // ============================================================
-
 async function submitReview(presetId, rating, comment) {
   const url = `${API_URL}/reviews/${presetId}`;
   const options = {
@@ -875,14 +965,12 @@ async function submitReview(presetId, rating, comment) {
     },
     body: JSON.stringify({ rating, comment })
   };
-
   try {
     if (!navigator.onLine) {
       await addToQueue('review', url, options);
       showToast('⏳ Review saved offline. Will sync when online.', 'info');
       return;
     }
-
     const res = await fetch(url, options);
     if (res.ok) {
       showToast('✅ समीक्षा सहेजी गई', 'success');
@@ -904,23 +992,68 @@ async function submitReview(presetId, rating, comment) {
 }
 
 // ============================================================
-// ===== DOWNLOAD =====
+// ===== DOWNLOAD (with ad modal 3s countdown) =====
 // ============================================================
-
 async function downloadPreset(presetId) {
-  const url = `${API_URL}/presets/${presetId}/download`;
-  const options = {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` }
-  };
+  if (!currentUser) {
+    showToast('कृपया लॉग इन करें', 'warning');
+    return;
+  }
 
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'ad-overlay';
+    modal.innerHTML = `
+      <div class="ad-modal">
+        <h3>📢 Sponsored</h3>
+        <div class="ad-content">
+          <img src="https://via.placeholder.com/400x200/d4a373/ffffff?text=Your+Ad+Here" alt="Ad" style="max-width:100%;border-radius:12px;">
+          <p style="margin-top:8px;color:#888;">Continue in <span class="timer">3</span>s</p>
+        </div>
+        <button class="skip-btn" disabled>Skip Ad</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    let seconds = 3;
+    const timerSpan = modal.querySelector('.timer');
+    const skipBtn = modal.querySelector('.skip-btn');
+
+    const interval = setInterval(() => {
+      seconds--;
+      if (seconds <= 0) {
+        clearInterval(interval);
+        timerSpan.textContent = '0';
+        skipBtn.textContent = 'Download Now';
+        skipBtn.classList.add('enabled');
+        skipBtn.disabled = false;
+        setTimeout(() => {
+          skipBtn.click();
+        }, 500);
+      } else {
+        timerSpan.textContent = seconds;
+      }
+    }, 1000);
+
+    skipBtn.addEventListener('click', async () => {
+      if (!skipBtn.classList.contains('enabled')) return;
+      modal.remove();
+      await adWatched();
+      await performDownload(presetId);
+      resolve();
+    });
+  });
+}
+
+async function performDownload(presetId) {
+  const url = `${API_URL}/presets/${presetId}/download`;
+  const options = { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } };
   try {
     if (!navigator.onLine) {
       await addToQueue('download', url, options);
       showToast('⏳ Download queued. Will start when online.', 'warning');
       return;
     }
-
     const res = await fetch(url, options);
     if (res.ok) {
       const blob = await res.blob();
@@ -939,8 +1072,7 @@ async function downloadPreset(presetId) {
       a.remove();
       URL.revokeObjectURL(blobUrl);
       showToast('✅ प्रीसेट डाउनलोड हो गया!', 'success');
-    } else if (res.status === 403) {
-      showToast('⛔ Please purchase this preset first.', 'error');
+      await fetchNotifications();
     } else {
       const err = await res.json().catch(() => ({}));
       showToast(err.error || 'डाउनलोड विफल', 'error');
@@ -952,15 +1084,13 @@ async function downloadPreset(presetId) {
 window.downloadPreset = downloadPreset;
 
 // ============================================================
-// ===== BUY (Razorpay) =====
+// ===== BUY (Razorpay) – kept but not used =====
 // ============================================================
-
 async function buyPreset(presetId) {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
     return;
   }
-
   if (!navigator.onLine) {
     const url = `${API_URL}/payments/create-order`;
     const options = {
@@ -974,7 +1104,6 @@ async function buyPreset(presetId) {
     await addToQueue('order', url, options);
     return;
   }
-
   try {
     const res = await fetch(`${API_URL}/payments/create-order`, {
       method: 'POST',
@@ -986,7 +1115,6 @@ async function buyPreset(presetId) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Order creation failed');
-
     const options = {
       key: data.key,
       amount: data.amount,
@@ -1042,7 +1170,6 @@ async function verifyPayment(response, presetId) {
 // ============================================================
 // ===== UPLOAD MODAL =====
 // ============================================================
-
 $('#uploadBtn')?.addEventListener('click', openUploadModal);
 uploadHeroBtn?.addEventListener('click', openUploadModal);
 
@@ -1112,7 +1239,6 @@ function openUploadModal() {
         showToast('⚠️ You are offline. Please connect to the internet to upload.', 'warning');
         return;
       }
-
       const res = await fetch(url, options);
       if (res.ok) {
         showToast('✅ प्रीसेट अपलोड हो गया!', 'success');
@@ -1134,7 +1260,6 @@ window.openUploadModal = openUploadModal;
 // ============================================================
 // ===== FEATURED DOWNLOAD =====
 // ============================================================
-
 featuredDownloadBtn?.addEventListener('click', async () => {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
@@ -1169,7 +1294,6 @@ featuredDownloadBtn?.addEventListener('click', async () => {
 // ============================================================
 // ===== TOP CREATORS =====
 // ============================================================
-
 async function loadTopCreators() {
   try {
     const res = await fetch(`${API_URL}/users/top`);
@@ -1198,7 +1322,6 @@ async function loadTopCreators() {
 // ============================================================
 // ===== PROFILE MODAL =====
 // ============================================================
-
 window.openProfile = async function(userId) {
   try {
     const res = await fetch(`${API_URL}/users/${userId}`);
@@ -1285,33 +1408,31 @@ window.openProfile = async function(userId) {
 // ============================================================
 // ===== FOLLOW / UNFOLLOW =====
 // ============================================================
-
 async function toggleFollow(userId) {
   const url = `${API_URL}/users/${userId}/follow`;
   const options = {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` }
   };
-
   try {
     if (!navigator.onLine) {
       await addToQueue('follow', url, options);
       showToast('⏳ Follow action queued.', 'info');
       return;
     }
-
     const res = await fetch(url, options);
     if (res.ok) {
       const data = await res.json();
       showToast(data.following ? '✅ फॉलो कर लिया!' : '❌ अनफॉलो कर दिया', 'info');
       const modal = document.querySelector('.modal-overlay.active');
       if (modal) {
-        const profileId = window.currentProfileId;
-        if (profileId) {
+        const currentProfileId = window._currentProfileId;
+        if (currentProfileId) {
           modal.remove();
-          openProfile(profileId);
+          window.openProfile(currentProfileId);
         }
       }
+      await fetchNotifications();
     } else {
       showToast('कृपया बाद में प्रयास करें', 'error');
     }
@@ -1323,7 +1444,6 @@ async function toggleFollow(userId) {
 // ============================================================
 // ===== EDIT PROFILE =====
 // ============================================================
-
 window.openEditProfile = async function() {
   if (!currentUser) {
     showToast('कृपया लॉग इन करें', 'warning');
@@ -1342,7 +1462,17 @@ window.openEditProfile = async function() {
       <div class="modal" style="max-width:550px;">
         <button class="close">&times;</button>
         <h2>✏️ प्रोफ़ाइल एडिट करें</h2>
-        <form id="editProfileForm">
+        <form id="editProfileForm" enctype="multipart/form-data">
+          <div class="form-group">
+            <label>अवतार</label>
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+              <img id="avatarPreview" src="${user.avatar || ''}" alt="Avatar" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #d4a373;${user.avatar ? '' : 'display:none;'}">
+              <div>
+                <input type="file" id="avatarFile" accept="image/*" style="padding:8px;border:1px solid var(--border,#ddd);border-radius:8px;">
+                <div style="font-size:0.8rem;color:#888;margin-top:4px;">Max 5MB, JPG/PNG/GIF/WEBP</div>
+              </div>
+            </div>
+          </div>
           <div class="form-group">
             <label>नाम</label>
             <input type="text" id="editName" value="${user.name || ''}" required />
@@ -1354,10 +1484,6 @@ window.openEditProfile = async function() {
           <div class="form-group">
             <label>बायो</label>
             <textarea id="editBio" rows="3">${user.bio || ''}</textarea>
-          </div>
-          <div class="form-group">
-            <label>अवतार URL</label>
-            <input type="text" id="editAvatar" value="${user.avatar || ''}" placeholder="https://example.com/avatar.jpg" />
           </div>
           <div style="border-top:1px solid var(--border, #eee);padding-top:12px;margin-top:12px;">
             <h4>सोशल लिंक्स</h4>
@@ -1386,13 +1512,51 @@ window.openEditProfile = async function() {
 
     modal.querySelector('.close').addEventListener('click', () => modal.remove());
 
+    const avatarFileInput = modal.querySelector('#avatarFile');
+    const avatarPreview = modal.querySelector('#avatarPreview');
+    avatarFileInput.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+          avatarPreview.src = event.target.result;
+          avatarPreview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
     modal.querySelector('#editProfileForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      
+      const avatarFile = modal.querySelector('#avatarFile').files[0];
+      if (avatarFile) {
+        const formData = new FormData();
+        formData.append('avatar', avatarFile);
+        try {
+          const avatarRes = await fetch(`${API_URL}/users/me/avatar`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+          });
+          if (!avatarRes.ok) {
+            const err = await avatarRes.json();
+            showToast('Avatar upload failed: ' + (err.error || 'unknown'), 'error');
+            return;
+          }
+          const avatarData = await avatarRes.json();
+          currentUser.avatar = avatarData.avatar;
+          showLoggedInUI(currentUser);
+        } catch (err) {
+          showToast('Avatar upload error', 'error');
+          return;
+        }
+      }
+
       const payload = {
         name: document.getElementById('editName').value,
         username: document.getElementById('editUsername').value,
         bio: document.getElementById('editBio').value,
-        avatar: document.getElementById('editAvatar').value,
         socialLinks: {
           instagram: document.getElementById('editInstagram').value,
           youtube: document.getElementById('editYoutube').value,
@@ -1431,16 +1595,253 @@ window.openEditProfile = async function() {
 };
 
 // ============================================================
-// ===== EXPLORE BUTTON =====
+// ===== SUBSCRIPTION & REFERRAL =====
 // ============================================================
+async function fetchSubscription() {
+  if (!token) return;
+  try {
+    const res = await fetch(`${API_URL}/users/me/subscription`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      subscriptionData = await res.json();
+      updateSubscriptionUI();
+    }
+  } catch (err) { console.error(err); }
+}
 
+function updateSubscriptionUI() {
+  const badge = document.getElementById('premiumBadge');
+  if (badge) {
+    badge.textContent = subscriptionData.isPremium ? '✅ Premium' : 'Free';
+    badge.style.color = subscriptionData.isPremium ? '#2ecc71' : '#e74c3c';
+  }
+}
+
+async function adWatched() {
+  try {
+    const res = await fetch(`${API_URL}/ads/watched`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(`✅ Ad watched! (${data.adWatchCount} total, ${data.daysEarned} days earned)`, 'success');
+      await fetchSubscription();
+    }
+  } catch (err) {
+    showToast('Failed to register ad watch', 'error');
+  }
+}
+
+async function generateReferral() {
+  try {
+    const res = await fetch(`${API_URL}/referrals/generate`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(`Your referral code: ${data.referralCode}`, 'info');
+      await fetchSubscription();
+    }
+  } catch (err) {
+    showToast('Failed to generate code', 'error');
+  }
+}
+
+function showReferral() {
+  const code = subscriptionData.referralCode || 'Generate';
+  const link = `${window.location.origin}/?ref=${code}`;
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:400px;">
+      <button class="close">&times;</button>
+      <h2>🔗 Referral Program</h2>
+      <p>Share your code: <strong>${code}</strong></p>
+      <p>Link: <a href="${link}" target="_blank">${link}</a></p>
+      <p>You have referred ${subscriptionData.referralCount || 0} users.</p>
+      <p>Earn 28 days free for every 10 referrals!</p>
+      <button class="btn btn-primary" onclick="generateReferral()">Generate Code</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+}
+window.showReferral = showReferral;
+
+// ============================================================
+// ===== NOTIFICATIONS =====
+// ============================================================
+async function fetchNotifications() {
+  if (!token) return;
+  try {
+    const res = await fetch(`${API_URL}/users/me/notifications`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      notifications = await res.json();
+      updateNotificationUI();
+    }
+  } catch (err) { console.error(err); }
+}
+
+function updateNotificationUI() {
+  const badge = document.getElementById('notifBadge');
+  const unread = notifications.filter(n => !n.read).length;
+  if (badge) {
+    if (unread > 0) {
+      badge.style.display = 'inline';
+      badge.textContent = unread;
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+}
+
+function openNotifications() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <button class="close">&times;</button>
+      <h2>📥 Inbox</h2>
+      <div id="notifList">
+        ${notifications.length === 0 ? '<p>No notifications</p>' : 
+          notifications.map(n => `
+            <div class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}">
+              <div>${n.message}</div>
+              <div class="time">${new Date(n.createdAt).toLocaleString()}</div>
+              <a href="${n.link}" target="_blank">View</a>
+            </div>
+          `).join('')
+        }
+      </div>
+      <button class="btn btn-sm btn-primary" id="markAllRead">Mark all as read</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  modal.querySelector('#markAllRead').addEventListener('click', async () => {
+    await fetch(`${API_URL}/notifications/read-all`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    await fetchNotifications();
+    modal.remove();
+    openNotifications();
+  });
+  modal.querySelectorAll('.notif-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const id = item.dataset.id;
+      await fetch(`${API_URL}/notifications/read/${id}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      await fetchNotifications();
+    });
+  });
+}
+document.getElementById('notificationBtn')?.addEventListener('click', openNotifications);
+
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+// ============================================================
+// ===== EARNINGS =====
+// ============================================================
+window.showEarnings = async function() {
+  if (!currentUser) { showToast('Please login', 'warning'); return; }
+  try {
+    const res = await fetch(`${API_URL}/users/${currentUser.id}/earnings`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to fetch earnings');
+    const data = await res.json();
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:700px;">
+        <button class="close">&times;</button>
+        <h2>💰 My Earnings</h2>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0;">
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:16px;border-radius:12px;text-align:center;">
+            <div class="num" style="font-size:1.8rem;font-weight:700;color:#d4a373;">${data.totalImpressions}</div>
+            <div class="label">Total Impressions</div>
+          </div>
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:16px;border-radius:12px;text-align:center;">
+            <div class="num" style="font-size:1.8rem;font-weight:700;color:#2a9d8f;">₹${data.totalRevenue.toFixed(2)}</div>
+            <div class="label">Total Earnings</div>
+          </div>
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:16px;border-radius:12px;text-align:center;">
+            <div class="num" style="font-size:1.8rem;font-weight:700;color:#3498db;">${data.totalDownloads}</div>
+            <div class="label">Total Downloads</div>
+          </div>
+        </div>
+        <h3 style="margin:16px 0 8px;">📊 Preset Performance</h3>
+        <div style="max-height:300px;overflow-y:auto;">
+          ${data.presets.length === 0 ? '<p>No presets uploaded yet.</p>' :
+            data.presets.map(p => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border,#eee);flex-wrap:wrap;gap:8px;">
+                <div>
+                  <strong>${p.name}</strong>
+                  <span style="font-size:0.8rem;color:#888;">(${p.category})</span>
+                </div>
+                <div style="display:flex;gap:16px;font-size:0.85rem;">
+                  <span><i class="fas fa-eye"></i> ${p.impressions}</span>
+                  <span><i class="fas fa-download"></i> ${p.downloads}</span>
+                  <span style="color:#2a9d8f;font-weight:600;">₹${p.revenue.toFixed(2)}</span>
+                </div>
+              </div>
+            `).join('')
+          }
+        </div>
+        ${data.canWithdraw ? `
+          <div style="margin-top:16px;padding:12px;background:#d4edda;border-radius:12px;color:#155724;">
+            ✅ You are eligible for withdrawal! (Min. ₹100)
+            <button class="btn btn-sm btn-primary" onclick="requestWithdrawal()" style="margin-left:12px;">Request Withdrawal</button>
+          </div>
+        ` : `
+          <div style="margin-top:16px;padding:12px;background:#fff3cd;border-radius:12px;color:#856404;">
+            💡 You need ₹100+ to withdraw. Current: ₹${data.totalRevenue.toFixed(2)}
+          </div>
+        `}
+        ${data.withdrawalStatus ? `<div style="margin-top:8px;">📝 Withdrawal Status: ${data.withdrawalStatus}</div>` : ''}
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to load earnings', 'error');
+  }
+};
+
+window.requestWithdrawal = function() {
+  showToast('Please contact support@presethub.site for withdrawal requests.', 'info');
+};
+
+// ============================================================
+// ===== EXIT BUTTON =====
+// ============================================================
+function exitSite() {
+  if (confirm('Are you sure you want to leave PresetHub?')) {
+    window.close();
+    window.location.href = 'about:blank';
+  }
+}
+document.getElementById('exitBtn')?.addEventListener('click', exitSite);
+
+// ============================================================
+// ===== EXPLORE BUTTON & FILTERS =====
+// ============================================================
 exploreBtn?.addEventListener('click', () => {
   document.getElementById('presetsSection')?.scrollIntoView({ behavior: 'smooth' });
 });
-
-// ============================================================
-// ===== FILTERS =====
-// ============================================================
 
 searchBtn.addEventListener('click', () => {
   searchSuggestions.style.display = 'none';
@@ -1471,12 +1872,50 @@ document.querySelectorAll('.category-card').forEach(card => {
 });
 
 // ============================================================
+// ===== HANDLE URL ACTIONS (from PWA Shortcuts) =====
+// ============================================================
+function handleUrlAction() {
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get('action');
+  if (!action) return;
+
+  setTimeout(() => {
+    switch (action) {
+      case 'search':
+        const si = document.getElementById('searchInput');
+        if (si) { si.focus(); si.scrollIntoView({ behavior: 'smooth' }); }
+        break;
+      case 'wishlist':
+        showWishlist();
+        break;
+      case 'upload':
+        if (currentUser) openUploadModal();
+        else showToast('Please login', 'warning');
+        break;
+      case 'inbox':
+        if (currentUser) openNotifications();
+        else showToast('Please login', 'warning');
+        break;
+      case 'profile':
+        if (currentUser) openEditProfile();
+        else showToast('Please login', 'warning');
+        break;
+      default:
+        break;
+    }
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, '/');
+    }
+  }, 500);
+}
+
+// ============================================================
 // ===== INIT =====
 // ============================================================
-
 loadPresets();
 loadLatestPresets();
 loadTopCreators();
+handleUrlAction();
 
 if (!navigator.onLine && offlineIndicator) {
   offlineIndicator.style.display = 'inline-block';
@@ -1485,11 +1924,10 @@ if (!navigator.onLine && offlineIndicator) {
 // ============================================================
 // ===== PWA =====
 // ============================================================
-
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js')
     .then(() => console.log('✅ SW registered with offline support'))
     .catch(err => console.error('❌ SW failed', err));
 }
 
-console.log('🚀 PresetHub frontend loaded with offline support and user dropdown menu');
+console.log('🚀 PresetHub frontend loaded with all features');

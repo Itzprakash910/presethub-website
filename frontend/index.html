@@ -104,25 +104,50 @@
                     <div id="offlineIndicator" style="display:none; background:#f39c12; color:#fff; padding:4px 12px; border-radius:20px; font-size:0.7rem; font-weight:600; margin-right:8px;">
                         ⚡ ऑफलाइन
                     </div>
+
+                    <!-- Wishlist -->
                     <button class="icon-btn" id="wishlistBtn" aria-label="Wishlist"><i class="far fa-heart"></i></button>
+
+                    <!-- Upload -->
                     <button class="icon-btn" id="uploadBtn" aria-label="Upload"><i class="fas fa-cloud-upload-alt"></i></button>
+
+                    <!-- Theme Toggle -->
                     <button class="icon-btn" id="themeToggle" aria-label="Toggle Theme">
                         <i class="fas fa-moon"></i>
                     </button>
+
+                    <!-- 🔔 Notification Bell -->
+                    <button class="icon-btn" id="notificationBtn" aria-label="Notifications" style="position:relative;">
+                        <i class="fas fa-bell"></i>
+                        <span id="notifBadge" style="position:absolute;top:-5px;right:-5px;background:#e74c3c;color:#fff;border-radius:50%;padding:2px 6px;font-size:0.7rem;display:none;">0</span>
+                    </button>
+
+                    <!-- 🚪 Exit Button -->
+                    <button class="icon-btn" id="exitBtn" aria-label="Exit" onclick="exitSite()">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+
+                    <!-- Auth Section -->
                     <div id="authSection">
                         <button class="btn btn-sm btn-outline" id="loginBtn">लॉग इन</button>
                         <button class="btn btn-sm btn-primary" id="signupBtn">साइन अप</button>
                     </div>
+
                     <!-- User Section with Dropdown -->
                     <div id="userSection" style="display:none; position:relative;">
                         <div class="user-avatar" id="userAvatar">R</div>
-                        <div id="userDropdown" class="dropdown-menu" style="display:none; position:absolute; top:50px; right:0; background:var(--card-bg, #fff); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.1); min-width:180px; padding:8px 0; z-index:1000;">
+                        <div id="userDropdown" class="dropdown-menu" style="display:none; position:absolute; top:50px; right:0; background:var(--card-bg, #fff); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.1); min-width:200px; padding:8px 0; z-index:1000;">
                             <a href="#" onclick="window.openEditProfile(); return false;" class="dropdown-item"><i class="fas fa-user"></i> My Profile</a>
                             <a href="#" onclick="window.showMyPresets(); return false;" class="dropdown-item"><i class="fas fa-cubes"></i> My Presets</a>
                             <a href="#" onclick="window.showMyDownloads(); return false;" class="dropdown-item"><i class="fas fa-download"></i> My Downloads</a>
                             <a href="#" onclick="window.showWishlist(); return false;" class="dropdown-item"><i class="fas fa-heart"></i> Wishlist</a>
                             <a href="#" onclick="window.openUploadModal(); return false;" class="dropdown-item"><i class="fas fa-upload"></i> Upload</a>
                             <div class="dropdown-divider" style="border-top:1px solid var(--border, #eee); margin:6px 12px;"></div>
+                            <!-- NEW: Earnings, Referral, Subscription -->
+                            <a href="#" onclick="window.showEarnings(); return false;" class="dropdown-item"><i class="fas fa-rupee-sign"></i> My Earnings</a>
+                            <a href="#" onclick="window.showReferral(); return false;" class="dropdown-item"><i class="fas fa-link"></i> Referral Program</a>
+                            <a href="#" class="dropdown-item" id="subscriptionStatus"><i class="fas fa-crown"></i> Premium: <span id="premiumBadge">Free</span></a>
+                            <div class="dropdown-divider"></div>
                             <a href="#" onclick="window.logout(); return false;" class="dropdown-item" style="color:#e74c3c;"><i class="fas fa-sign-out-alt"></i> Logout</a>
                         </div>
                     </div>
@@ -329,6 +354,8 @@
         <!-- Modal & Toast containers -->
         <div id="modalContainer"></div>
         <div id="toastContainer"></div>
+
+        <!-- ===== NOTE: Bottom Navigation removed ===== -->
     </div>
 
     <!-- ===== SCRIPTS ===== -->
