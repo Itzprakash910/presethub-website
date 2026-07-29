@@ -2,10 +2,11 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// ✅ सही पथ – प्रोजेक्ट रूट (preset-hub) के uploads फोल्डर में
-const baseDir = path.join(__dirname, '../..'); // preset-hub/
-const uploadDir = path.join(baseDir, 'uploads');
+// ✅ Absolute paths from project root
+const projectRoot = path.join(__dirname, '../..');
+const uploadDir = path.join(projectRoot, 'uploads');
 const previewDir = path.join(uploadDir, 'previews');
+
 // Ensure directories exist
 [uploadDir, previewDir].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
