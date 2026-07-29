@@ -34,6 +34,174 @@
         "referralRewardDays": 0
       },
       "notifications": []
+    },
+    {
+      "id": "f1d1f7b3-f279-49df-bd6a-ba1837c2dca7",
+      "email": "boy767654@gmail.com",
+      "password": "$2a$10$FVLZa0pT8kJF2p2tGJ/tVeeCB4edMe5R5j66bFWq.vubBvdhMyKDu",
+      "name": "Jatav jii",
+      "role": "user",
+      "createdAt": "2026-07-29T12:48:57.831Z",
+      "verified": false,
+      "bio": "",
+      "avatar": "",
+      "username": "boy767654",
+      "socialLinks": {
+        "instagram": "",
+        "youtube": "",
+        "twitter": "",
+        "website": ""
+      },
+      "followers": [],
+      "following": [],
+      "wishlist": [
+        "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848"
+      ],
+      "subscription": {
+        "tier": "free",
+        "expiry": null,
+        "adWatchCount": 0,
+        "adRewardDays": 0,
+        "lastAdWatch": null
+      },
+      "referral": {
+        "code": null,
+        "referredBy": null,
+        "referralCount": 0,
+        "referralRewardDays": 0
+      },
+      "notifications": []
+    },
+    {
+      "id": "tele_6221923358",
+      "email": "",
+      "password": "",
+      "name": "Omiii ✨",
+      "username": "Crezy_op",
+      "role": "user",
+      "createdAt": "2026-07-29T12:57:30.439Z",
+      "verified": false,
+      "bio": "",
+      "avatar": "",
+      "socialLinks": {
+        "instagram": "",
+        "youtube": "",
+        "twitter": "",
+        "website": ""
+      },
+      "followers": [],
+      "following": [],
+      "wishlist": [],
+      "telegram": {
+        "firstName": "Omiii ✨",
+        "lastName": "(hey.omii.08x___)",
+        "username": "Crezy_op",
+        "languageCode": "en"
+      },
+      "lastActive": "2026-07-29T16:14:26.528Z",
+      "commandsCount": 12,
+      "subscription": {
+        "tier": "free",
+        "expiry": null,
+        "adWatchCount": 0,
+        "adRewardDays": 0,
+        "lastAdWatch": null
+      },
+      "referral": {
+        "code": null,
+        "referredBy": null,
+        "referralCount": 0,
+        "referralRewardDays": 0
+      },
+      "notifications": []
+    },
+    {
+      "id": "tele_6221923358",
+      "email": "",
+      "password": "",
+      "name": "Omiii ✨",
+      "username": "Crezy_op",
+      "role": "user",
+      "createdAt": "2026-07-29T13:18:31.646Z",
+      "verified": false,
+      "bio": "",
+      "avatar": "",
+      "socialLinks": {
+        "instagram": "",
+        "youtube": "",
+        "twitter": "",
+        "website": ""
+      },
+      "followers": [],
+      "following": [],
+      "wishlist": [],
+      "telegram": {
+        "firstName": "Omiii ✨",
+        "lastName": "(hey.omii.08x___)",
+        "username": "Crezy_op",
+        "languageCode": "en"
+      },
+      "lastActive": "2026-07-29T13:18:31.649Z",
+      "commandsCount": 1,
+      "subscription": {
+        "tier": "free",
+        "expiry": null,
+        "adWatchCount": 0,
+        "adRewardDays": 0,
+        "lastAdWatch": null
+      },
+      "referral": {
+        "code": null,
+        "referredBy": null,
+        "referralCount": 0,
+        "referralRewardDays": 0
+      },
+      "notifications": []
+    },
+    {
+      "id": "tele_6221923358",
+      "email": "",
+      "password": "",
+      "name": "Omiii ✨",
+      "username": "Crezy_op",
+      "role": "user",
+      "createdAt": "2026-07-29T13:18:40.494Z",
+      "verified": false,
+      "bio": "",
+      "avatar": "",
+      "socialLinks": {
+        "instagram": "",
+        "youtube": "",
+        "twitter": "",
+        "website": ""
+      },
+      "followers": [],
+      "following": [],
+      "wishlist": [],
+      "telegramId": "6221923358",
+      "telegram": {
+        "firstName": "Omiii ✨",
+        "lastName": "(hey.omii.08x___)",
+        "username": "Crezy_op",
+        "languageCode": "en"
+      },
+      "lastActive": "2026-07-29T13:20:24.374Z",
+      "commandsCount": 7,
+      "token": "",
+      "subscription": {
+        "tier": "free",
+        "expiry": null,
+        "adWatchCount": 0,
+        "adRewardDays": 0,
+        "lastAdWatch": null
+      },
+      "referral": {
+        "code": null,
+        "referredBy": null,
+        "referralCount": 0,
+        "referralRewardDays": 0
+      },
+      "notifications": []
     }
   ],
   "presets": [
@@ -42,7 +210,9 @@
       "name": "Nurture photo 2",
       "description": "New Lightroom presets add 2",
       "category": "नैचुरल",
-      "tags": ["#nuture #newpost #newpreset"],
+      "tags": [
+        "#nuture #newpost #newpreset"
+      ],
       "price": 1,
       "author": "Omprakash Ahirwar",
       "authorId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
@@ -66,11 +236,13 @@
       "status": "approved",
       "size": 3452982,
       "originalName": "IMG20260727161415 (1).dng",
-      "views": 0,
-      "likes": [],
-      "shares": 0,
-      "adImpressions": 0,
-      "totalRevenue": 0
+      "views": 3,
+      "likes": [
+        "f1d1f7b3-f279-49df-bd6a-ba1837c2dca7"
+      ],
+      "shares": 2,
+      "adImpressions": 3,
+      "totalRevenue": 0.03
     },
     {
       "id": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
@@ -83,19 +255,29 @@
       "authorId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
       "createdAt": "2026-07-27T16:48:18.920Z",
       "updatedAt": "2026-07-27T16:48:18.920Z",
-      "downloads": 12,
-      "avgRating": 0,
-      "reviews": [],
+      "downloads": 14,
+      "avgRating": 4,
+      "reviews": [
+        {
+          "id": "d37a48da-2548-4ab7-b8c8-eaef91adcd42",
+          "userId": "f1d1f7b3-f279-49df-bd6a-ba1837c2dca7",
+          "userName": "Jatav jii",
+          "rating": 4,
+          "comment": "Badhiya Bhai ",
+          "createdAt": "2026-07-29T17:03:06.568Z",
+          "helpful": 0
+        }
+      ],
       "fileUrl": "/uploads/1785170898667-18395039.dng",
       "previewImage": "/uploads/previews/1785170898831-833253093.jpg",
       "status": "approved",
       "size": 4767236,
       "originalName": "IMG20260727161945.dng",
-      "views": 0,
+      "views": 4,
       "likes": [],
-      "shares": 0,
-      "adImpressions": 0,
-      "totalRevenue": 0
+      "shares": 1,
+      "adImpressions": 4,
+      "totalRevenue": 0.04
     }
   ],
   "downloads": [
@@ -170,6 +352,18 @@
       "userId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
       "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
       "downloadedAt": "2026-07-29T02:24:30.211Z"
+    },
+    {
+      "id": "3791801c-fe38-4856-a8fb-8d8635079f7e",
+      "userId": "f1d1f7b3-f279-49df-bd6a-ba1837c2dca7",
+      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
+      "downloadedAt": "2026-07-29T16:23:35.244Z"
+    },
+    {
+      "id": "dcda3f24-8472-4a20-a76b-e61184de0d5f",
+      "userId": "f1d1f7b3-f279-49df-bd6a-ba1837c2dca7",
+      "presetId": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
+      "downloadedAt": "2026-07-29T16:46:50.826Z"
     }
   ],
   "orders": [

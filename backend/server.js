@@ -29,10 +29,20 @@ const PORT = process.env.PORT || 4000;
 // Security middleware
 app.use(helmet());
 
-// CORS – ✅ Allow CLIENT_URL (presethub.site)
-const allowedOrigin = process.env.CLIENT_URL || 'https://presethub.site';
+// CORS – Allow multiple origins
+const allowedOrigins = [
+  process.env.CLIENT_URL || 'https://presethub.site',
+  'http://localhost:4000',
+  'http://localhost:3000'
+];
 app.use(cors({
-  origin: allowedOrigin,
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
 }));
 
@@ -48,16 +58,13 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // Body parsing
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ✅ Serve frontend static files
-app.use(express.static(path.join(__dirname, '../frontend')));
-
-// Serve uploaded preset files
+// ✅ Serve uploaded preset files FIRST (before API routes)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// API routes
+// ✅ API routes (MUST be before the catch-all)
 app.use('/api/auth', authRoutes);
 app.use('/api/presets', presetRoutes);
 app.use('/api/users', userRoutes);
@@ -73,7 +80,6 @@ app.get('/admin', (req, res) => {
 // ============================================================
 // ✅ STATIC PAGES (Legal, Info, Help, etc.)
 // ============================================================
-
 app.get('/terms.html', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/terms.html'));
 });
@@ -105,28 +111,39 @@ app.get('/terms.css', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/terms.css'));
 });
 
+// ✅ Serve frontend static files (AFTER API routes)
+app.use(express.static(path.join(__dirname, '../frontend')));
+
 // ============================================================
-// ✅ CATCH-ALL: Serve index.html for any other route (SPA support)
+// ✅ CATCH-ALL: Serve index.html ONLY for non-API routes
 // ============================================================
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/index.html'));
+  // If the request accepts HTML, serve index.html (SPA support)
+  if (req.accepts('html')) {
+    res.sendFile(path.join(__dirname, '../frontend/index.html'));
+  } else {
+    res.status(404).json({ error: 'Not found' });
+  }
 });
 
 // Error handler
 app.use(errorHandler);
 
+// Ensure uploads directories exist
+const fs = require('fs');
+const uploadsDir = path.join(__dirname, '../uploads');
+const previewsDir = path.join(uploadsDir, 'previews');
+const avatarsDir = path.join(uploadsDir, 'avatars');
+[uploadsDir, previewsDir, avatarsDir].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`📁 Created directory: ${dir}`);
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 PresetHub server running on port ${PORT}`);
-  console.log(`📱 Frontend: ${allowedOrigin}`);
-  console.log(`🔧 Admin: ${allowedOrigin}/admin`);
-  console.log(`📄 Terms: ${allowedOrigin}/terms.html`);
-  console.log(`🔒 Privacy: ${allowedOrigin}/privacy.html`);
-  console.log(`ℹ️  About: ${allowedOrigin}/about.html`);
-  console.log(`📝 Blog: ${allowedOrigin}/blog.html`);
-  console.log(`🚀 Creator Program: ${allowedOrigin}/creator-program.html`);
-  console.log(`❓ FAQ: ${allowedOrigin}/faq.html`);
-  console.log(`📧 Contact: ${allowedOrigin}/contact.html`);
-  console.log(`⬇️  Download Guide: ${allowedOrigin}/download-guide.html`);
-  console.log(`📷 Lightroom Guide: ${allowedOrigin}/lightroom-guide.html`);
+  console.log(`📱 Frontend: ${process.env.CLIENT_URL || 'https://presethub.site'}`);
+  console.log(`🔧 Admin: ${process.env.CLIENT_URL || 'https://presethub.site'}/admin`);
   console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
