@@ -1,7 +1,11 @@
+// ============================================================
 // ===== CONFIGURATION =====
+// ============================================================
 const API_URL = window.location.origin + '/api';
 
+// ============================================================
 // ===== GLOBALS =====
+// ============================================================
 let currentUser = null;
 let token = localStorage.getItem('token');
 let allPresets = [];
@@ -14,32 +18,324 @@ let subscriptionData = {};
 let notifications = [];
 let viewedPresets = new Set();
 
+// ============================================================
 // ===== DOM REFS =====
+// ============================================================
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-const authSection = $('#authSection');
-const userSection = $('#userSection');
-const userAvatar = $('#userAvatar');
-const loginBtn = $('#loginBtn');
-const signupBtn = $('#signupBtn');
-const logoutBtn = $('#logoutBtn');
-const presetGrid = $('#presetGrid');
-const latestGrid = $('#latestGrid');
-const searchInput = $('#searchInput');
-const searchBtn = $('#searchBtn');
-const filterCategory = $('#filterCategory');
-const filterPrice = $('#filterPrice');
-const filterSort = $('#filterSort');
-const wishlistBtn = $('#wishlistBtn');
-const exploreBtn = $('#exploreBtn');
-const uploadHeroBtn = $('#uploadHeroBtn');
-const featuredDownloadBtn = $('#featuredDownloadBtn');
-const searchSuggestions = $('#searchSuggestions');
-const themeToggle = $('#themeToggle');
-const loadMoreBtn = $('#loadMoreBtn');
-const offlineIndicator = $('#offlineIndicator');
-const userDropdown = document.getElementById('userDropdown');
+let authSection, userSection, userAvatar, loginBtn, signupBtn, logoutBtn;
+let presetGrid, latestGrid, searchInput, searchBtn;
+let filterCategory, filterPrice, filterSort;
+let wishlistBtn, exploreBtn, uploadHeroBtn, featuredDownloadBtn;
+let searchSuggestions, themeToggle, loadMoreBtn, offlineIndicator, userDropdown;
+
+// ============================================================
+// ===== DOM READY – Initialize after DOM load =====
+// ============================================================
+function initDOM() {
+  authSection = $('#authSection');
+  userSection = $('#userSection');
+  userAvatar = $('#userAvatar');
+  loginBtn = $('#loginBtn');
+  signupBtn = $('#signupBtn');
+  logoutBtn = $('#logoutBtn');
+  presetGrid = $('#presetGrid');
+  latestGrid = $('#latestGrid');
+  searchInput = $('#searchInput');
+  searchBtn = $('#searchBtn');
+  filterCategory = $('#filterCategory');
+  filterPrice = $('#filterPrice');
+  filterSort = $('#filterSort');
+  wishlistBtn = $('#wishlistBtn');
+  exploreBtn = $('#exploreBtn');
+  uploadHeroBtn = $('#uploadHeroBtn');
+  featuredDownloadBtn = $('#featuredDownloadBtn');
+  searchSuggestions = $('#searchSuggestions');
+  themeToggle = $('#themeToggle');
+  loadMoreBtn = $('#loadMoreBtn');
+  offlineIndicator = $('#offlineIndicator');
+  userDropdown = document.getElementById('userDropdown');
+
+  attachEventListeners();
+}
+
+// ============================================================
+// ===== ATTACH ALL EVENT LISTENERS =====
+// ============================================================
+function attachEventListeners() {
+  // --- Auth Buttons ---
+  if (loginBtn) loginBtn.addEventListener('click', () => openAuthModal('login'));
+  if (signupBtn) signupBtn.addEventListener('click', () => openAuthModal('signup'));
+  if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+  // --- Theme Toggle ---
+  if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('dark');
+      const isDark = document.body.classList.contains('dark');
+      themeToggle.innerHTML = isDark ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    });
+  }
+
+  // --- User Avatar Dropdown ---
+  if (userAvatar) {
+    userAvatar.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!currentUser) {
+        showToast('कृपया पहले लॉग इन करें', 'warning');
+        return;
+      }
+      if (userDropdown) {
+        userDropdown.style.display = userDropdown.style.display === 'block' ? 'none' : 'block';
+      }
+    });
+  }
+
+  // --- Close dropdown on outside click ---
+  document.addEventListener('click', (e) => {
+    if (userDropdown && !e.target.closest('#userSection')) {
+      userDropdown.style.display = 'none';
+    }
+  });
+
+  // --- Wishlist Button ---
+  if (wishlistBtn) {
+    wishlistBtn.addEventListener('click', showWishlist);
+  }
+
+  // --- Upload Buttons ---
+  const uploadBtn = $('#uploadBtn');
+  if (uploadBtn) uploadBtn.addEventListener('click', openUploadModal);
+  if (uploadHeroBtn) uploadHeroBtn.addEventListener('click', openUploadModal);
+
+  // --- Explore Button ---
+  if (exploreBtn) {
+    exploreBtn.addEventListener('click', () => {
+      const section = document.getElementById('presetsSection');
+      if (section) section.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  // --- Featured Download ---
+  if (featuredDownloadBtn) {
+    featuredDownloadBtn.addEventListener('click', async () => {
+      if (!currentUser) {
+        showToast('कृपया पहले लॉग इन करें', 'warning');
+        return;
+      }
+      try {
+        const res = await fetch(`${API_URL}/presets/featured/download`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'featured-pack.zip';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          showToast('✅ फीचर्ड पैक डाउनलोड हो गया!', 'success');
+        } else {
+          const err = await res.json().catch(() => ({}));
+          showToast(err.error || 'डाउनलोड विफल', 'error');
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('त्रुटि: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // --- Search Button ---
+  if (searchBtn) {
+    searchBtn.addEventListener('click', () => {
+      if (searchSuggestions) searchSuggestions.style.display = 'none';
+      currentPage = 1;
+      loadPresets();
+    });
+  }
+
+  // --- Search Input (Enter key + Smart Search) ---
+  if (searchInput) {
+    searchInput.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') {
+        if (searchSuggestions) searchSuggestions.style.display = 'none';
+        currentPage = 1;
+        loadPresets();
+      }
+    });
+
+    // ✅ SMART SEARCH - Fixed
+    let searchTimeout = null;
+    searchInput.addEventListener('input', function() {
+      const query = this.value.trim();
+      if (query.length < 2) {
+        if (searchSuggestions) searchSuggestions.style.display = 'none';
+        return;
+      }
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(async () => {
+        try {
+          const res = await fetch(`${API_URL}/presets/search?q=${encodeURIComponent(query)}`);
+          if (res.ok) {
+            const suggestions = await res.json();
+            if (searchSuggestions) {
+              if (suggestions.length === 0) {
+                searchSuggestions.style.display = 'none';
+                return;
+              }
+              searchSuggestions.innerHTML = suggestions.map(p => `
+                <div class="suggestion-item" data-id="${p.id}">
+                  <strong>${p.name}</strong> — ${p.author}
+                  <span style="font-size:0.8rem;color:#6b6b6b;">${p.category}</span>
+                </div>
+              `).join('');
+              searchSuggestions.style.display = 'block';
+              // ✅ Fix: Click on suggestion
+              searchSuggestions.querySelectorAll('.suggestion-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                  e.stopPropagation();
+                  const id = this.dataset.id;
+                  if (searchInput) searchInput.value = '';
+                  if (searchSuggestions) searchSuggestions.style.display = 'none';
+                  openPresetModal(id);
+                });
+              });
+            }
+          }
+        } catch (err) { console.error('Search error:', err); }
+      }, 300);
+    });
+  }
+
+  // --- Close search suggestions on outside click ---
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.nav-search')) {
+      if (searchSuggestions) searchSuggestions.style.display = 'none';
+    }
+  });
+
+  // --- Filters ---
+  if (filterCategory) {
+    filterCategory.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  }
+  if (filterPrice) {
+    filterPrice.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  }
+  if (filterSort) {
+    filterSort.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  }
+
+  // --- Category Cards ---
+  document.querySelectorAll('.category-card').forEach(card => {
+    card.addEventListener('click', function() {
+      const cat = this.querySelector('.name')?.textContent;
+      if (cat && filterCategory) {
+        filterCategory.value = cat;
+        currentPage = 1;
+        loadPresets();
+        const section = document.getElementById('presetsSection');
+        if (section) section.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+
+  // --- Load More Button ---
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', () => {
+      loadPresets(currentPage + 1, true);
+    });
+  }
+
+  // --- Notification Button ---
+  const notificationBtn = document.getElementById('notificationBtn');
+  if (notificationBtn) {
+    notificationBtn.addEventListener('click', openNotifications);
+  }
+
+  // --- Exit Button ---
+  const exitBtn = document.getElementById('exitBtn');
+  if (exitBtn) {
+    exitBtn.addEventListener('click', exitSite);
+  }
+
+  // --- Preset Grid Event Delegation ---
+  if (presetGrid) {
+    presetGrid.addEventListener('click', function(e) {
+      const card = e.target.closest('.preset-card');
+      if (!card) return;
+      const id = card.dataset.id;
+      const previewBtn = e.target.closest('.preview-btn');
+      if (previewBtn) {
+        e.stopPropagation();
+        openPresetModal(id);
+        return;
+      }
+      const wishBtn = e.target.closest('.wishlist-toggle');
+      if (wishBtn) {
+        e.stopPropagation();
+        toggleWishlist(id);
+        return;
+      }
+      if (!e.target.closest('.author')) {
+        openPresetModal(id);
+      }
+    });
+  }
+
+  // --- Latest Presets Grid Event Delegation (same as presetGrid) ---
+  if (latestGrid) {
+    latestGrid.addEventListener('click', function(e) {
+      const card = e.target.closest('.preset-card');
+      if (!card) return;
+      const id = card.dataset.id;
+      const previewBtn = e.target.closest('.preview-btn');
+      if (previewBtn) {
+        e.stopPropagation();
+        openPresetModal(id);
+        return;
+      }
+      const wishBtn = e.target.closest('.wishlist-toggle');
+      if (wishBtn) {
+        e.stopPropagation();
+        toggleWishlist(id);
+        return;
+      }
+      if (!e.target.closest('.author')) {
+        openPresetModal(id);
+      }
+    });
+  }
+
+  // --- Online/Offline ---
+  window.addEventListener('online', async () => {
+    isOnline = true;
+    if (offlineIndicator) offlineIndicator.style.display = 'none';
+    showToast('🔄 Connection restored! Syncing data...', 'info');
+    if ('serviceWorker' in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if ('SyncManager' in window) {
+          await registration.sync.register('presethub-sync');
+        }
+      } catch (err) {
+        console.warn('Sync registration failed:', err);
+      }
+    }
+  });
+
+  window.addEventListener('offline', () => {
+    isOnline = false;
+    if (offlineIndicator) offlineIndicator.style.display = 'inline-block';
+    showToast('📴 You are offline. Actions will be queued.', 'warning');
+  });
+}
 
 // ============================================================
 // ===== OFFLINE QUEUE UTILITY =====
@@ -69,7 +365,6 @@ async function addToQueue(action, url, options = {}) {
       method: options.method || 'POST',
       headers: options.headers || {},
       body: options.body || null,
-      data: options.data || null,
       timestamp: Date.now()
     };
     await new Promise((resolve, reject) => {
@@ -99,52 +394,36 @@ async function addToQueue(action, url, options = {}) {
 }
 
 // ============================================================
-// ===== ONLINE / OFFLINE INDICATOR =====
+// ===== SERVICE WORKER MESSAGE HANDLER =====
 // ============================================================
-window.addEventListener('online', async () => {
-  isOnline = true;
-  if (offlineIndicator) offlineIndicator.style.display = 'none';
-  showToast('🔄 Connection restored! Syncing data...', 'info');
-  if ('serviceWorker' in navigator) {
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      if ('SyncManager' in window) {
-        await registration.sync.register('presethub-sync');
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data.type === 'SYNC_SUCCESS') {
+      showToast(`✅ "${event.data.action}" synced successfully!`, 'success');
+      if (event.data.action === 'review') {
+        loadPresets();
+      } else if (event.data.action === 'wishlist') {
+        fetchWishlist();
+        loadPresets();
+      } else if (event.data.action === 'upload') {
+        loadPresets();
+        loadLatestPresets();
+      } else if (event.data.action === 'download' || event.data.action === 'follow' || event.data.action === 'order') {
+        fetchUserProfile();
       }
-    } catch (err) {
-      console.warn('Sync registration failed:', err);
     }
-  }
-});
-
-window.addEventListener('offline', () => {
-  isOnline = false;
-  if (offlineIndicator) offlineIndicator.style.display = 'inline-block';
-  showToast('📴 You are offline. Actions will be queued.', 'warning');
-});
-
-navigator.serviceWorker.addEventListener('message', (event) => {
-  if (event.data.type === 'SYNC_SUCCESS') {
-    showToast(`✅ "${event.data.action}" synced successfully!`, 'success');
-    if (event.data.action === 'review') {
-      loadPresets();
-    } else if (event.data.action === 'wishlist') {
-      fetchWishlist();
-      loadPresets();
-    } else if (event.data.action === 'upload') {
-      loadPresets();
-      loadLatestPresets();
-    } else if (event.data.action === 'download' || event.data.action === 'follow' || event.data.action === 'order') {
-      fetchUserProfile();
-    }
-  }
-});
+  });
+}
 
 // ============================================================
 // ===== TOAST SYSTEM =====
 // ============================================================
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
+  if (!container) {
+    console.warn('Toast container not found');
+    return;
+  }
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   toast.textContent = message;
@@ -163,14 +442,7 @@ window.showToast = showToast;
 const currentTheme = localStorage.getItem('theme') || 'light';
 if (currentTheme === 'dark') {
   document.body.classList.add('dark');
-  themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
 }
-themeToggle.addEventListener('click', () => {
-  document.body.classList.toggle('dark');
-  const isDark = document.body.classList.contains('dark');
-  themeToggle.innerHTML = isDark ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
-  localStorage.setItem('theme', isDark ? 'dark' : 'light');
-});
 
 // ============================================================
 // ===== AUTH =====
@@ -197,13 +469,15 @@ async function fetchUserProfile() {
 }
 
 function showLoggedInUI(user) {
-  authSection.style.display = 'none';
-  userSection.style.display = 'flex';
-  userAvatar.textContent = user.name.charAt(0).toUpperCase();
-  if (user.avatar) {
-    userAvatar.style.backgroundImage = `url(${user.avatar})`;
-    userAvatar.style.backgroundSize = 'cover';
-    userAvatar.textContent = '';
+  if (authSection) authSection.style.display = 'none';
+  if (userSection) userSection.style.display = 'flex';
+  if (userAvatar) {
+    userAvatar.textContent = user.name.charAt(0).toUpperCase();
+    if (user.avatar) {
+      userAvatar.style.backgroundImage = `url(${user.avatar})`;
+      userAvatar.style.backgroundSize = 'cover';
+      userAvatar.textContent = '';
+    }
   }
   fetchWishlist();
   fetchSubscription();
@@ -216,8 +490,8 @@ function logout() {
   localStorage.removeItem('token');
   token = null;
   currentUser = null;
-  authSection.style.display = 'flex';
-  userSection.style.display = 'none';
+  if (authSection) authSection.style.display = 'flex';
+  if (userSection) userSection.style.display = 'none';
   wishlist = [];
   notifications = [];
   subscriptionData = {};
@@ -225,30 +499,10 @@ function logout() {
   if (userDropdown) userDropdown.style.display = 'none';
   showToast('लॉगआउट हो गया', 'info');
 }
-
-loginBtn.addEventListener('click', () => openAuthModal('login'));
-signupBtn.addEventListener('click', () => openAuthModal('signup'));
-logoutBtn.addEventListener('click', logout);
+window.logout = logout;
 
 // ============================================================
-// ===== USER DROPDOWN TOGGLE =====
-// ============================================================
-userAvatar.addEventListener('click', (e) => {
-  e.stopPropagation();
-  if (!currentUser) return;
-  if (userDropdown.style.display === 'block') {
-    userDropdown.style.display = 'none';
-  } else {
-    userDropdown.style.display = 'block';
-  }
-});
-
-document.addEventListener('click', () => {
-  if (userDropdown) userDropdown.style.display = 'none';
-});
-
-// ============================================================
-// ===== MY PRESETS (Web) =====
+// ===== MY PRESETS =====
 // ============================================================
 window.showMyPresets = async function() {
   if (!currentUser) {
@@ -463,6 +717,7 @@ async function toggleWishlist(presetId) {
 window.toggleWishlist = toggleWishlist;
 
 function updateWishlistUI() {
+  if (!wishlistBtn) return;
   const count = wishlist.length;
   wishlistBtn.innerHTML = `<i class="fa${count > 0 ? 's' : 'r'} fa-heart"></i>${count > 0 ? count : ''}`;
 }
@@ -509,10 +764,10 @@ async function showWishlist() {
   document.body.appendChild(modal);
   modal.querySelector('.close').addEventListener('click', () => modal.remove());
 }
-wishlistBtn.addEventListener('click', showWishlist);
+window.showWishlist = showWishlist;
 
 // ============================================================
-// ===== PRESETS CRUD (with engagement stats) =====
+// ===== PRESETS CRUD =====
 // ============================================================
 function renderPresetsToContainer(presets, container) {
   if (!container) return;
@@ -526,8 +781,12 @@ function renderPresetsToContainer(presets, container) {
       `<span class="price free">मुफ्त</span>` :
       `<span class="price">₹${p.price}</span>`;
     const stars = '★'.repeat(Math.floor(p.avgRating || 0)) + (p.avgRating % 1 >= 0.5 ? '½' : '');
-    const previewImg = p.previewImage ? 
-      `<img src="${p.previewImage}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'">` :
+    // ✅ FIX: Use absolute URL for images
+    const previewImageSrc = p.previewImage ? 
+      (p.previewImage.startsWith('http') ? p.previewImage : window.location.origin + p.previewImage) : 
+      null;
+    const previewImg = previewImageSrc ? 
+      `<img src="${previewImageSrc}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'">` :
       `<svg viewBox="0 0 270 200" style="background:#d9d0c4;width:100%;height:100%;">
         <rect x="20" y="20" width="80" height="70" rx="10" fill="#b8aa98" />
         <rect x="120" y="20" width="80" height="70" rx="10" fill="#c4b5a2" />
@@ -570,46 +829,18 @@ function renderPresetsToContainer(presets, container) {
 }
 
 // ============================================================
-// ===== EVENT DELEGATION FOR PRESET GRID =====
-// ============================================================
-presetGrid.addEventListener('click', function(e) {
-  const card = e.target.closest('.preset-card');
-  if (!card) return;
-  const id = card.dataset.id;
-  const previewBtn = e.target.closest('.preview-btn');
-  if (previewBtn) {
-    e.stopPropagation();
-    openPresetModal(id);
-    return;
-  }
-  const wishBtn = e.target.closest('.wishlist-toggle');
-  if (wishBtn) {
-    e.stopPropagation();
-    toggleWishlist(id);
-    return;
-  }
-  if (!e.target.closest('.author')) {
-    openPresetModal(id);
-  }
-});
-
-loadMoreBtn.addEventListener('click', () => {
-  loadPresets(currentPage + 1, true);
-});
-
-// ============================================================
-// ===== LOAD PRESETS (with follower counts enrichment) =====
+// ===== LOAD PRESETS =====
 // ============================================================
 async function loadPresets(page = 1, append = false) {
   try {
     const params = new URLSearchParams();
-    const q = searchInput.value.trim();
+    const q = searchInput ? searchInput.value.trim() : '';
     if (q) params.append('q', q);
-    const cat = filterCategory.value;
+    const cat = filterCategory ? filterCategory.value : '';
     if (cat) params.append('category', cat);
-    const price = filterPrice.value;
+    const price = filterPrice ? filterPrice.value : '';
     if (price) params.append('price', price);
-    const sort = filterSort.value;
+    const sort = filterSort ? filterSort.value : '';
     if (sort) params.append('sort', sort);
     params.append('page', page);
     params.append('limit', 20);
@@ -639,19 +870,21 @@ async function loadPresets(page = 1, append = false) {
       currentPage = data.page || 1;
       
       if (append) {
-        const existing = presetGrid.innerHTML;
+        const existing = presetGrid ? presetGrid.innerHTML : '';
         const tempDiv = document.createElement('div');
         renderPresetsToContainer(allPresets, tempDiv);
-        presetGrid.innerHTML = existing + tempDiv.innerHTML;
+        if (presetGrid) presetGrid.innerHTML = existing + tempDiv.innerHTML;
       } else {
         renderPresetsToContainer(allPresets, presetGrid);
       }
       
-      if (currentPage < totalPages) {
-        loadMoreBtn.style.display = 'inline-flex';
-        loadMoreBtn.textContent = `और लोड करें (${currentPage}/${totalPages})`;
-      } else {
-        loadMoreBtn.style.display = 'none';
+      if (loadMoreBtn) {
+        if (currentPage < totalPages) {
+          loadMoreBtn.style.display = 'inline-flex';
+          loadMoreBtn.textContent = `और लोड करें (${currentPage}/${totalPages})`;
+        } else {
+          loadMoreBtn.style.display = 'none';
+        }
       }
       return;
     }
@@ -662,13 +895,13 @@ async function loadPresets(page = 1, append = false) {
     console.warn('⚠️ Load presets failed, trying cache:', err);
     try {
       const params = new URLSearchParams();
-      const q = searchInput.value.trim();
+      const q = searchInput ? searchInput.value.trim() : '';
       if (q) params.append('q', q);
-      const cat = filterCategory.value;
+      const cat = filterCategory ? filterCategory.value : '';
       if (cat) params.append('category', cat);
-      const price = filterPrice.value;
+      const price = filterPrice ? filterPrice.value : '';
       if (price) params.append('price', price);
-      const sort = filterSort.value;
+      const sort = filterSort ? filterSort.value : '';
       if (sort) params.append('sort', sort);
       params.append('page', page);
       params.append('limit', 20);
@@ -734,53 +967,7 @@ async function loadLatestPresets() {
 }
 
 // ============================================================
-// ===== SMART SEARCH =====
-// ============================================================
-let searchTimeout = null;
-searchInput.addEventListener('input', function() {
-  const query = this.value.trim();
-  if (query.length < 2) {
-    searchSuggestions.style.display = 'none';
-    return;
-  }
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(async () => {
-    try {
-      const res = await fetch(`${API_URL}/presets/search?q=${encodeURIComponent(query)}`);
-      if (res.ok) {
-        const suggestions = await res.json();
-        if (suggestions.length === 0) {
-          searchSuggestions.style.display = 'none';
-          return;
-        }
-        searchSuggestions.innerHTML = suggestions.map(p => `
-          <div class="suggestion-item" data-id="${p.id}">
-            <strong>${p.name}</strong> — ${p.author}
-            <span style="font-size:0.8rem;color:#6b6b6b;">${p.category}</span>
-          </div>
-        `).join('');
-        searchSuggestions.style.display = 'block';
-        searchSuggestions.querySelectorAll('.suggestion-item').forEach(item => {
-          item.addEventListener('click', () => {
-            const id = item.dataset.id;
-            searchInput.value = '';
-            searchSuggestions.style.display = 'none';
-            openPresetModal(id);
-          });
-        });
-      }
-    } catch (err) { console.error(err); }
-  }, 300);
-});
-
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.nav-search')) {
-    searchSuggestions.style.display = 'none';
-  }
-});
-
-// ============================================================
-// ===== PRESET MODAL (with like, share, view, ad-impression) =====
+// ===== PRESET MODAL =====
 // ============================================================
 async function openPresetModal(presetId) {
   try {
@@ -804,6 +991,10 @@ async function openPresetModal(presetId) {
     const sortedReviews = [...reviews].sort((a, b) => (b.helpful || 0) - (a.helpful || 0) || new Date(b.createdAt) - new Date(a.createdAt));
     const topReviews = sortedReviews.slice(0, 5);
 
+    const previewImageSrc = preset.previewImage ? 
+      (preset.previewImage.startsWith('http') ? preset.previewImage : window.location.origin + preset.previewImage) : 
+      null;
+
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
     modal.innerHTML = `
@@ -811,7 +1002,7 @@ async function openPresetModal(presetId) {
         <button class="close">&times;</button>
         <div class="modal-grid">
           <div class="modal-preview">
-            ${preset.previewImage ? `<img src="${preset.previewImage}" alt="${preset.name}" style="width:100%;height:auto;border-radius:16px;" onerror="this.style.display='none'">` :
+            ${previewImageSrc ? `<img src="${previewImageSrc}" alt="${preset.name}" style="width:100%;height:auto;border-radius:16px;" onerror="this.style.display='none'">` :
               `<svg viewBox="0 0 300 200" style="width:100%;height:auto;background:#d9d0c4;border-radius:16px;">
                 <rect x="20" y="20" width="100" height="80" rx="8" fill="#b8aa98" />
                 <rect x="140" y="20" width="100" height="80" rx="8" fill="#c4b5a2" />
@@ -893,7 +1084,11 @@ async function openPresetModal(presetId) {
         showToast('कृपया लॉग इन करें', 'warning');
         return;
       }
-      await downloadPreset(preset.id);
+      if (preset.price > 0) {
+        await buyPreset(preset.id);
+      } else {
+        await downloadPreset(preset.id);
+      }
     });
 
     modal.querySelector('.wishlist-btn').addEventListener('click', async () => {
@@ -992,7 +1187,7 @@ async function submitReview(presetId, rating, comment) {
 }
 
 // ============================================================
-// ===== DOWNLOAD (with ad modal 3s countdown) =====
+// ===== DOWNLOAD =====
 // ============================================================
 async function downloadPreset(presetId) {
   if (!currentUser) {
@@ -1084,7 +1279,7 @@ async function performDownload(presetId) {
 window.downloadPreset = downloadPreset;
 
 // ============================================================
-// ===== BUY (Razorpay) – kept but not used =====
+// ===== BUY (Razorpay) =====
 // ============================================================
 async function buyPreset(presetId) {
   if (!currentUser) {
@@ -1170,9 +1365,6 @@ async function verifyPayment(response, presetId) {
 // ============================================================
 // ===== UPLOAD MODAL =====
 // ============================================================
-$('#uploadBtn')?.addEventListener('click', openUploadModal);
-uploadHeroBtn?.addEventListener('click', openUploadModal);
-
 function openUploadModal() {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
@@ -1258,41 +1450,7 @@ function openUploadModal() {
 window.openUploadModal = openUploadModal;
 
 // ============================================================
-// ===== FEATURED DOWNLOAD =====
-// ============================================================
-featuredDownloadBtn?.addEventListener('click', async () => {
-  if (!currentUser) {
-    showToast('कृपया पहले लॉग इन करें', 'warning');
-    return;
-  }
-  try {
-    const res = await fetch(`${API_URL}/presets/featured/download`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'featured-pack.zip';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      showToast('✅ फीचर्ड पैक डाउनलोड हो गया!', 'success');
-    } else {
-      const err = await res.json().catch(() => ({}));
-      showToast(err.error || 'डाउनलोड विफल', 'error');
-    }
-  } catch (err) {
-    console.error(err);
-    showToast('त्रुटि: ' + err.message, 'error');
-  }
-});
-
-// ============================================================
-// ===== TOP CREATORS =====
+// ===== TOP CREATORS (Fixed with horizontal scroll) =====
 // ============================================================
 async function loadTopCreators() {
   try {
@@ -1301,22 +1459,30 @@ async function loadTopCreators() {
       const creators = await res.json();
       const grid = document.getElementById('topCreatorsGrid');
       if (!grid) return;
-      if (creators.length === 0) {
+      if (!creators || creators.length === 0) {
         grid.innerHTML = '<p style="color:var(--text);">कोई क्रिएटर नहीं</p>';
         return;
       }
+      // ✅ Horizontal scroll for top creators
+      grid.style.display = 'flex';
+      grid.style.overflowX = 'auto';
+      grid.style.gap = '16px';
+      grid.style.padding = '8px 4px 16px 4px';
+      grid.style.scrollSnapType = 'x mandatory';
+      grid.style.webkitOverflowScrolling = 'touch';
+      
       grid.innerHTML = creators.map(c => `
-        <div class="creator-card" onclick="window.openProfile('${c.id}')">
+        <div class="creator-card" style="flex:0 0 160px;scroll-snap-align:start;cursor:pointer;" onclick="window.openProfile('${c.id}')">
           <div class="avatar" style="background-image:url(${c.avatar || ''}); background-size:cover;">
             ${!c.avatar ? c.name.charAt(0).toUpperCase() : ''}
           </div>
           <div class="name">${c.name}</div>
-          <div class="stats">${c.presetCount} प्रीसेट • ${c.totalDownloads} डाउनलोड</div>
-          <div class="followers">${c.followers} फॉलोअर्स</div>
+          <div class="stats">${c.presetCount || 0} प्रीसेट • ${c.totalDownloads || 0} डाउनलोड</div>
+          <div class="followers">${c.followers || 0} फॉलोअर्स</div>
         </div>
       `).join('');
     }
-  } catch (err) { console.error(err); }
+  } catch (err) { console.error('Top creators error:', err); }
 }
 
 // ============================================================
@@ -1324,6 +1490,8 @@ async function loadTopCreators() {
 // ============================================================
 window.openProfile = async function(userId) {
   try {
+    window._currentProfileId = userId;
+    
     const res = await fetch(`${API_URL}/users/${userId}`);
     if (!res.ok) throw new Error('User not found');
     const user = await res.json();
@@ -1344,7 +1512,7 @@ window.openProfile = async function(userId) {
           </div>
           <div>
             <h2 style="color:var(--text, #1e1e1e);">${user.name}</h2>
-            <div style="color:#6b6b6b;">@${user.username || user.email.split('@')[0]}</div>
+            <div style="color:#6b6b6b;">@${user.username || user.email?.split('@')[0] || ''}</div>
             <div style="margin-top:4px;color:var(--text, #1e1e1e);">${user.bio || 'कोई बायो नहीं'}</div>
             <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap;">
               <span><strong>${user.totalPresets || 0}</strong> प्रीसेट</span>
@@ -1743,7 +1911,6 @@ function openNotifications() {
     });
   });
 }
-document.getElementById('notificationBtn')?.addEventListener('click', openNotifications);
 
 function requestNotificationPermission() {
   if ('Notification' in window && Notification.permission === 'default') {
@@ -1834,45 +2001,9 @@ function exitSite() {
     window.location.href = 'about:blank';
   }
 }
-document.getElementById('exitBtn')?.addEventListener('click', exitSite);
 
 // ============================================================
-// ===== EXPLORE BUTTON & FILTERS =====
-// ============================================================
-exploreBtn?.addEventListener('click', () => {
-  document.getElementById('presetsSection')?.scrollIntoView({ behavior: 'smooth' });
-});
-
-searchBtn.addEventListener('click', () => {
-  searchSuggestions.style.display = 'none';
-  currentPage = 1;
-  loadPresets();
-});
-searchInput.addEventListener('keyup', (e) => {
-  if (e.key === 'Enter') {
-    searchSuggestions.style.display = 'none';
-    currentPage = 1;
-    loadPresets();
-  }
-});
-filterCategory.addEventListener('change', () => { currentPage = 1; loadPresets(); });
-filterPrice.addEventListener('change', () => { currentPage = 1; loadPresets(); });
-filterSort.addEventListener('change', () => { currentPage = 1; loadPresets(); });
-
-document.querySelectorAll('.category-card').forEach(card => {
-  card.addEventListener('click', () => {
-    const cat = card.querySelector('.name')?.textContent;
-    if (cat) {
-      filterCategory.value = cat;
-      currentPage = 1;
-      loadPresets();
-      document.getElementById('presetsSection')?.scrollIntoView({ behavior: 'smooth' });
-    }
-  });
-});
-
-// ============================================================
-// ===== HANDLE URL ACTIONS (from PWA Shortcuts) =====
+// ===== HANDLE URL ACTIONS =====
 // ============================================================
 function handleUrlAction() {
   const params = new URLSearchParams(window.location.search);
@@ -1912,22 +2043,34 @@ function handleUrlAction() {
 // ============================================================
 // ===== INIT =====
 // ============================================================
-loadPresets();
-loadLatestPresets();
-loadTopCreators();
-handleUrlAction();
+function init() {
+  initDOM();
 
-if (!navigator.onLine && offlineIndicator) {
-  offlineIndicator.style.display = 'inline-block';
+  loadPresets();
+  loadLatestPresets();
+  loadTopCreators();
+  handleUrlAction();
+
+  if (currentTheme === 'dark') {
+    if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+  }
+
+  if (!navigator.onLine && offlineIndicator) {
+    offlineIndicator.style.display = 'inline-block';
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log('✅ SW registered with offline support'))
+      .catch(err => console.error('❌ SW failed', err));
+  }
+
+  console.log('🚀 PresetHub frontend loaded with all features');
 }
 
-// ============================================================
-// ===== PWA =====
-// ============================================================
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js')
-    .then(() => console.log('✅ SW registered with offline support'))
-    .catch(err => console.error('❌ SW failed', err));
+// Run init when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
 }
-
-console.log('🚀 PresetHub frontend loaded with all features');

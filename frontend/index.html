@@ -4,17 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes" />
 
-    <!-- ===== TITLE & META ===== -->
-    <title>PresetHub – Lightroom Presets Marketplace</title>
-    <meta name="description" content="Download free and premium Lightroom presets. Edit your photos like a pro with PresetHub. Thousands of presets, one click download." />
-    <meta name="keywords" content="Lightroom presets, photo editing, presets download, free presets, premium presets, Lightroom presets marketplace" />
+    <!-- ===== TITLE & META (SEO) ===== -->
+    <title>PresetHub – Best Lightroom Presets Marketplace | Free & Premium</title>
+    <meta name="description" content="Download free and premium Lightroom presets. Edit your photos like a pro with PresetHub. Thousands of presets, one-click download. सर्वश्रेष्ठ Lightroom प्रीसेट्स।" />
+    <meta name="keywords" content="Lightroom presets, photo editing, presets download, free presets, premium presets, Lightroom presets marketplace, प्रीसेट, फोटो एडिटिंग" />
     <meta name="author" content="PresetHub" />
     <meta name="robots" content="index, follow" />
     <link rel="canonical" href="https://presethub.site/" />
 
-    <!-- ===== OPEN GRAPH ===== -->
+    <!-- ===== OPEN GRAPH (Facebook/LinkedIn) ===== -->
     <meta property="og:title" content="PresetHub – Lightroom Presets Marketplace" />
-    <meta property="og:description" content="Download free and premium Lightroom presets. Edit your photos like a pro with PresetHub." />
+    <meta property="og:description" content="Download free and premium Lightroom presets. Edit your photos like a pro with PresetHub. Thousands of presets, one click download." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://presethub.site/" />
     <meta property="og:image" content="https://presethub.site/assets/images/og-image.jpg" />
@@ -30,6 +30,22 @@
     <meta name="twitter:image" content="https://presethub.site/assets/images/og-image.jpg" />
     <meta name="twitter:site" content="@presethub" />
 
+    <!-- ===== JSON-LD (Structured Data for Google) ===== -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "PresetHub",
+      "url": "https://presethub.site/",
+      "description": "Download free and premium Lightroom presets. Thousands of presets, one-click download.",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://presethub.site/?q={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+
     <!-- ===== PWA / THEME ===== -->
     <meta name="theme-color" content="#d4a373" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -39,19 +55,13 @@
     <!-- ============================================================ -->
     <!-- ===== GOOGLE ADSENSE ===== -->
     <!-- ============================================================ -->
-
-    <!-- AdSense Verification Meta Tag -->
     <meta name="google-adsense-account" content="ca-pub-3554311294133493" />
-
-    <!-- AdSense Script -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3554311294133493"
      crossorigin="anonymous"></script>
 
     <!-- ============================================================ -->
     <!-- ===== FAVICONS & APP ICONS ===== -->
     <!-- ============================================================ -->
-
-    <!-- Apple Touch Icons -->
     <link rel="apple-touch-icon" sizes="57x57" href="/apple-icon-57x57.png" />
     <link rel="apple-touch-icon" sizes="60x60" href="/apple-icon-60x60.png" />
     <link rel="apple-touch-icon" sizes="72x72" href="/apple-icon-72x72.png" />
@@ -61,25 +71,18 @@
     <link rel="apple-touch-icon" sizes="144x144" href="/apple-icon-144x144.png" />
     <link rel="apple-touch-icon" sizes="152x152" href="/apple-icon-152x152.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon-180x180.png" />
-
-    <!-- Android / Chrome Icons -->
     <link rel="icon" type="image/png" sizes="192x192" href="/android-icon-192x192.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-
-    <!-- Windows / MS Tile -->
     <meta name="msapplication-TileColor" content="#d4a373" />
     <meta name="msapplication-TileImage" content="/ms-icon-144x144.png" />
     <meta name="msapplication-config" content="/browserconfig.xml" />
-
-    <!-- Manifest -->
     <link rel="manifest" href="/manifest.json" />
 
     <!-- ============================================================ -->
     <!-- ===== FONTS & STYLES ===== -->
     <!-- ============================================================ -->
-
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet" />
@@ -133,7 +136,7 @@
                         <button class="btn btn-sm btn-primary" id="signupBtn">साइन अप</button>
                     </div>
 
-                    <!-- User Section with Dropdown -->
+                    <!-- User Section -->
                     <div id="userSection" style="display:none; position:relative;">
                         <div class="user-avatar" id="userAvatar">R</div>
                         <div id="userDropdown" class="dropdown-menu" style="display:none; position:absolute; top:50px; right:0; background:var(--card-bg, #fff); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.1); min-width:200px; padding:8px 0; z-index:1000;">
@@ -143,7 +146,6 @@
                             <a href="#" onclick="window.showWishlist(); return false;" class="dropdown-item"><i class="fas fa-heart"></i> Wishlist</a>
                             <a href="#" onclick="window.openUploadModal(); return false;" class="dropdown-item"><i class="fas fa-upload"></i> Upload</a>
                             <div class="dropdown-divider" style="border-top:1px solid var(--border, #eee); margin:6px 12px;"></div>
-                            <!-- NEW: Earnings, Referral, Subscription -->
                             <a href="#" onclick="window.showEarnings(); return false;" class="dropdown-item"><i class="fas fa-rupee-sign"></i> My Earnings</a>
                             <a href="#" onclick="window.showReferral(); return false;" class="dropdown-item"><i class="fas fa-link"></i> Referral Program</a>
                             <a href="#" class="dropdown-item" id="subscriptionStatus"><i class="fas fa-crown"></i> Premium: <span id="premiumBadge">Free</span></a>
@@ -195,9 +197,7 @@
                 <div class="section-title">
                     <span>🏆 टॉप क्रिएटर्स</span>
                 </div>
-                <div class="top-creators-grid" id="topCreatorsGrid">
-                    <!-- Rendered by JavaScript -->
-                </div>
+                <div class="top-creators-grid" id="topCreatorsGrid"></div>
             </section>
 
             <!-- Categories -->
@@ -221,9 +221,7 @@
                     <span>📰 ताज़ा प्रीसेट</span>
                     <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें →</a>
                 </div>
-                <div class="preset-grid" id="latestGrid">
-                    <!-- Rendered by JavaScript -->
-                </div>
+                <div class="preset-grid" id="latestGrid"></div>
             </section>
 
             <!-- Presets Grid -->
@@ -253,9 +251,7 @@
                         </select>
                     </div>
                 </div>
-                <div class="preset-grid" id="presetGrid">
-                    <!-- Rendered by JavaScript -->
-                </div>
+                <div class="preset-grid" id="presetGrid"></div>
                 <div id="loadMoreContainer" style="text-align:center;margin:20px 0;">
                     <button id="loadMoreBtn" class="btn btn-outline" style="display:none;">
                         <i class="fas fa-plus"></i> और लोड करें
@@ -302,7 +298,7 @@
             </section>
         </main>
 
-        <!-- ===== FOOTER (All Links) ===== -->
+        <!-- ===== FOOTER ===== -->
         <footer>
             <div class="container">
                 <div class="footer-grid">
@@ -351,11 +347,9 @@
             </div>
         </footer>
 
-        <!-- Modal & Toast containers -->
+        <!-- Modal & Toast -->
         <div id="modalContainer"></div>
         <div id="toastContainer"></div>
-
-        <!-- ===== NOTE: Bottom Navigation removed ===== -->
     </div>
 
     <!-- ===== SCRIPTS ===== -->

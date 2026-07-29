@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        /* पहले से दिए गए स्टाइल + कुछ अतिरिक्त */
+        /* पहले से दिए गए स्टाइल – unchanged */
         .admin-container { max-width: 1200px; margin: 40px auto; padding: 0 20px; }
         .admin-card { background: var(--card-bg, #fff); border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .admin-card h2 { margin-top: 0; display: flex; align-items: center; gap: 8px; }
@@ -119,7 +119,6 @@
             window.location.href = '/';
         }
 
-        // ===== API HELPER =====
         async function apiFetch(endpoint, options = {}) {
             const res = await fetch(`${API_URL}${endpoint}`, {
                 ...options,
@@ -156,19 +155,19 @@
             });
         });
 
-        // ===== LOAD DATA (FIXED RACE CONDITION) =====
+        // ===== LOAD DATA =====
         async function loadData() {
             try {
                 await loadAnalytics();
-                await loadPresets();   // पहले प्रीसेट लोड करें
-                await loadUsers();     // फिर यूज़र (अब allPresets उपलब्ध है)
+                await loadPresets();
+                await loadUsers();
                 showMessage('डेटा रिफ्रेश हो गया।', 'success');
             } catch (err) {
                 showMessage('डेटा लोड करने में त्रुटि: ' + err.message, 'error');
             }
         }
 
-        // ===== ANALYTICS (UPDATED WITH EXTRA STATS) =====
+        // ===== ANALYTICS =====
         async function loadAnalytics() {
             try {
                 const data = await apiFetch('/admin/analytics');
@@ -181,13 +180,11 @@
                     <div class="stat-item"><div class="num">${data.freePresets}</div><div class="label">मुफ्त प्रीसेट</div></div>
                     <div class="stat-item"><div class="num">${data.paidPresets}</div><div class="label">सशुल्क प्रीसेट</div></div>
                     <div class="stat-item"><div class="num">${data.avgRating}</div><div class="label">औसत रेटिंग</div></div>
-                    <!-- ===== NEW EXTRA STATS ===== -->
                     <div class="stat-item"><div class="num">${data.totalSubscribed}</div><div class="label">Premium Users</div></div>
                     <div class="stat-item"><div class="num">${data.totalReferrals}</div><div class="label">Total Referrals</div></div>
                     <div class="stat-item"><div class="num">${data.totalAdWatches}</div><div class="label">Ad Watches</div></div>
                     <div class="stat-item"><div class="num">₹${data.totalPlatformRevenue}</div><div class="label">Platform Ad Revenue</div></div>
                     <div class="stat-item"><div class="num">${data.totalAdImpressions}</div><div class="label">Ad Impressions</div></div>
-                    <!-- ===== TOP CREATORS (optional) ===== -->
                     ${data.topCreators && data.topCreators.length ? `
                         <div class="stat-item" style="grid-column:1/-1; text-align:left;">
                             <div class="label" style="font-weight:700;font-size:1.1rem;color:var(--text);">🏆 Top Earning Creators</div>
@@ -205,7 +202,7 @@
             }
         }
 
-        // ===== USERS (with search) =====
+        // ===== USERS =====
         let allUsers = [];
 
         async function loadUsers() {
@@ -228,18 +225,19 @@
                 <thead><tr><th>नाम</th><th>ईमेल</th><th>यूज़रनेम</th><th>भूमिका</th><th>सत्यापित</th><th>प्रीसेट</th><th>फॉलोअर्स</th><th>एक्शन</th></tr></thead><tbody>`;
             users.forEach(u => {
                 const userPresets = window.allPresets?.filter(p => p.authorId === u.id) || [];
+                const isAdmin = u.role === 'admin';
                 html += `<tr>
                     <td>${u.name}</td>
                     <td>${u.email}</td>
                     <td>${u.username || '-'}</td>
-                    <td><span class="status-badge ${u.role === 'admin' ? 'status-approved' : 'status-pending'}">${u.role}</span></td>
+                    <td><span class="status-badge ${isAdmin ? 'status-approved' : 'status-pending'}">${u.role}</span></td>
                     <td>${u.verified ? '✅' : '❌'}</td>
                     <td>${userPresets.length}</td>
                     <td>${u.followers?.length || 0}</td>
                     <td>
-                        ${u.role !== 'admin' ? `<button class="btn btn-sm btn-primary" onclick="toggleVerify('${u.id}')">${u.verified ? '✅' : '❌'}</button>` : ''}
-                        ${u.role !== 'admin' ? `<button class="btn btn-sm btn-outline" onclick="editUser('${u.id}')"><i class="fas fa-edit"></i></button>` : ''}
-                        ${u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')"><i class="fas fa-trash"></i></button>` : ''}
+                        ${!isAdmin ? `<button class="btn btn-sm btn-primary" onclick="toggleVerify('${u.id}')">${u.verified ? '✅' : '❌'}</button>` : ''}
+                        ${!isAdmin ? `<button class="btn btn-sm btn-outline" onclick="editUser('${u.id}')"><i class="fas fa-edit"></i></button>` : ''}
+                        ${!isAdmin ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')"><i class="fas fa-trash"></i></button>` : ''}
                         ${u.role === 'user' ? `<button class="btn btn-sm btn-primary" onclick="makeAdmin('${u.id}')"><i class="fas fa-crown"></i></button>` : ''}
                     </td>
                 </tr>`;
@@ -258,10 +256,11 @@
             renderUsers(filtered);
         }
 
-        // ===== PRESETS (with search) =====
+        // ===== PRESETS (limit increased to 1000) =====
         async function loadPresets() {
             try {
-                const response = await fetch(`${API_URL}/presets?limit=100`);
+                // ✅ FIX: increased limit to 1000
+                const response = await fetch(`${API_URL}/presets?limit=1000`);
                 const data = await response.json();
                 const presets = data.presets || [];
                 window.allPresets = presets;
@@ -364,8 +363,6 @@
         }
 
         // ===== ACTIONS =====
-
-        // 1. Update Preset Status
         window.updateStatus = async function(id, status) {
             try {
                 await apiFetch(`/admin/presets/${id}/status`, {
@@ -379,7 +376,6 @@
             }
         };
 
-        // 2. Delete User
         window.deleteUser = async function(id) {
             if (!confirm('क्या आप इस उपयोगकर्ता को हटाना चाहते हैं?')) return;
             try {
@@ -391,7 +387,6 @@
             }
         };
 
-        // 3. Delete Preset
         window.deletePreset = async function(id) {
             if (!confirm('क्या आप इस प्रीसेट को हटाना चाहते हैं?')) return;
             try {
@@ -403,7 +398,6 @@
             }
         };
 
-        // 4. Make Admin
         window.makeAdmin = async function(id) {
             try {
                 await apiFetch(`/admin/users/${id}/role`, {
@@ -417,7 +411,6 @@
             }
         };
 
-        // 5. Toggle Verify
         window.toggleVerify = async function(id) {
             try {
                 const user = await apiFetch(`/admin/users/${id}`);
@@ -439,10 +432,11 @@
             }
         };
 
-        // 6. Edit User
+        // ===== EDIT USER (Admin role edit disabled) =====
         window.editUser = async function(id) {
             try {
                 const user = await apiFetch(`/admin/users/${id}`);
+                const isAdmin = user.role === 'admin';
                 const modal = document.createElement('div');
                 modal.className = 'modal-overlay active';
                 modal.innerHTML = `
@@ -455,10 +449,11 @@
                             <div class="form-group"><label>ईमेल</label><input type="email" id="editUserEmail" value="${user.email}" required /></div>
                             <div class="form-group"><label>बायो</label><textarea id="editUserBio" rows="2">${user.bio || ''}</textarea></div>
                             <div class="form-group"><label>भूमिका</label>
-                                <select id="editUserRole">
+                                <select id="editUserRole" ${isAdmin ? 'disabled' : ''}>
                                     <option value="user" ${user.role === 'user' ? 'selected' : ''}>User</option>
                                     <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
                                 </select>
+                                ${isAdmin ? '<span style="font-size:0.8rem;color:#888;">(Admin role cannot be changed)</span>' : ''}
                             </div>
                             <div class="form-group"><label>सत्यापित</label>
                                 <select id="editUserVerified">
@@ -479,11 +474,11 @@
                         username: document.getElementById('editUserUsername').value,
                         email: document.getElementById('editUserEmail').value,
                         bio: document.getElementById('editUserBio').value,
-                        role: document.getElementById('editUserRole').value,
+                        role: isAdmin ? user.role : document.getElementById('editUserRole').value, // preserve admin role
                         verified: document.getElementById('editUserVerified').value === 'true'
                     };
                     try {
-                        const res = await apiFetch(`/admin/users/${id}`, {
+                        await apiFetch(`/admin/users/${id}`, {
                             method: 'PUT',
                             body: JSON.stringify(payload)
                         });
@@ -503,7 +498,7 @@
             }
         };
 
-        // 7. Edit Preset
+        // ===== EDIT PRESET =====
         window.editPreset = async function(id) {
             try {
                 const preset = await apiFetch(`/presets/${id}`);
@@ -543,7 +538,7 @@
                         tags: document.getElementById('editPresetTags').value
                     };
                     try {
-                        const res = await apiFetch(`/presets/${id}`, {
+                        await apiFetch(`/presets/${id}`, {
                             method: 'PUT',
                             body: JSON.stringify(payload)
                         });
@@ -563,11 +558,10 @@
             }
         };
 
-        // 8. Change Order Status
         window.changeOrderStatus = async function(orderId, status) {
             if (!confirm(`क्या आप इस ऑर्डर को "${status}" करना चाहते हैं?`)) return;
             try {
-                const res = await apiFetch(`/admin/orders/${orderId}/status`, {
+                await apiFetch(`/admin/orders/${orderId}/status`, {
                     method: 'PUT',
                     body: JSON.stringify({ status })
                 });
@@ -578,7 +572,6 @@
             }
         };
 
-        // 9. Export Data (CSV)
         function exportData() {
             const tables = document.querySelectorAll('.user-table, .order-table, .preset-list');
             let csv = 'PresetHub Admin Export\n';
@@ -615,13 +608,11 @@
             showMessage('✅ डेटा एक्सपोर्ट हो गया!', 'success');
         }
 
-        // ===== LOGOUT =====
         document.getElementById('adminLogoutBtn').addEventListener('click', () => {
             localStorage.removeItem('token');
             window.location.href = '/';
         });
 
-        // ===== INIT =====
         window.onload = function() {
             loadData();
             apiFetch('/admin/analytics').catch(() => {
