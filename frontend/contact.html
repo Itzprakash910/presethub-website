@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>संपर्क करें – PresetHub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="terms.css" />
+    <style>
+      .legal-page .logo { font-size:1.8rem; font-weight:800; text-decoration:none; color:#1e1e1e; margin-bottom:20px; display:inline-block; }
+      .legal-page .logo span { color:#d4a373; }
+      body.dark .legal-page .logo { color:#e0e0e0; }
+      .contact-info { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; margin:16px 0; }
+      .contact-card { background:var(--bg,#f8f6f2); padding:16px; border-radius:12px; text-align:center; }
+      .contact-card .icon { font-size:2rem; }
+    </style>
+</head>
+<body>
+    <div class="legal-page">
+        <a href="/" class="logo">Preset<span>Hub</span></a>
+        <h1>📧 संपर्क करें</h1>
+        <div class="last-updated">We'd love to hear from you!</div>
+
+        <p>हम आपकी हर समस्या का समाधान करने के लिए यहाँ हैं। कृपया नीचे दिए गए माध्यमों से हमसे संपर्क करें।</p>
+
+        <div class="contact-info">
+            <div class="contact-card">
+                <div class="icon">📧</div>
+                <h3>ईमेल</h3>
+                <p><a href="mailto:support@presethub.site">support@presethub.site</a></p>
+            </div>
+            <div class="contact-card">
+                <div class="icon">📱</div>
+                <h3>Telegram</h3>
+                <p><a href="https://t.me/presethub_bot">@presethub_bot</a></p>
+            </div>
+            <div class="contact-card">
+                <div class="icon">📝</div>
+                <h3>FAQ</h3>
+                <p><a href="/faq.html">अक्सर पूछे गए सवाल</a></p>
+            </div>
+        </div>
+
+        <a href="/" class="back-link">← Back to Home</a>
+    </div>
+    <script>if(localStorage.getItem('theme')==='dark')document.body.classList.add('dark');</script>
+</body>
+</html>

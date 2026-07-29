@@ -9,6 +9,7 @@ let wishlist = [];
 let currentPage = 1;
 let totalPages = 1;
 let currentFilters = {};
+let isOnline = navigator.onLine;
 
 // ===== DOM REFS =====
 const $ = (sel) => document.querySelector(sel);
@@ -34,8 +35,111 @@ const featuredDownloadBtn = $('#featuredDownloadBtn');
 const searchSuggestions = $('#searchSuggestions');
 const themeToggle = $('#themeToggle');
 const loadMoreBtn = $('#loadMoreBtn');
+const offlineIndicator = $('#offlineIndicator');
 
+// ============================================================
+// ===== OFFLINE QUEUE UTILITY =====
+// ============================================================
+
+function openOfflineDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('PresetHubOffline', 1);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('queue')) {
+        db.createObjectStore('queue', { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function addToQueue(action, url, options = {}) {
+  try {
+    const db = await openOfflineDB();
+    const tx = db.transaction('queue', 'readwrite');
+    const store = tx.objectStore('queue');
+    const item = {
+      action: action,
+      url: url,
+      method: options.method || 'POST',
+      headers: options.headers || {},
+      body: options.body || null,
+      data: options.data || null,
+      timestamp: Date.now()
+    };
+    await new Promise((resolve, reject) => {
+      const request = store.add(item);
+      request.onsuccess = resolve;
+      request.onerror = reject;
+    });
+    console.log(`📦 Added to queue: ${action} (${url})`);
+    
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.sync.register('presethub-sync');
+        console.log('🔄 Sync registered!');
+      } catch (err) {
+        console.warn('Background Sync not available, will retry on next load.', err);
+      }
+    }
+    
+    showToast(`⏳ "${action}" saved offline. Will sync when online.`, 'warning');
+    return true;
+  } catch (err) {
+    console.error('❌ Failed to add to queue:', err);
+    showToast('❌ Failed to save offline. Please try again later.', 'error');
+    return false;
+  }
+}
+
+// ============================================================
+// ===== ONLINE / OFFLINE INDICATOR =====
+// ============================================================
+
+window.addEventListener('online', async () => {
+  isOnline = true;
+  if (offlineIndicator) offlineIndicator.style.display = 'none';
+  showToast('🔄 Connection restored! Syncing data...', 'info');
+  if ('serviceWorker' in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      if ('SyncManager' in window) {
+        await registration.sync.register('presethub-sync');
+      }
+    } catch (err) {
+      console.warn('Sync registration failed:', err);
+    }
+  }
+});
+
+window.addEventListener('offline', () => {
+  isOnline = false;
+  if (offlineIndicator) offlineIndicator.style.display = 'inline-block';
+  showToast('📴 You are offline. Actions will be queued.', 'warning');
+});
+
+navigator.serviceWorker.addEventListener('message', (event) => {
+  if (event.data.type === 'SYNC_SUCCESS') {
+    showToast(`✅ "${event.data.action}" synced successfully!`, 'success');
+    if (event.data.action === 'review') {
+      loadPresets();
+    } else if (event.data.action === 'wishlist') {
+      fetchWishlist();
+      loadPresets();
+    } else if (event.data.action === 'upload') {
+      loadPresets();
+      loadLatestPresets();
+    }
+  }
+});
+
+// ============================================================
 // ===== TOAST SYSTEM =====
+// ============================================================
+
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
@@ -46,11 +150,14 @@ function showToast(message, type = 'success') {
     toast.style.opacity = '0';
     toast.style.transform = 'translateX(100px)';
     setTimeout(() => toast.remove(), 300);
-  }, 3000);
+  }, 4000);
 }
 window.showToast = showToast;
 
+// ============================================================
 // ===== DARK MODE =====
+// ============================================================
+
 const currentTheme = localStorage.getItem('theme') || 'light';
 if (currentTheme === 'dark') {
   document.body.classList.add('dark');
@@ -63,7 +170,10 @@ themeToggle.addEventListener('click', () => {
   localStorage.setItem('theme', isDark ? 'dark' : 'light');
 });
 
+// ============================================================
 // ===== AUTH =====
+// ============================================================
+
 if (token) {
   fetchUserProfile();
 }
@@ -168,7 +278,10 @@ function openAuthModal(mode) {
 }
 window.openAuthModal = openAuthModal;
 
+// ============================================================
 // ===== WISHLIST =====
+// ============================================================
+
 async function fetchWishlist() {
   if (!currentUser) return;
   try {
@@ -188,11 +301,26 @@ async function toggleWishlist(presetId) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
     return;
   }
+  
+  const url = `${API_URL}/users/me/wishlist/${presetId}`;
+  const options = {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }
+  };
+
   try {
-    const res = await fetch(`${API_URL}/users/me/wishlist/${presetId}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+    if (!navigator.onLine) {
+      await addToQueue('wishlist', url, options);
+      const index = wishlist.indexOf(presetId);
+      if (index === -1) wishlist.push(presetId);
+      else wishlist.splice(index, 1);
+      updateWishlistUI();
+      renderPresets(allPresets);
+      loadLatestPresets();
+      return;
+    }
+
+    const res = await fetch(url, options);
     if (res.ok) {
       const data = await res.json();
       wishlist = data.wishlist || [];
@@ -200,8 +328,12 @@ async function toggleWishlist(presetId) {
       renderPresets(allPresets);
       loadLatestPresets();
       showToast(wishlist.includes(presetId) ? '❤️ पसंद में जोड़ा' : '💔 पसंद से हटाया', 'info');
+    } else {
+      showToast('❌ कृपया बाद में प्रयास करें', 'error');
     }
-  } catch (err) { console.error(err); }
+  } catch (err) {
+    await addToQueue('wishlist', url, options);
+  }
 }
 window.toggleWishlist = toggleWishlist;
 
@@ -252,7 +384,10 @@ async function showWishlist() {
 }
 wishlistBtn.addEventListener('click', showWishlist);
 
-// ===== PRESETS CRUD (EVENT DELEGATION) =====
+// ============================================================
+// ===== PRESETS CRUD =====
+// ============================================================
+
 function renderPresetsToContainer(presets, container) {
   if (!container) return;
   if (!presets || presets.length === 0) {
@@ -265,18 +400,20 @@ function renderPresetsToContainer(presets, container) {
       `<span class="price free">मुफ्त</span>` :
       `<span class="price">₹${p.price}</span>`;
     const stars = '★'.repeat(Math.floor(p.avgRating || 0)) + (p.avgRating % 1 >= 0.5 ? '½' : '');
+    // ✅ Fix: Preview image with onerror fallback
+    const previewImg = p.previewImage ? 
+      `<img src="${p.previewImage}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'">` :
+      `<svg viewBox="0 0 270 200" style="background:#d9d0c4;width:100%;height:100%;">
+        <rect x="20" y="20" width="80" height="70" rx="10" fill="#b8aa98" />
+        <rect x="120" y="20" width="80" height="70" rx="10" fill="#c4b5a2" />
+        <rect x="20" y="110" width="80" height="70" rx="10" fill="#a89682" />
+        <rect x="120" y="110" width="80" height="70" rx="10" fill="#d4c5b2" />
+        <text x="60" y="180" font-family="Inter" font-weight="600" font-size="12" fill="#4a3f35">📷 ${p.name}</text>
+      </svg>`;
     return `
       <div class="preset-card" data-id="${p.id}">
         <div class="thumb">
-          ${p.previewImage ? `<img src="${p.previewImage}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;">` :
-            `<svg viewBox="0 0 270 200" style="background:#d9d0c4;width:100%;height:100%;">
-              <rect x="20" y="20" width="80" height="70" rx="10" fill="#b8aa98" />
-              <rect x="120" y="20" width="80" height="70" rx="10" fill="#c4b5a2" />
-              <rect x="20" y="110" width="80" height="70" rx="10" fill="#a89682" />
-              <rect x="120" y="110" width="80" height="70" rx="10" fill="#d4c5b2" />
-              <text x="60" y="180" font-family="Inter" font-weight="600" font-size="12" fill="#4a3f35">📷 ${p.name}</text>
-            </svg>`
-          }
+          ${previewImg}
           <div class="overlay">
             <button class="btn btn-sm preview-btn" data-id="${p.id}"><i class="fas fa-eye"></i> प्रीव्यू</button>
             <button class="btn btn-sm wishlist-toggle" data-id="${p.id}" style="background:#fff;color:#e74c3c;">
@@ -303,40 +440,28 @@ presetGrid.addEventListener('click', function(e) {
   const card = e.target.closest('.preset-card');
   if (!card) return;
   const id = card.dataset.id;
-  // Check if clicked on preview button
   const previewBtn = e.target.closest('.preview-btn');
   if (previewBtn) {
     e.stopPropagation();
     openPresetModal(id);
     return;
   }
-  // Check if clicked on wishlist toggle
   const wishBtn = e.target.closest('.wishlist-toggle');
   if (wishBtn) {
     e.stopPropagation();
     toggleWishlist(id);
     return;
   }
-  // Otherwise, open preset modal
-  if (!e.target.closest('.author')) { // avoid triggering when clicking author link
+  if (!e.target.closest('.author')) {
     openPresetModal(id);
   }
 });
 
-// Load more button
 loadMoreBtn.addEventListener('click', () => {
   loadPresets(currentPage + 1, true);
 });
 
-async function loadLatestPresets() {
-  try {
-    const res = await fetch(`${API_URL}/presets?sort=newest&limit=6`);
-    const data = await res.json();
-    const presets = data.presets || [];
-    renderPresetsToContainer(presets, latestGrid);
-  } catch (err) { console.error(err); }
-}
-
+// ===== LOAD PRESETS (with offline cache fallback) =====
 async function loadPresets(page = 1, append = false) {
   try {
     const params = new URLSearchParams();
@@ -353,6 +478,7 @@ async function loadPresets(page = 1, append = false) {
     
     const url = `${API_URL}/presets?${params.toString()}`;
     const res = await fetch(url);
+    
     if (res.ok) {
       const data = await res.json();
       allPresets = data.presets || [];
@@ -374,11 +500,73 @@ async function loadPresets(page = 1, append = false) {
       } else {
         loadMoreBtn.style.display = 'none';
       }
+      return;
     }
-  } catch (err) { console.error(err); }
+    
+    throw new Error('Network or server error');
+    
+  } catch (err) {
+    console.warn('⚠️ Load presets failed, trying cache:', err);
+    try {
+      const params = new URLSearchParams();
+      const q = searchInput.value.trim();
+      if (q) params.append('q', q);
+      const cat = filterCategory.value;
+      if (cat) params.append('category', cat);
+      const price = filterPrice.value;
+      if (price) params.append('price', price);
+      const sort = filterSort.value;
+      if (sort) params.append('sort', sort);
+      params.append('page', page);
+      params.append('limit', 20);
+      const url = `${API_URL}/presets?${params.toString()}`;
+      
+      const cache = await caches.open('presethub-api-v1');
+      const cachedResponse = await cache.match(url);
+      if (cachedResponse) {
+        const data = await cachedResponse.json();
+        allPresets = data.presets || [];
+        totalPages = data.totalPages || 1;
+        currentPage = data.page || 1;
+        renderPresetsToContainer(allPresets, presetGrid);
+        showToast('📦 Showing cached presets (offline)', 'info');
+        return;
+      }
+      showToast('😕 No cached presets available offline.', 'error');
+    } catch (cacheErr) {
+      console.error('Cache error:', cacheErr);
+      showToast('❌ Unable to load presets. Please check your connection.', 'error');
+    }
+  }
 }
 
+// ===== LOAD LATEST PRESETS =====
+async function loadLatestPresets() {
+  try {
+    const res = await fetch(`${API_URL}/presets?sort=newest&limit=6`);
+    const data = await res.json();
+    const presets = data.presets || [];
+    renderPresetsToContainer(presets, latestGrid);
+  } catch (err) {
+    console.warn('⚠️ Load latest failed, trying cache');
+    try {
+      const cache = await caches.open('presethub-api-v1');
+      const cachedResponse = await cache.match(`${API_URL}/presets?sort=newest&limit=6`);
+      if (cachedResponse) {
+        const data = await cachedResponse.json();
+        renderPresetsToContainer(data.presets || [], latestGrid);
+        return;
+      }
+    } catch (cacheErr) {
+      console.error('Latest cache error:', cacheErr);
+    }
+  }
+}
+
+// ============================================================
 // ===== SMART SEARCH =====
+// ============================================================
+
 let searchTimeout = null;
 searchInput.addEventListener('input', function() {
   const query = this.value.trim();
@@ -422,7 +610,10 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ===== PRESET MODAL (no change) =====
+// ============================================================
+// ===== PRESET MODAL (with Reviews Sort & Top 5) =====
+// ============================================================
+
 async function openPresetModal(presetId) {
   try {
     const res = await fetch(`${API_URL}/presets/${presetId}`);
@@ -431,6 +622,11 @@ async function openPresetModal(presetId) {
     const isLiked = wishlist.includes(preset.id);
     const isFree = preset.price === 0;
 
+    // ✅ Reviews Sorting: helpful ↓, then recent ↓; show top 5
+    const reviews = preset.reviews || [];
+    const sortedReviews = [...reviews].sort((a, b) => (b.helpful || 0) - (a.helpful || 0) || new Date(b.createdAt) - new Date(a.createdAt));
+    const topReviews = sortedReviews.slice(0, 5);
+
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
     modal.innerHTML = `
@@ -438,7 +634,7 @@ async function openPresetModal(presetId) {
         <button class="close">&times;</button>
         <div class="modal-grid">
           <div class="modal-preview">
-            ${preset.previewImage ? `<img src="${preset.previewImage}" alt="${preset.name}" style="width:100%;height:auto;border-radius:16px;">` :
+            ${preset.previewImage ? `<img src="${preset.previewImage}" alt="${preset.name}" style="width:100%;height:auto;border-radius:16px;" onerror="this.style.display='none'">` :
               `<svg viewBox="0 0 300 200" style="width:100%;height:auto;background:#d9d0c4;border-radius:16px;">
                 <rect x="20" y="20" width="100" height="80" rx="8" fill="#b8aa98" />
                 <rect x="140" y="20" width="100" height="80" rx="8" fill="#c4b5a2" />
@@ -467,14 +663,24 @@ async function openPresetModal(presetId) {
               <span><i class="fas fa-tag"></i> ${preset.tags?.join(', ') || '—'}</span>
             </div>
             <div style="margin-top:20px;border-top:1px solid var(--border, #eee);padding-top:16px;">
-              <h4>समीक्षाएँ (${preset.reviews?.length || 0})</h4>
+              <h4>⭐ समीक्षाएँ (${preset.reviews?.length || 0})</h4>
               <div id="reviewList">
-                ${preset.reviews?.map(r => `
-                  <div style="padding:8px 0;border-bottom:1px solid var(--border, #f0ebe3);">
-                    <strong>${r.userName}</strong> ★${r.rating} <span style="color:#888;font-size:0.8rem;">${new Date(r.createdAt).toLocaleDateString()}</span>
-                    <p style="margin:4px 0 0;">${r.comment}</p>
+                ${topReviews.length > 0 ? topReviews.map(r => `
+                  <div style="padding:10px 0;border-bottom:1px solid var(--border, #f0ebe3);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+                      <div>
+                        <strong>${r.userName}</strong> 
+                        <span style="color:#f4a261;">${'★'.repeat(r.rating)}</span>
+                        <span style="color:#888;font-size:0.8rem;">${new Date(r.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <span style="font-size:0.8rem;color:#888;">
+                        <i class="fas fa-thumbs-up" style="color:#d4a373;"></i> ${r.helpful || 0}
+                      </span>
+                    </div>
+                    <p style="margin:4px 0 0;color:var(--text, #3a3a3a);">${r.comment}</p>
                   </div>
-                `).join('') || '<p style="color:#888;">अभी कोई समीक्षा नहीं</p>'}
+                `).join('') : '<p style="color:#888;">अभी कोई समीक्षा नहीं</p>'}
+                ${preset.reviews && preset.reviews.length > 5 ? `<p style="color:#888;font-size:0.8rem;margin-top:6px;">... और ${preset.reviews.length - 5} समीक्षाएँ</p>` : ''}
               </div>
               ${currentUser ? `
                 <form id="reviewForm" style="margin-top:12px;">
@@ -518,24 +724,7 @@ async function openPresetModal(presetId) {
         e.preventDefault();
         const rating = document.getElementById('reviewRating').value;
         const comment = document.getElementById('reviewComment').value;
-        try {
-          const res = await fetch(`${API_URL}/reviews/${preset.id}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ rating, comment })
-          });
-          if (res.ok) {
-            showToast('✅ समीक्षा सहेजी गई', 'success');
-            modal.remove();
-            openPresetModal(preset.id);
-          } else {
-            const err = await res.json();
-            showToast(err.error || 'समीक्षा सबमिट नहीं हो पाई', 'error');
-          }
-        } catch (err) { console.error(err); }
+        await submitReview(preset.id, rating, comment);
       });
     }
   } catch (err) {
@@ -545,18 +734,72 @@ async function openPresetModal(presetId) {
 }
 window.openPresetModal = openPresetModal;
 
-// ===== DOWNLOAD =====
-async function downloadPreset(presetId) {
+// ============================================================
+// ===== REVIEW SUBMIT =====
+// ============================================================
+
+async function submitReview(presetId, rating, comment) {
+  const url = `${API_URL}/reviews/${presetId}`;
+  const options = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ rating, comment })
+  };
+
   try {
-    const res = await fetch(`${API_URL}/presets/${presetId}/download`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+    if (!navigator.onLine) {
+      await addToQueue('review', url, options);
+      showToast('⏳ Review saved offline. Will sync when online.', 'info');
+      return;
+    }
+
+    const res = await fetch(url, options);
+    if (res.ok) {
+      showToast('✅ समीक्षा सहेजी गई', 'success');
+      const modal = document.querySelector('.modal-overlay.active');
+      if (modal) {
+        const id = modal.querySelector('.download-btn')?.dataset.id;
+        if (id) {
+          modal.remove();
+          openPresetModal(id);
+        }
+      }
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'समीक्षा सबमिट नहीं हो पाई', 'error');
+    }
+  } catch (err) {
+    await addToQueue('review', url, options);
+  }
+}
+
+// ============================================================
+// ===== DOWNLOAD =====
+// ============================================================
+
+async function downloadPreset(presetId) {
+  const url = `${API_URL}/presets/${presetId}/download`;
+  const options = {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }
+  };
+
+  try {
+    if (!navigator.onLine) {
+      await addToQueue('download', url, options);
+      showToast('⏳ Download queued. Will start when online.', 'warning');
+      return;
+    }
+
+    const res = await fetch(url, options);
     if (res.ok) {
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = blobUrl;
       const disposition = res.headers.get('content-disposition');
       let filename = 'preset.xmp';
       if (disposition && disposition.indexOf('filename=') !== -1) {
@@ -567,25 +810,44 @@ async function downloadPreset(presetId) {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(blobUrl);
       showToast('✅ प्रीसेट डाउनलोड हो गया!', 'success');
+    } else if (res.status === 403) {
+      showToast('⛔ Please purchase this preset first.', 'error');
     } else {
       const err = await res.json().catch(() => ({}));
       showToast(err.error || 'डाउनलोड विफल', 'error');
     }
   } catch (err) {
-    console.error(err);
-    showToast('डाउनलोड त्रुटि', 'error');
+    await addToQueue('download', url, options);
   }
 }
 window.downloadPreset = downloadPreset;
 
+// ============================================================
 // ===== BUY (Razorpay) =====
+// ============================================================
+
 async function buyPreset(presetId) {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
     return;
   }
+
+  if (!navigator.onLine) {
+    const url = `${API_URL}/payments/create-order`;
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ presetId })
+    };
+    await addToQueue('order', url, options);
+    return;
+  }
+
   try {
     const res = await fetch(`${API_URL}/payments/create-order`, {
       method: 'POST',
@@ -650,7 +912,10 @@ async function verifyPayment(response, presetId) {
   }
 }
 
+// ============================================================
 // ===== UPLOAD MODAL =====
+// ============================================================
+
 $('#uploadBtn')?.addEventListener('click', openUploadModal);
 uploadHeroBtn?.addEventListener('click', openUploadModal);
 
@@ -707,12 +972,21 @@ function openUploadModal() {
     if (fileInput.files[0]) formData.append('file', fileInput.files[0]);
     const previewInput = document.getElementById('uploadPreview');
     if (previewInput.files[0]) formData.append('previewImage', previewInput.files[0]);
+    
+    const url = `${API_URL}/presets`;
+    const options = {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    };
+
     try {
-      const res = await fetch(`${API_URL}/presets`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
-      });
+      if (!navigator.onLine) {
+        showToast('⚠️ You are offline. Please connect to the internet to upload.', 'warning');
+        return;
+      }
+
+      const res = await fetch(url, options);
       if (res.ok) {
         showToast('✅ प्रीसेट अपलोड हो गया!', 'success');
         modal.remove();
@@ -723,12 +997,17 @@ function openUploadModal() {
         const err = await res.json();
         showToast(err.error || 'अपलोड विफल', 'error');
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      showToast('❌ Upload failed. Please check your connection.', 'error');
+    }
   });
 }
 window.openUploadModal = openUploadModal;
 
+// ============================================================
 // ===== FEATURED DOWNLOAD =====
+// ============================================================
+
 featuredDownloadBtn?.addEventListener('click', async () => {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
@@ -760,7 +1039,10 @@ featuredDownloadBtn?.addEventListener('click', async () => {
   }
 });
 
+// ============================================================
 // ===== TOP CREATORS =====
+// ============================================================
+
 async function loadTopCreators() {
   try {
     const res = await fetch(`${API_URL}/users/top`);
@@ -786,7 +1068,10 @@ async function loadTopCreators() {
   } catch (err) { console.error(err); }
 }
 
+// ============================================================
 // ===== PROFILE MODAL =====
+// ============================================================
+
 window.openProfile = async function(userId) {
   try {
     const res = await fetch(`${API_URL}/users/${userId}`);
@@ -861,20 +1146,7 @@ window.openProfile = async function(userId) {
           showToast('कृपया लॉग इन करें', 'warning');
           return;
         }
-        try {
-          const res = await fetch(`${API_URL}/users/${userId}/follow`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            modal.remove();
-            openProfile(userId);
-            showToast(data.following ? '✅ फॉलो कर लिया!' : '❌ अनफॉलो कर दिया', 'info');
-          } else {
-            showToast('कृपया बाद में प्रयास करें', 'error');
-          }
-        } catch (err) { console.error(err); }
+        await toggleFollow(userId);
       });
     }
   } catch (err) {
@@ -883,7 +1155,45 @@ window.openProfile = async function(userId) {
   }
 };
 
-// ===== EDIT PROFILE MODAL =====
+// ===== FOLLOW / UNFOLLOW =====
+async function toggleFollow(userId) {
+  const url = `${API_URL}/users/${userId}/follow`;
+  const options = {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }
+  };
+
+  try {
+    if (!navigator.onLine) {
+      await addToQueue('follow', url, options);
+      showToast('⏳ Follow action queued.', 'info');
+      return;
+    }
+
+    const res = await fetch(url, options);
+    if (res.ok) {
+      const data = await res.json();
+      showToast(data.following ? '✅ फॉलो कर लिया!' : '❌ अनफॉलो कर दिया', 'info');
+      const modal = document.querySelector('.modal-overlay.active');
+      if (modal) {
+        const profileId = window.currentProfileId;
+        if (profileId) {
+          modal.remove();
+          openProfile(profileId);
+        }
+      }
+    } else {
+      showToast('कृपया बाद में प्रयास करें', 'error');
+    }
+  } catch (err) {
+    await addToQueue('follow', url, options);
+  }
+}
+
+// ============================================================
+// ===== EDIT PROFILE =====
+// ============================================================
+
 window.openEditProfile = async function() {
   if (!currentUser) {
     showToast('कृपया लॉग इन करें', 'warning');
@@ -980,7 +1290,9 @@ window.openEditProfile = async function() {
           const err = await res.json();
           showToast(err.error || 'अपडेट विफल', 'error');
         }
-      } catch (err) { console.error(err); }
+      } catch (err) {
+        showToast('❌ Update failed. Please check your connection.', 'error');
+      }
     });
   } catch (err) {
     console.error(err);
@@ -992,12 +1304,18 @@ userAvatar.addEventListener('click', () => {
   if (currentUser) openEditProfile();
 });
 
+// ============================================================
 // ===== EXPLORE BUTTON =====
+// ============================================================
+
 exploreBtn?.addEventListener('click', () => {
   document.getElementById('presetsSection')?.scrollIntoView({ behavior: 'smooth' });
 });
 
+// ============================================================
 // ===== FILTERS =====
+// ============================================================
+
 searchBtn.addEventListener('click', () => {
   searchSuggestions.style.display = 'none';
   currentPage = 1;
@@ -1026,16 +1344,26 @@ document.querySelectorAll('.category-card').forEach(card => {
   });
 });
 
+// ============================================================
 // ===== INIT =====
+// ============================================================
+
 loadPresets();
 loadLatestPresets();
 loadTopCreators();
 
-// ===== PWA =====
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js')
-    .then(() => console.log('SW registered'))
-    .catch(err => console.error('SW failed', err));
+if (!navigator.onLine && offlineIndicator) {
+  offlineIndicator.style.display = 'inline-block';
 }
 
-console.log('🚀 PresetHub frontend loaded');
+// ============================================================
+// ===== PWA =====
+// ============================================================
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js')
+    .then(() => console.log('✅ SW registered with offline support'))
+    .catch(err => console.error('❌ SW failed', err));
+}
+
+console.log('🚀 PresetHub frontend loaded with offline support');
