@@ -14,8 +14,8 @@ if (!BOT_TOKEN) {
 }
 
 const bot = new Telegraf(BOT_TOKEN);
-// backend/bot.js – लाइन ~13
 const API_BASE = process.env.API_BASE || 'https://presethub.site/api';
+
 // ==================== HELPERS ====================
 
 // In-memory login state: chatId -> { step: 'email', email: null }
@@ -165,6 +165,9 @@ bot.start(async (ctx) => {
 /upload – प्रीसेट अपलोड करें
 /mypresets – मेरे द्वारा अपलोड किए गए प्रीसेट
 /deletepreset <आईडी> – अपना प्रीसेट डिलीट करें
+/subscription – सब्सक्रिप्शन स्टेटस
+/referral – रेफरल कोड जनरेट करें
+/earnings – आपकी कमाई
 
 📌 *नीचे दिए बटन भी इस्तेमाल करें*
   `;
@@ -927,6 +930,71 @@ bot.action('admin_stats', async (ctx) => {
   msg += `📦 कुल प्रीसेट: ${db.data.presets.length}\n`;
   msg += `💰 राजस्व: ₹${(db.data.orders || []).filter(o => o.status === 'paid').reduce((s,o) => s + o.amount, 0)}`;
   await ctx.replyWithMarkdown(msg);
+});
+
+// ============================================================
+// ===== NEW COMMANDS (Subscription, Referral, Earnings) =====
+// ============================================================
+
+// Subscription status
+bot.command('subscription', async (ctx) => {
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('Please /login first.');
+  }
+  try {
+    const res = await axios.get(`${API_BASE}/users/me/subscription`, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    const data = res.data;
+    let msg = `📊 *Your Subscription*\n\n`;
+    msg += `Status: ${data.isPremium ? '✅ Premium' : 'Free'}\n`;
+    msg += `Expiry: ${data.expiry ? new Date(data.expiry).toLocaleDateString() : 'N/A'}\n`;
+    msg += `Ads watched: ${data.adWatchCount || 0}\n`;
+    msg += `Days earned from ads: ${data.adRewardDays || 0}\n`;
+    msg += `Referrals: ${data.referralCount || 0}\n`;
+    msg += `Referral code: ${data.referralCode || 'Generate with /referral'}`;
+    await ctx.replyWithMarkdown(msg);
+  } catch (err) {
+    ctx.reply('❌ Failed to fetch subscription.');
+  }
+});
+
+// Generate referral code
+bot.command('referral', async (ctx) => {
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('Please /login first.');
+  }
+  try {
+    const res = await axios.post(`${API_BASE}/referrals/generate`, {}, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    const data = res.data;
+    const link = `https://presethub.site/?ref=${data.referralCode}`;
+    await ctx.replyWithMarkdown(`🔗 *Your Referral Link*\n\n${link}\n\nShare this link! Every 10 signups = 28 days free.`);
+  } catch (err) {
+    ctx.reply('❌ Failed to generate referral code.');
+  }
+});
+
+// Earnings summary
+bot.command('earnings', async (ctx) => {
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('Please /login first.');
+  }
+  try {
+    const res = await axios.get(`${API_BASE}/users/${ctx.dbUser.id}/earnings`, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    const data = res.data;
+    let msg = `💰 *Your Earnings*\n\n`;
+    msg += `Total: ₹${data.totalRevenue.toFixed(2)}\n`;
+    msg += `Impressions: ${data.totalImpressions}\n`;
+    msg += `Downloads: ${data.totalDownloads}\n`;
+    msg += `Withdrawable: ${data.canWithdraw ? '✅ Yes' : '❌ No (min ₹100)'}`;
+    await ctx.replyWithMarkdown(msg);
+  } catch (err) {
+    ctx.reply('❌ Failed to fetch earnings.');
+  }
 });
 
 // ===== PROFILE (for keyboard) =====

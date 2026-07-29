@@ -19,120 +19,21 @@
       },
       "followers": [],
       "following": [],
-      "wishlist": []
-    },
-    {
-      "id": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
-      "email": "boy767654@gmail.com",
-      "password": "$2a$10$yoBGx7BM0wVjemv.QMzpoupoKBvz2ScBssOI7KfUiYa5D3uw8YCKK",
-      "name": "Omprakash Ahirwar",
-      "role": "user",
-      "createdAt": "2026-07-27T16:47:14.589Z",
-      "verified": false,
-      "bio": "Hi iam infuser ",
-      "avatar": "https://photos.app.goo.gl/zML63gmFUUYBG6Mr8",
-      "username": "preset_guru",
-      "socialLinks": {
-        "instagram": "@hey.omii.08x____",
-        "youtube": "",
-        "twitter": "",
-        "website": ""
-      },
-      "followers": [],
-      "following": [],
-      "wishlist": [
-        "9203646b-94ec-4a4d-a7d1-d4dc0e9eb848",
-        "b55191bb-ae89-4fb9-9970-22332c0a1a61"
-      ]
-    },
-    {
-      "id": "tele_6221923358",
-      "email": "",
-      "password": "",
-      "name": "𝗢𝗺𝗽𝗿𝗮𝗸𝗮𝘀𝗵 𝗔",
-      "username": "Crezy_op",
-      "role": "user",
-      "createdAt": "2026-07-28T01:55:00.591Z",
-      "verified": false,
-      "bio": "",
-      "avatar": "",
-      "socialLinks": {
-        "instagram": "",
-        "youtube": "",
-        "twitter": "",
-        "website": ""
-      },
-      "followers": [],
-      "following": [],
       "wishlist": [],
-      "telegram": {
-        "firstName": "𝗢𝗺𝗽𝗿𝗮𝗸𝗮𝘀𝗵 𝗔",
-        "lastName": "",
-        "username": "Crezy_op",
-        "languageCode": "en"
+      "subscription": {
+        "tier": "free",
+        "expiry": null,
+        "adWatchCount": 0,
+        "adRewardDays": 0,
+        "lastAdWatch": null
       },
-      "lastActive": "2026-07-28T02:35:03.608Z",
-      "commandsCount": 6
-    },
-    {
-      "id": "tele_6221923358",
-      "email": "",
-      "password": "",
-      "name": "𝗢𝗺𝗽𝗿𝗮𝗸𝗮𝘀𝗵 𝗔",
-      "username": "Crezy_op",
-      "role": "user",
-      "createdAt": "2026-07-28T02:35:15.154Z",
-      "verified": false,
-      "bio": "",
-      "avatar": "",
-      "socialLinks": {
-        "instagram": "",
-        "youtube": "",
-        "twitter": "",
-        "website": ""
+      "referral": {
+        "code": null,
+        "referredBy": null,
+        "referralCount": 0,
+        "referralRewardDays": 0
       },
-      "followers": [],
-      "following": [],
-      "wishlist": [],
-      "telegram": {
-        "firstName": "Omiii ✨",
-        "lastName": "(hey.omii.08x___)",
-        "username": "Crezy_op",
-        "languageCode": "en"
-      },
-      "lastActive": "2026-07-28T06:16:58.593Z",
-      "commandsCount": 51
-    },
-    {
-      "id": "tele_6221923358",
-      "email": "",
-      "password": "",
-      "name": "Omiii ✨",
-      "username": "Crezy_op",
-      "role": "user",
-      "createdAt": "2026-07-28T06:27:50.933Z",
-      "verified": false,
-      "bio": "",
-      "avatar": "",
-      "socialLinks": {
-        "instagram": "",
-        "youtube": "",
-        "twitter": "",
-        "website": ""
-      },
-      "followers": [],
-      "following": [],
-      "wishlist": [],
-      "telegramId": "6221923358",
-      "telegram": {
-        "firstName": "Omiii ✨",
-        "lastName": "(hey.omii.08x___)",
-        "username": "Crezy_op",
-        "languageCode": "en"
-      },
-      "lastActive": "2026-07-29T03:26:07.360Z",
-      "commandsCount": 23,
-      "token": ""
+      "notifications": []
     }
   ],
   "presets": [
@@ -141,9 +42,7 @@
       "name": "Nurture photo 2",
       "description": "New Lightroom presets add 2",
       "category": "नैचुरल",
-      "tags": [
-        "#nuture #newpost #newpreset"
-      ],
+      "tags": ["#nuture #newpost #newpreset"],
       "price": 1,
       "author": "Omprakash Ahirwar",
       "authorId": "2d2b8726-965c-4b09-a08a-c11ccfb0e53d",
@@ -166,7 +65,12 @@
       "previewImage": "/uploads/previews/1785170976597-242424248.jpg",
       "status": "approved",
       "size": 3452982,
-      "originalName": "IMG20260727161415 (1).dng"
+      "originalName": "IMG20260727161415 (1).dng",
+      "views": 0,
+      "likes": [],
+      "shares": 0,
+      "adImpressions": 0,
+      "totalRevenue": 0
     },
     {
       "id": "b55191bb-ae89-4fb9-9970-22332c0a1a61",
@@ -186,7 +90,12 @@
       "previewImage": "/uploads/previews/1785170898831-833253093.jpg",
       "status": "approved",
       "size": 4767236,
-      "originalName": "IMG20260727161945.dng"
+      "originalName": "IMG20260727161945.dng",
+      "views": 0,
+      "likes": [],
+      "shares": 0,
+      "adImpressions": 0,
+      "totalRevenue": 0
     }
   ],
   "downloads": [
