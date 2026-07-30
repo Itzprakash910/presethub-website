@@ -33,7 +33,8 @@ app.use(helmet());
 const allowedOrigins = [
   process.env.CLIENT_URL || 'https://presethub.site',
   'http://localhost:4000',
-  'http://localhost:3000'
+  'http://localhost:3000',
+  'http://localhost:5500'
 ];
 app.use(cors({
   origin: function (origin, callback) {
@@ -118,7 +119,6 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 // ✅ CATCH-ALL: Serve index.html ONLY for non-API routes
 // ============================================================
 app.get('*', (req, res) => {
-  // If the request accepts HTML, serve index.html (SPA support)
   if (req.accepts('html')) {
     res.sendFile(path.join(__dirname, '../frontend/index.html'));
   } else {
@@ -134,6 +134,7 @@ const fs = require('fs');
 const uploadsDir = path.join(__dirname, '../uploads');
 const previewsDir = path.join(uploadsDir, 'previews');
 const avatarsDir = path.join(uploadsDir, 'avatars');
+
 [uploadsDir, previewsDir, avatarsDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -143,7 +144,7 @@ const avatarsDir = path.join(uploadsDir, 'avatars');
 
 app.listen(PORT, () => {
   console.log(`🚀 PresetHub server running on port ${PORT}`);
-  console.log(`📱 Frontend: ${process.env.CLIENT_URL || 'https://presethub.site'}`);
-  console.log(`🔧 Admin: ${process.env.CLIENT_URL || 'https://presethub.site'}/admin`);
+  console.log(`📱 Frontend: ${process.env.CLIENT_URL || 'http://localhost:4000'}`);
+  console.log(`🔧 Admin: ${process.env.CLIENT_URL || 'http://localhost:4000'}/admin`);
   console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
