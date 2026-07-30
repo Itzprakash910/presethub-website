@@ -97,15 +97,15 @@
                 <a href="/" class="logo"><i class="fas fa-camera-retro"></i> Preset<span>Hub</span></a>
 
                 <div class="nav-search">
-                    <input type="text" id="searchInput" placeholder="खोजें प्रीसेट, शैली, या क्रिएटर..." />
+                    <input type="text" id="searchInput" placeholder="खोजें प्रीसेट, शैली, या क्रिएटर..." aria-label="Search presets" />
                     <div id="searchSuggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.1);z-index:10;max-height:300px;overflow-y:auto;margin-top:4px;"></div>
-                    <button id="searchBtn"><i class="fas fa-search"></i> खोजें</button>
+                    <button id="searchBtn" aria-label="Search"><i class="fas fa-search"></i> खोजें</button>
                 </div>
 
                 <div class="nav-actions">
                     <!-- Offline Indicator -->
                     <div id="offlineIndicator" style="display:none; background:#f39c12; color:#fff; padding:4px 12px; border-radius:20px; font-size:0.7rem; font-weight:600; margin-right:8px;">
-                        ⚡ ऑफलाइन
+                        <i class="fas fa-wifi"></i> ऑफलाइन
                     </div>
 
                     <!-- Wishlist -->
@@ -119,21 +119,21 @@
                         <i class="fas fa-moon"></i>
                     </button>
 
-                    <!-- 🔔 Notification Bell -->
+                    <!-- Notification Bell -->
                     <button class="icon-btn" id="notificationBtn" aria-label="Notifications" style="position:relative;">
                         <i class="fas fa-bell"></i>
                         <span id="notifBadge" style="position:absolute;top:-5px;right:-5px;background:#e74c3c;color:#fff;border-radius:50%;padding:2px 6px;font-size:0.7rem;display:none;">0</span>
                     </button>
 
-                    <!-- 🚪 Exit Button -->
+                    <!-- Exit Button -->
                     <button class="icon-btn" id="exitBtn" aria-label="Exit" onclick="exitSite()">
                         <i class="fas fa-sign-out-alt"></i>
                     </button>
 
                     <!-- Auth Section -->
                     <div id="authSection">
-                        <button class="btn btn-sm btn-outline" id="loginBtn">लॉग इन</button>
-                        <button class="btn btn-sm btn-primary" id="signupBtn">साइन अप</button>
+                        <button class="btn btn-sm btn-outline" id="loginBtn"><i class="fas fa-sign-in-alt"></i> लॉग इन</button>
+                        <button class="btn btn-sm btn-primary" id="signupBtn"><i class="fas fa-user-plus"></i> साइन अप</button>
                     </div>
 
                     <!-- User Section -->
@@ -171,7 +171,7 @@
                         </div>
                         <div class="hero-stats">
                             <div><div class="num" id="statPresets">12K+</div><div class="label">प्रीसेट्स</div></div>
-                            <div><div class="num">4.8★</div><div class="label">औसत रेटिंग</div></div>
+                            <div><div class="num"><i class="fas fa-star" style="color:#f4a261;"></i> 4.8</div><div class="label">औसत रेटिंग</div></div>
                             <div><div class="num" id="statUsers">50K</div><div class="label">सक्रिय यूजर्स</div></div>
                         </div>
                     </div>
@@ -183,10 +183,10 @@
                             <rect x="180" y="160" width="120" height="100" rx="12" fill="#d4c5b2" />
                             <circle cx="330" cy="80" r="30" fill="#d4a373" opacity="0.6" />
                             <circle cx="340" cy="210" r="24" fill="#d4a373" opacity="0.4" />
-                            <text x="120" y="280" font-family="Inter" font-weight="700" font-size="18" fill="#4a3f35">✨ प्रीसेट प्रीव्यू</text>
+                            <text x="120" y="280" font-family="Inter" font-weight="700" font-size="18" fill="#4a3f35"><i class="fas fa-wand-magic-sparkles"></i> प्रीसेट प्रीव्यू</text>
                         </svg>
                         <div class="hero-badge">
-                            <i class="fas fa-star" style="color:#f4a261;"></i> 4.8 ★ (2.3K समीक्षाएँ)
+                            <i class="fas fa-star" style="color:#f4a261;"></i> 4.8 <i class="fas fa-star" style="color:#f4a261;font-size:0.8rem;"></i> (2.3K समीक्षाएँ)
                         </div>
                     </div>
                 </div>
@@ -195,7 +195,7 @@
             <!-- Top Creators -->
             <section class="container" id="topCreatorsSection">
                 <div class="section-title">
-                    <span>🏆 टॉप क्रिएटर्स</span>
+                    <span><i class="fas fa-trophy" style="color:#d4a373;"></i> टॉप क्रिएटर्स</span>
                 </div>
                 <div class="top-creators-grid" id="topCreatorsGrid"></div>
             </section>
@@ -203,23 +203,23 @@
             <!-- Categories -->
             <section class="container" id="categoriesSection">
                 <div class="section-title">
-                    <span>📂 श्रेणियाँ</span>
-                    <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें →</a>
+                    <span><i class="fas fa-folder-open" style="color:#d4a373;"></i> श्रेणियाँ</span>
+                    <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें <i class="fas fa-arrow-right"></i></a>
                 </div>
                 <div class="categories" id="categoryList">
-                    <div class="category-card" data-category="सनसेट"><div class="icon">🌅</div><div class="name">सनसेट</div><div class="count">1.2K</div></div>
-                    <div class="category-card" data-category="ब्लैक & व्हाइट"><div class="icon">🖤</div><div class="name">ब्लैक &amp; व्हाइट</div><div class="count">890</div></div>
-                    <div class="category-card" data-category="नैचुरल"><div class="icon">🌿</div><div class="name">नैचुरल</div><div class="count">1.5K</div></div>
-                    <div class="category-card" data-category="विंटेज"><div class="icon">🎨</div><div class="name">विंटेज</div><div class="count">760</div></div>
-                    <div class="category-card" data-category="सिटीस्केप"><div class="icon">🌆</div><div class="name">सिटीस्केप</div><div class="count">680</div></div>
+                    <div class="category-card" data-category="सनसे트"><div class="icon"><i class="fas fa-sun" style="color:#f39c12;"></i></div><div class="name">सनसेट</div><div class="count">1.2K</div></div>
+                    <div class="category-card" data-category="ब्लैक & व्हाइट"><div class="icon"><i class="fas fa-circle" style="color:#2c3e50;"></i></div><div class="name">ब्लैक &amp; व्हाइट</div><div class="count">890</div></div>
+                    <div class="category-card" data-category="नैचुरल"><div class="icon"><i class="fas fa-leaf" style="color:#27ae60;"></i></div><div class="name">नैचुरल</div><div class="count">1.5K</div></div>
+                    <div class="category-card" data-category="विंटेज"><div class="icon"><i class="fas fa-camera-retro" style="color:#8e44ad;"></i></div><div class="name">विंटेज</div><div class="count">760</div></div>
+                    <div class="category-card" data-category="सिटीस्केप"><div class="icon"><i class="fas fa-city" style="color:#2980b9;"></i></div><div class="name">सिटीस्केप</div><div class="count">680</div></div>
                 </div>
             </section>
 
             <!-- Latest Presets -->
             <section class="container" id="latestSection">
                 <div class="section-title">
-                    <span>📰 ताज़ा प्रीसेट</span>
-                    <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें →</a>
+                    <span><i class="fas fa-clock" style="color:#d4a373;"></i> ताज़ा प्रीसेट</span>
+                    <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें <i class="fas fa-arrow-right"></i></a>
                 </div>
                 <div class="preset-grid" id="latestGrid"></div>
             </section>
@@ -227,9 +227,9 @@
             <!-- Presets Grid -->
             <section class="container" id="presetsSection">
                 <div class="section-title">
-                    <span id="presetTitle">🔥 फीचर्ड प्रीसेट्स</span>
+                    <span id="presetTitle"><i class="fas fa-fire" style="color:#e74c3c;"></i> फीचर्ड प्रीसेट्स</span>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <select id="filterCategory" class="filter-select">
+                        <select id="filterCategory" class="filter-select" aria-label="Filter by category">
                             <option value="">सभी श्रेणियाँ</option>
                             <option value="सनसेट">सनसेट</option>
                             <option value="ब्लैक & व्हाइट">ब्लैक & व्हाइट</option>
@@ -237,12 +237,12 @@
                             <option value="विंटेज">विंटेज</option>
                             <option value="सिटीस्केप">सिटीस्केप</option>
                         </select>
-                        <select id="filterPrice" class="filter-select">
+                        <select id="filterPrice" class="filter-select" aria-label="Filter by price">
                             <option value="">सभी</option>
                             <option value="free">मुफ्त</option>
                             <option value="paid">सशुल्क</option>
                         </select>
-                        <select id="filterSort" class="filter-select">
+                        <select id="filterSort" class="filter-select" aria-label="Sort by">
                             <option value="popular">सबसे लोकप्रिय</option>
                             <option value="rating">उच्च रेटिंग</option>
                             <option value="newest">नए</option>
@@ -263,36 +263,36 @@
             <section class="container" id="featuredBanner">
                 <div class="featured-banner">
                     <div>
-                        <h2>🎯 प्रो पैक — 50 प्रीसेट्स</h2>
+                        <h2><i class="fas fa-rocket" style="color:#d4a373;"></i> प्रो पैक — 50 प्रीसेट्स</h2>
                         <p>एक साथ 50 प्रीसेट्स पाएं। पोर्ट्रेट, लैंडस्केप, फैशन — सब कुछ कवर।</p>
                         <button class="btn" id="featuredDownloadBtn"><i class="fas fa-download"></i> अभी डाउनलोड करें</button>
                     </div>
                     <div class="badge-group">
                         <div><div class="num">50</div><div class="label">प्रीसेट्स</div></div>
                         <div><div class="num">₹499</div><div class="label">कीमत</div></div>
-                        <div><div class="num">4.9★</div><div class="label">रेटिंग</div></div>
+                        <div><div class="num"><i class="fas fa-star" style="color:#f4a261;"></i> 4.9</div><div class="label">रेटिंग</div></div>
                     </div>
                 </div>
             </section>
 
             <!-- Testimonials -->
             <section class="container testimonials" id="testimonialsSection">
-                <div class="section-title"><span>💬 यूजर्स की राय</span></div>
+                <div class="section-title"><span><i class="fas fa-comment-dots" style="color:#d4a373;"></i> यूजर्स की राय</span></div>
                 <div class="testimonial-grid">
                     <div class="testimonial-card">
-                        <div class="stars">★★★★★</div>
+                        <div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
                         <p>"PresetHub ने मेरी एडिटिंग को पूरी तरह बदल दिया। एक क्लिक में प्रो लुक!"</p>
-                        <div class="user"><div class="avatar">A</div><div><div class="name">अंकित सिंह</div><div class="role">फोटोग्राफर</div></div></div>
+                        <div class="user"><div class="avatar">A</div><div><div class="name">अंकित सिंह</div><div class="role"><i class="fas fa-camera"></i> फोटोग्राफर</div></div></div>
                     </div>
                     <div class="testimonial-card">
-                        <div class="stars">★★★★★</div>
+                        <div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i></div>
                         <p>"बहुत आसानी से डाउनलोड और इंपोर्ट। हर प्रीसेट की क्वालिटी शानदार।"</p>
-                        <div class="user"><div class="avatar">P</div><div><div class="name">प्रियंका मेहरा</div><div class="role">कंटेंट क्रिएटर</div></div></div>
+                        <div class="user"><div class="avatar">P</div><div><div class="name">प्रियंका मेहरा</div><div class="role"><i class="fas fa-video"></i> कंटेंट क्रिएटर</div></div></div>
                     </div>
                     <div class="testimonial-card">
-                        <div class="stars">★★★★☆</div>
+                        <div class="stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star-half-alt"></i></div>
                         <p>"मुझे विंटेज कलेक्शन सबसे पसंद आया। बार-बार यहीं से डाउनलोड करता हूँ।"</p>
-                        <div class="user"><div class="avatar">R</div><div><div class="name">राहुल वर्मा</div><div class="role">एडिटर</div></div></div>
+                        <div class="user"><div class="avatar">R</div><div><div class="name">राहुल वर्मा</div><div class="role"><i class="fas fa-edit"></i> एडिटर</div></div></div>
                     </div>
                 </div>
             </section>
@@ -305,33 +305,39 @@
                     <div class="footer-brand">
                         <div class="logo"><i class="fas fa-camera-retro"></i> Preset<span>Hub</span></div>
                         <p>भारत का पहला Lightroom प्रीसेट मार्केटप्लेस। हर क्रिएटर के लिए, हर स्टाइल के लिए।</p>
+                        <div style="margin-top:12px;display:flex;gap:12px;">
+                            <a href="#" target="_blank" style="color:#d4a373;"><i class="fab fa-instagram fa-lg"></i></a>
+                            <a href="#" target="_blank" style="color:#d4a373;"><i class="fab fa-youtube fa-lg"></i></a>
+                            <a href="#" target="_blank" style="color:#d4a373;"><i class="fab fa-twitter fa-lg"></i></a>
+                            <a href="#" target="_blank" style="color:#d4a373;"><i class="fab fa-github fa-lg"></i></a>
+                        </div>
                     </div>
                     <div class="footer-col">
-                        <h4>ब्राउज़ करें</h4>
+                        <h4><i class="fas fa-compass"></i> ब्राउज़ करें</h4>
                         <ul>
-                            <li><a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'});">सभी प्रीसेट</a></li>
-                            <li><a href="#" onclick="document.getElementById('categoriesSection').scrollIntoView({behavior:'smooth'});">श्रेणियाँ</a></li>
-                            <li><a href="#" onclick="document.getElementById('latestSection').scrollIntoView({behavior:'smooth'});">नए प्रीसेट</a></li>
-                            <li><a href="#" onclick="filterSort.value='popular'; loadPresets();">ट्रेंडिंग</a></li>
+                            <li><a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'});"><i class="fas fa-th"></i> सभी प्रीसेट</a></li>
+                            <li><a href="#" onclick="document.getElementById('categoriesSection').scrollIntoView({behavior:'smooth'});"><i class="fas fa-folder"></i> श्रेणियाँ</a></li>
+                            <li><a href="#" onclick="document.getElementById('latestSection').scrollIntoView({behavior:'smooth'});"><i class="fas fa-clock"></i> नए प्रीसेट</a></li>
+                            <li><a href="#" onclick="filterSort.value='popular'; loadPresets();"><i class="fas fa-fire"></i> ट्रेंडिंग</a></li>
                         </ul>
                     </div>
                     <div class="footer-col">
-                        <h4>सहायता</h4>
+                        <h4><i class="fas fa-life-ring"></i> सहायता</h4>
                         <ul>
-                            <li><a href="/download-guide.html">कैसे डाउनलोड करें</a></li>
-                            <li><a href="/lightroom-guide.html">Lightroom गाइड</a></li>
-                            <li><a href="/faq.html">FAQ</a></li>
-                            <li><a href="/contact.html">संपर्क करें</a></li>
+                            <li><a href="/download-guide.html"><i class="fas fa-download"></i> कैसे डाउनलोड करें</a></li>
+                            <li><a href="/lightroom-guide.html"><i class="fas fa-book"></i> Lightroom गाइड</a></li>
+                            <li><a href="/faq.html"><i class="fas fa-question-circle"></i> FAQ</a></li>
+                            <li><a href="/contact.html"><i class="fas fa-envelope"></i> संपर्क करें</a></li>
                         </ul>
                     </div>
                     <div class="footer-col">
-                        <h4>कंपनी</h4>
+                        <h4><i class="fas fa-building"></i> कंपनी</h4>
                         <ul>
-                            <li><a href="/about.html">हमारे बारे में</a></li>
-                            <li><a href="/blog.html">ब्लॉग</a></li>
-                            <li><a href="/creator-program.html">क्रिएटर प्रोग्राम</a></li>
-                            <li><a href="/terms.html">नियम और शर्तें</a></li>
-                            <li><a href="/privacy.html">गोपनीयता नीति</a></li>
+                            <li><a href="/about.html"><i class="fas fa-info-circle"></i> हमारे बारे में</a></li>
+                            <li><a href="/blog.html"><i class="fas fa-blog"></i> ब्लॉग</a></li>
+                            <li><a href="/creator-program.html"><i class="fas fa-user-tie"></i> क्रिएटर प्रोग्राम</a></li>
+                            <li><a href="/terms.html"><i class="fas fa-gavel"></i> नियम और शर्तें</a></li>
+                            <li><a href="/privacy.html"><i class="fas fa-shield-alt"></i> गोपनीयता नीति</a></li>
                         </ul>
                     </div>
                 </div>
@@ -349,7 +355,7 @@
 
         <!-- Modal & Toast -->
         <div id="modalContainer"></div>
-        <div id="toastContainer"></div>
+        <div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;"></div>
     </div>
 
     <!-- ===== SCRIPTS ===== -->
