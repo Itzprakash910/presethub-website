@@ -61,6 +61,29 @@ function initDOM() {
 }
 
 // ============================================================
+// ===== TOAST SYSTEM =====
+// ============================================================
+function showToast(message, type = 'success') {
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+window.showToast = showToast;
+
+// ============================================================
 // ===== ATTACH ALL EVENT LISTENERS =====
 // ============================================================
 function attachEventListeners() {
@@ -77,6 +100,9 @@ function attachEventListeners() {
       themeToggle.innerHTML = isDark ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
       localStorage.setItem('theme', isDark ? 'dark' : 'light');
     });
+    if (document.body.classList.contains('dark')) {
+      themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+    }
   }
 
   // --- User Avatar Dropdown ---
@@ -161,7 +187,7 @@ function attachEventListeners() {
     });
   }
 
-  // --- Search Input (Enter key + Smart Search) ---
+  // --- Search Input ---
   if (searchInput) {
     searchInput.addEventListener('keyup', (e) => {
       if (e.key === 'Enter') {
@@ -171,7 +197,6 @@ function attachEventListeners() {
       }
     });
 
-    // ✅ SMART SEARCH - Fixed
     let searchTimeout = null;
     searchInput.addEventListener('input', function() {
       const query = this.value.trim();
@@ -197,7 +222,6 @@ function attachEventListeners() {
                 </div>
               `).join('');
               searchSuggestions.style.display = 'block';
-              // ✅ Fix: Click on suggestion
               searchSuggestions.querySelectorAll('.suggestion-item').forEach(item => {
                 item.addEventListener('click', function(e) {
                   e.stopPropagation();
@@ -214,7 +238,7 @@ function attachEventListeners() {
     });
   }
 
-  // --- Close search suggestions on outside click ---
+  // --- Close search suggestions ---
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.nav-search')) {
       if (searchSuggestions) searchSuggestions.style.display = 'none';
@@ -289,7 +313,7 @@ function attachEventListeners() {
     });
   }
 
-  // --- Latest Presets Grid Event Delegation (same as presetGrid) ---
+  // --- Latest Presets Grid ---
   if (latestGrid) {
     latestGrid.addEventListener('click', function(e) {
       const card = e.target.closest('.preset-card');
@@ -416,27 +440,6 @@ if ('serviceWorker' in navigator) {
 }
 
 // ============================================================
-// ===== TOAST SYSTEM =====
-// ============================================================
-function showToast(message, type = 'success') {
-  const container = document.getElementById('toastContainer');
-  if (!container) {
-    console.warn('Toast container not found');
-    return;
-  }
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(100px)';
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
-}
-window.showToast = showToast;
-
-// ============================================================
 // ===== DARK MODE =====
 // ============================================================
 const currentTheme = localStorage.getItem('theme') || 'light';
@@ -524,7 +527,7 @@ window.showMyPresets = async function() {
     modal.innerHTML = `
       <div class="modal" style="max-width:600px;">
         <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
-        <h2>📦 मेरे प्रीसेट</h2>
+        <h2><i class="fas fa-cubes"></i> मेरे प्रीसेट</h2>
         <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
           ${presets.map(p => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
@@ -532,7 +535,7 @@ window.showMyPresets = async function() {
                 <strong>${p.name}</strong> – ${p.category}
                 <span style="font-size:0.8rem;color:#888;">(${p.status})</span>
               </div>
-              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')">देखें</button>
+              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
             </div>
           `).join('')}
         </div>
@@ -569,14 +572,14 @@ window.showMyDownloads = async function() {
     modal.innerHTML = `
       <div class="modal" style="max-width:600px;">
         <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
-        <h2>⬇️ मेरे डाउनलोड</h2>
+        <h2><i class="fas fa-download"></i> मेरे डाउनलोड</h2>
         <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
           ${presets.map(p => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
               <div>
                 <strong>${p.name}</strong> – ${p.author}
               </div>
-              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')">देखें</button>
+              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
             </div>
           `).join('')}
         </div>
@@ -609,7 +612,7 @@ function openAuthModal(mode) {
         <div class="form-group"><input type="password" id="authPassword" placeholder="पासवर्ड (6+ अक्षर)" required minlength="6" /></div>
         ${refInput}
         <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
-          ${mode === 'login' ? 'लॉग इन करें' : 'साइन अप करें'}
+          ${mode === 'login' ? '<i class="fas fa-sign-in-alt"></i> लॉग इन करें' : '<i class="fas fa-user-plus"></i> साइन अप करें'}
         </button>
       </form>
     </div>
@@ -747,7 +750,7 @@ async function showWishlist() {
   modal.innerHTML = `
     <div class="modal" style="max-width:600px;">
       <button class="close">&times;</button>
-      <h2>❤️ आपकी विशलिस्ट</h2>
+      <h2><i class="fas fa-heart" style="color:#e74c3c;"></i> आपकी विशलिस्ट</h2>
       <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
         ${presets.map(p => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
@@ -755,7 +758,7 @@ async function showWishlist() {
               <strong>${p.name}</strong> – ${p.author}
               <span style="margin-left:8px;font-size:0.8rem;color:#6b6b6b;">${p.category}</span>
             </div>
-            <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')">देखें</button>
+            <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
           </div>
         `).join('')}
       </div>
@@ -767,12 +770,12 @@ async function showWishlist() {
 window.showWishlist = showWishlist;
 
 // ============================================================
-// ===== PRESETS CRUD =====
+// ===== PRESETS CRUD - FIXED SIZE =====
 // ============================================================
 function renderPresetsToContainer(presets, container) {
   if (!container) return;
   if (!presets || presets.length === 0) {
-    container.innerHTML = `<div class="no-results" style="grid-column:1/-1;text-align:center;padding:40px;color:#7a7a7a;">😕 कोई प्रीसेट नहीं मिला</div>`;
+    container.innerHTML = `<div class="no-results" style="grid-column:1/-1;text-align:center;padding:30px 15px;color:#7a7a7a;font-size:0.9rem;"><i class="fas fa-search" style="font-size:2rem;display:block;margin-bottom:10px;"></i>😕 कोई प्रीसेट नहीं मिला</div>`;
     return;
   }
   container.innerHTML = presets.map(p => {
@@ -781,42 +784,41 @@ function renderPresetsToContainer(presets, container) {
       `<span class="price free">मुफ्त</span>` :
       `<span class="price">₹${p.price}</span>`;
     const stars = '★'.repeat(Math.floor(p.avgRating || 0)) + (p.avgRating % 1 >= 0.5 ? '½' : '');
-    // ✅ FIX: Use absolute URL for images
     const previewImageSrc = p.previewImage ? 
       (p.previewImage.startsWith('http') ? p.previewImage : window.location.origin + p.previewImage) : 
       null;
     const previewImg = previewImageSrc ? 
       `<img src="${previewImageSrc}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'">` :
-      `<svg viewBox="0 0 270 200" style="background:#d9d0c4;width:100%;height:100%;">
-        <rect x="20" y="20" width="80" height="70" rx="10" fill="#b8aa98" />
-        <rect x="120" y="20" width="80" height="70" rx="10" fill="#c4b5a2" />
-        <rect x="20" y="110" width="80" height="70" rx="10" fill="#a89682" />
-        <rect x="120" y="110" width="80" height="70" rx="10" fill="#d4c5b2" />
-        <text x="60" y="180" font-family="Inter" font-weight="600" font-size="12" fill="#4a3f35">📷 ${p.name}</text>
+      `<svg viewBox="0 0 270 180" style="background:#d9d0c4;width:100%;height:100%;">
+        <rect x="30" y="20" width="70" height="60" rx="8" fill="#b8aa98" />
+        <rect x="120" y="20" width="70" height="60" rx="8" fill="#c4b5a2" />
+        <rect x="30" y="100" width="70" height="60" rx="8" fill="#a89682" />
+        <rect x="120" y="100" width="70" height="60" rx="8" fill="#d4c5b2" />
+        <text x="50" y="165" font-family="Inter" font-weight="600" font-size="11" fill="#4a3f35"><i class="fas fa-camera"></i> ${p.name}</text>
       </svg>`;
     return `
       <div class="preset-card" data-id="${p.id}">
-        <div class="thumb">
+        <div class="thumb" style="height:160px;">
           ${previewImg}
           <div class="overlay">
-            <button class="btn btn-sm preview-btn" data-id="${p.id}"><i class="fas fa-eye"></i> प्रीव्यू</button>
-            <button class="btn btn-sm wishlist-toggle" data-id="${p.id}" style="background:#fff;color:#e74c3c;">
+            <button class="btn btn-sm preview-btn" data-id="${p.id}" style="font-size:0.7rem;padding:5px 12px;"><i class="fas fa-eye"></i> प्रीव्यू</button>
+            <button class="btn btn-sm wishlist-toggle" data-id="${p.id}" style="background:#fff;color:#e74c3c;font-size:0.7rem;padding:5px 10px;">
               <i class="fa${isLiked ? 's' : 'r'} fa-heart"></i>
             </button>
           </div>
         </div>
-        <div class="info">
-          <span class="tag">${p.category || 'General'}</span>
-          <h3>${p.name}</h3>
-          <div class="author" style="cursor:pointer;color:#d4a373;" onclick="event.stopPropagation(); window.openProfile('${p.authorId}')">
+        <div class="info" style="padding:12px 14px 14px;">
+          <span class="tag" style="font-size:0.6rem;">${p.category || 'General'}</span>
+          <h3 style="font-size:0.95rem;font-weight:700;margin:4px 0 2px;">${p.name}</h3>
+          <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.75rem;" onclick="event.stopPropagation(); window.openProfile('${p.authorId}')">
             ${p.author}
-            <span style="font-size:0.7rem;color:#888;margin-left:6px;"><i class="fas fa-users"></i> ${p.authorFollowers || 0}</span>
+            <span style="font-size:0.6rem;color:#888;margin-left:4px;"><i class="fas fa-users"></i> ${p.authorFollowers || 0}</span>
           </div>
-          <div class="meta" style="flex-wrap:wrap;gap:4px;">
+          <div class="meta" style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border, #f0ebe3);padding-top:8px;margin-top:6px;">
             ${priceDisplay}
-            <span class="rating">${stars} ${p.avgRating ? p.avgRating.toFixed(1) : '0'}</span>
+            <span class="rating" style="font-size:0.75rem;color:#f4a261;">${stars} ${p.avgRating ? p.avgRating.toFixed(1) : '0'}</span>
           </div>
-          <div style="display:flex;gap:10px;font-size:0.75rem;color:#888;margin-top:6px;flex-wrap:wrap;">
+          <div style="display:flex;gap:8px;font-size:0.65rem;color:#888;margin-top:4px;flex-wrap:wrap;">
             <span><i class="fas fa-eye"></i> ${p.views || 0}</span>
             <span><i class="fas fa-heart" style="color:#e74c3c;"></i> ${p.likes?.length || 0}</span>
             <span><i class="fas fa-share-alt"></i> ${p.shares || 0}</span>
@@ -881,7 +883,7 @@ async function loadPresets(page = 1, append = false) {
       if (loadMoreBtn) {
         if (currentPage < totalPages) {
           loadMoreBtn.style.display = 'inline-flex';
-          loadMoreBtn.textContent = `और लोड करें (${currentPage}/${totalPages})`;
+          loadMoreBtn.innerHTML = `<i class="fas fa-plus"></i> और लोड करें (${currentPage}/${totalPages})`;
         } else {
           loadMoreBtn.style.display = 'none';
         }
@@ -967,7 +969,7 @@ async function loadLatestPresets() {
 }
 
 // ============================================================
-// ===== PRESET MODAL =====
+// ===== PRESET MODAL - FIXED REVIEWS =====
 // ============================================================
 async function openPresetModal(presetId) {
   try {
@@ -976,6 +978,9 @@ async function openPresetModal(presetId) {
     const preset = await res.json();
     const isLiked = wishlist.includes(preset.id);
     const isFree = preset.price === 0;
+
+    // Update Meta Tags for SEO
+    updatePresetMetaTags(preset);
 
     if (!viewedPresets.has(presetId) && currentUser && preset.authorId !== currentUser.id) {
       viewedPresets.add(presetId);
@@ -987,6 +992,7 @@ async function openPresetModal(presetId) {
       } catch (e) { console.warn('Ad impression tracking failed:', e); }
     }
 
+    // Get REAL reviews from API
     const reviews = preset.reviews || [];
     const sortedReviews = [...reviews].sort((a, b) => (b.helpful || 0) - (a.helpful || 0) || new Date(b.createdAt) - new Date(a.createdAt));
     const topReviews = sortedReviews.slice(0, 5);
@@ -1002,74 +1008,77 @@ async function openPresetModal(presetId) {
         <button class="close">&times;</button>
         <div class="modal-grid">
           <div class="modal-preview">
-            ${previewImageSrc ? `<img src="${previewImageSrc}" alt="${preset.name}" style="width:100%;height:auto;border-radius:16px;" onerror="this.style.display='none'">` :
-              `<svg viewBox="0 0 300 200" style="width:100%;height:auto;background:#d9d0c4;border-radius:16px;">
+            ${previewImageSrc ? `<img src="${previewImageSrc}" alt="${preset.name}" style="width:100%;height:auto;border-radius:12px;" onerror="this.style.display='none'">` :
+              `<svg viewBox="0 0 300 200" style="width:100%;height:auto;background:#d9d0c4;border-radius:12px;">
                 <rect x="20" y="20" width="100" height="80" rx="8" fill="#b8aa98" />
                 <rect x="140" y="20" width="100" height="80" rx="8" fill="#c4b5a2" />
                 <rect x="20" y="120" width="100" height="60" rx="8" fill="#a89682" />
                 <rect x="140" y="120" width="100" height="60" rx="8" fill="#d4c5b2" />
-                <text x="80" y="185" font-family="Inter" font-weight="600" font-size="14" fill="#4a3f35">${preset.name}</text>
+                <text x="80" y="185" font-family="Inter" font-weight="600" font-size="14" fill="#4a3f35"><i class="fas fa-camera"></i> ${preset.name}</text>
               </svg>`
             }
           </div>
           <div class="modal-details">
             <h2>${preset.name}</h2>
-            <div class="author" style="cursor:pointer;color:#d4a373;" onclick="window.openProfile('${preset.authorId}')">by <strong>${preset.author}</strong></div>
-            <div class="desc">${preset.description || 'कोई विवरण नहीं'}</div>
-            <div class="price-lg ${isFree ? 'free' : ''}">${isFree ? 'मुफ्त' : '₹' + preset.price}</div>
-            <div class="actions">
-              <button class="btn btn-primary download-btn" data-id="${preset.id}">
+            <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.9rem;" onclick="window.openProfile('${preset.authorId}')">by <strong>${preset.author}</strong></div>
+            <div class="desc" style="font-size:0.9rem;color:var(--text, #3a3a3a);margin:8px 0 14px;">${preset.description || 'कोई विवरण नहीं'}</div>
+            <div class="price-lg ${isFree ? 'free' : ''}" style="font-size:1.4rem;">${isFree ? 'मुफ्त' : '₹' + preset.price}</div>
+            <div class="actions" style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
+              <button class="btn btn-primary download-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 20px;">
                 <i class="fas fa-download"></i> ${isFree ? 'डाउनलोड करें' : 'खरीदें'}
               </button>
-              <button class="btn btn-outline wishlist-btn" data-id="${preset.id}">
+              <button class="btn btn-outline wishlist-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 18px;">
                 <i class="fa${isLiked ? 's' : 'r'} fa-heart"></i> ${isLiked ? 'पसंद में' : 'पसंद करें'}
               </button>
-              <button class="btn btn-outline like-btn" data-id="${preset.id}">
+              <button class="btn btn-outline like-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 16px;">
                 <i class="fa${preset.likes && preset.likes.includes(currentUser?.id) ? 's' : 'r'} fa-heart"></i>
                 <span class="like-count">${preset.likes?.length || 0}</span>
               </button>
-              <button class="btn btn-outline share-btn" data-id="${preset.id}">
+              <button class="btn btn-outline share-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 16px;">
                 <i class="fas fa-share-alt"></i> <span class="share-count">${preset.shares || 0}</span>
               </button>
             </div>
-            <div class="meta-list">
+            <div class="meta-list" style="display:flex;flex-wrap:wrap;gap:12px;font-size:0.8rem;color:#5a5a5a;margin-top:14px;">
               <span><i class="fas fa-eye"></i> ${preset.views || 0} views</span>
               <span><i class="fas fa-download"></i> ${preset.downloads || 0} downloads</span>
               <span><i class="fas fa-star" style="color:#f4a261;"></i> ${preset.avgRating ? preset.avgRating.toFixed(1) : '0'} (${preset.reviews?.length || 0})</span>
               <span><i class="fas fa-tag"></i> ${preset.tags?.join(', ') || '—'}</span>
             </div>
-            <div style="margin-top:20px;border-top:1px solid var(--border, #eee);padding-top:16px;">
-              <h4>⭐ समीक्षाएँ (${preset.reviews?.length || 0})</h4>
-              <div id="reviewList">
+            <div style="margin-top:16px;border-top:1px solid var(--border, #eee);padding-top:14px;">
+              <h4 style="font-size:1rem;"><i class="fas fa-star" style="color:#f4a261;"></i> समीक्षाएँ (${preset.reviews?.length || 0})</h4>
+              <div id="reviewList" style="max-height:200px;overflow-y:auto;">
                 ${topReviews.length > 0 ? topReviews.map(r => `
-                  <div style="padding:10px 0;border-bottom:1px solid var(--border, #f0ebe3);">
+                  <div style="padding:8px 0;border-bottom:1px solid var(--border, #f0ebe3);">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
                       <div>
-                        <strong>${r.userName}</strong> 
-                        <span style="color:#f4a261;">${'★'.repeat(r.rating)}</span>
-                        <span style="color:#888;font-size:0.8rem;">${new Date(r.createdAt).toLocaleDateString()}</span>
+                        <strong style="font-size:0.85rem;">${r.userName}</strong> 
+                        <span style="color:#f4a261;font-size:0.8rem;">${'★'.repeat(r.rating)}</span>
+                        <span style="color:#888;font-size:0.7rem;">${new Date(r.createdAt).toLocaleDateString()}</span>
                       </div>
-                      <span style="font-size:0.8rem;color:#888;">
+                      <span style="font-size:0.75rem;color:#888;">
                         <i class="fas fa-thumbs-up" style="color:#d4a373;"></i> ${r.helpful || 0}
                       </span>
                     </div>
-                    <p style="margin:4px 0 0;color:var(--text, #3a3a3a);">${r.comment}</p>
+                    <p style="margin:3px 0 0;font-size:0.85rem;color:var(--text, #3a3a3a);">${r.comment}</p>
                   </div>
-                `).join('') : '<p style="color:#888;">अभी कोई समीक्षा नहीं</p>'}
-                ${preset.reviews && preset.reviews.length > 5 ? `<p style="color:#888;font-size:0.8rem;margin-top:6px;">... और ${preset.reviews.length - 5} समीक्षाएँ</p>` : ''}
+                `).join('') : '<p style="color:#888;font-size:0.85rem;">अभी कोई समीक्षा नहीं</p>'}
+                ${preset.reviews && preset.reviews.length > 5 ? `<p style="color:#888;font-size:0.75rem;margin-top:4px;">... और ${preset.reviews.length - 5} समीक्षाएँ</p>` : ''}
               </div>
               ${currentUser ? `
-                <form id="reviewForm" style="margin-top:12px;">
-                  <div class="form-group">
-                    <label>रेटिंग (1-5)</label>
-                    <input type="number" id="reviewRating" min="1" max="5" required />
+                <form id="reviewForm" style="margin-top:10px;">
+                  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:80px;">
+                      <label style="font-size:0.8rem;font-weight:600;">रेटिंग</label>
+                      <input type="number" id="reviewRating" min="1" max="5" style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--border,#ddd);font-size:0.9rem;" required />
+                    </div>
+                    <div style="flex:3;min-width:150px;">
+                      <label style="font-size:0.8rem;font-weight:600;">समीक्षा</label>
+                      <textarea id="reviewComment" placeholder="अपनी समीक्षा लिखें..." style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--border,#ddd);font-size:0.9rem;resize:vertical;min-height:50px;" required></textarea>
+                    </div>
                   </div>
-                  <div class="form-group">
-                    <textarea id="reviewComment" placeholder="अपनी समीक्षा लिखें..." required></textarea>
-                  </div>
-                  <button type="submit" class="btn btn-sm btn-primary">समीक्षा भेजें</button>
+                  <button type="submit" class="btn btn-sm btn-primary" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;"><i class="fas fa-paper-plane"></i> समीक्षा भेजें</button>
                 </form>
-              ` : `<p style="color:#888;margin-top:12px;">समीक्षा देने के लिए <a href="#" onclick="openAuthModal('login');return false;">लॉग इन</a> करें</p>`}
+              ` : `<p style="color:#888;font-size:0.85rem;margin-top:8px;">समीक्षा देने के लिए <a href="#" onclick="openAuthModal('login');return false;" style="color:#d4a373;">लॉग इन</a> करें</p>`}
             </div>
           </div>
         </div>
@@ -1148,6 +1157,96 @@ async function openPresetModal(presetId) {
 window.openPresetModal = openPresetModal;
 
 // ============================================================
+// ===== UPDATE PRESET META TAGS FOR SEO =====
+// ============================================================
+function updatePresetMetaTags(preset) {
+  // Update title
+  document.title = `${preset.name} – ${preset.category} Preset | PresetHub`;
+  
+  // Update meta description
+  let metaDesc = document.querySelector('meta[name="description"]');
+  if (!metaDesc) {
+    metaDesc = document.createElement('meta');
+    metaDesc.name = 'description';
+    document.head.appendChild(metaDesc);
+  }
+  metaDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset by ${preset.author}. ${preset.description || 'Professional photo editing preset.'} ⭐ ${preset.avgRating || 0} rating.`;
+
+  // Update OG title
+  let ogTitle = document.querySelector('meta[property="og:title"]');
+  if (!ogTitle) {
+    ogTitle = document.createElement('meta');
+    ogTitle.setAttribute('property', 'og:title');
+    document.head.appendChild(ogTitle);
+  }
+  ogTitle.content = `${preset.name} – ${preset.category} Preset | PresetHub`;
+
+  // Update OG description
+  let ogDesc = document.querySelector('meta[property="og:description"]');
+  if (!ogDesc) {
+    ogDesc = document.createElement('meta');
+    ogDesc.setAttribute('property', 'og:description');
+    document.head.appendChild(ogDesc);
+  }
+  ogDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset. ${preset.description || 'Professional preset for photo editing.'}`;
+
+  // Update OG image
+  let ogImage = document.querySelector('meta[property="og:image"]');
+  if (!ogImage) {
+    ogImage = document.createElement('meta');
+    ogImage.setAttribute('property', 'og:image');
+    document.head.appendChild(ogImage);
+  }
+  const imageUrl = preset.previewImage ? 
+    (preset.previewImage.startsWith('http') ? preset.previewImage : window.location.origin + preset.previewImage) : 
+    `${window.location.origin}/assets/images/og-image.jpg`;
+  ogImage.content = imageUrl;
+
+  // Update Twitter card
+  let twitterTitle = document.querySelector('meta[name="twitter:title"]');
+  if (!twitterTitle) {
+    twitterTitle = document.createElement('meta');
+    twitterTitle.name = 'twitter:title';
+    document.head.appendChild(twitterTitle);
+  }
+  twitterTitle.content = `${preset.name} – ${preset.category} Preset`;
+
+  // Update JSON-LD
+  let jsonLd = document.querySelector('script[type="application/ld+json"]');
+  if (!jsonLd) {
+    jsonLd = document.createElement('script');
+    jsonLd.type = 'application/ld+json';
+    document.head.appendChild(jsonLd);
+  }
+  jsonLd.textContent = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": preset.name,
+    "description": preset.description || `${preset.category} Lightroom preset`,
+    "image": imageUrl,
+    "brand": {
+      "@type": "Brand",
+      "name": "PresetHub"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": preset.price,
+      "priceCurrency": "INR",
+      "availability": "https://schema.org/InStock"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": preset.avgRating || 0,
+      "ratingCount": preset.reviews?.length || 0
+    },
+    "author": {
+      "@type": "Person",
+      "name": preset.author
+    }
+  });
+}
+
+// ============================================================
 // ===== REVIEW SUBMIT =====
 // ============================================================
 async function submitReview(presetId, rating, comment) {
@@ -1177,6 +1276,7 @@ async function submitReview(presetId, rating, comment) {
           openPresetModal(id);
         }
       }
+      loadPresets();
     } else {
       const err = await res.json();
       showToast(err.error || 'समीक्षा सबमिट नहीं हो पाई', 'error');
@@ -1200,7 +1300,7 @@ async function downloadPreset(presetId) {
     modal.className = 'ad-overlay';
     modal.innerHTML = `
       <div class="ad-modal">
-        <h3>📢 Sponsored</h3>
+        <h3><i class="fas fa-ad"></i> Sponsored</h3>
         <div class="ad-content">
           <img src="https://via.placeholder.com/400x200/d4a373/ffffff?text=Your+Ad+Here" alt="Ad" style="max-width:100%;border-radius:12px;">
           <p style="margin-top:8px;color:#888;">Continue in <span class="timer">3</span>s</p>
@@ -1373,14 +1473,14 @@ function openUploadModal() {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `
-    <div class="modal" style="max-width:550px;">
+    <div class="modal" style="max-width:500px;padding:28px;">
       <button class="close">&times;</button>
-      <h2>📤 नया प्रीसेट अपलोड करें</h2>
+      <h2 style="font-size:1.4rem;"><i class="fas fa-cloud-upload-alt"></i> नया प्रीसेट अपलोड करें</h2>
       <form id="uploadForm" enctype="multipart/form-data">
-        <div class="form-group"><input type="text" id="uploadName" placeholder="प्रीसेट का नाम" required /></div>
-        <div class="form-group"><textarea id="uploadDesc" placeholder="विवरण"></textarea></div>
+        <div class="form-group"><input type="text" id="uploadName" placeholder="प्रीसेट का नाम" required style="padding:8px 12px;font-size:0.9rem;" /></div>
+        <div class="form-group"><textarea id="uploadDesc" placeholder="विवरण" style="padding:8px 12px;font-size:0.9rem;min-height:60px;"></textarea></div>
         <div class="form-group">
-          <select id="uploadCategory">
+          <select id="uploadCategory" style="padding:8px 12px;font-size:0.9rem;">
             <option value="सनसेट">सनसेट</option>
             <option value="ब्लैक & व्हाइट">ब्लैक & व्हाइट</option>
             <option value="नैचुरल">नैचुरल</option>
@@ -1388,17 +1488,17 @@ function openUploadModal() {
             <option value="सिटीस्केप">सिटीस्केप</option>
           </select>
         </div>
-        <div class="form-group"><input type="text" id="uploadTags" placeholder="टैग्स (कॉमा से अलग)" /></div>
-        <div class="form-group"><input type="number" id="uploadPrice" placeholder="कीमत (0 = मुफ्त)" min="0" step="1" /></div>
+        <div class="form-group"><input type="text" id="uploadTags" placeholder="टैग्स (कॉमा से अलग)" style="padding:8px 12px;font-size:0.9rem;" /></div>
+        <div class="form-group"><input type="number" id="uploadPrice" placeholder="कीमत (0 = मुफ्त)" min="0" step="1" style="padding:8px 12px;font-size:0.9rem;" /></div>
         <div class="form-group">
-          <label>प्रीसेट फ़ाइल (.xmp, .dng, .lrtemplate)</label>
-          <input type="file" id="uploadFile" accept=".xmp,.dng,.lrtemplate" required />
+          <label style="font-size:0.85rem;">प्रीसेट फ़ाइल (.xmp, .dng, .lrtemplate)</label>
+          <input type="file" id="uploadFile" accept=".xmp,.dng,.lrtemplate" required style="padding:6px;font-size:0.85rem;" />
         </div>
         <div class="form-group">
-          <label>प्रीव्यू इमेज (वैकल्पिक)</label>
-          <input type="file" id="uploadPreview" accept="image/*" />
+          <label style="font-size:0.85rem;">प्रीव्यू इमेज (वैकल्पिक)</label>
+          <input type="file" id="uploadPreview" accept="image/*" style="padding:6px;font-size:0.85rem;" />
         </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">अपलोड करें</button>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;"><i class="fas fa-upload"></i> अपलोड करें</button>
       </form>
     </div>
   `;
@@ -1450,7 +1550,7 @@ function openUploadModal() {
 window.openUploadModal = openUploadModal;
 
 // ============================================================
-// ===== TOP CREATORS (Fixed with horizontal scroll) =====
+// ===== TOP CREATORS =====
 // ============================================================
 async function loadTopCreators() {
   try {
@@ -1460,25 +1560,19 @@ async function loadTopCreators() {
       const grid = document.getElementById('topCreatorsGrid');
       if (!grid) return;
       if (!creators || creators.length === 0) {
-        grid.innerHTML = '<p style="color:var(--text);">कोई क्रिएटर नहीं</p>';
+        grid.innerHTML = '<p style="color:var(--text);font-size:0.9rem;">कोई क्रिएटर नहीं</p>';
         return;
       }
-      // ✅ Horizontal scroll for top creators
-      grid.style.display = 'flex';
-      grid.style.overflowX = 'auto';
-      grid.style.gap = '16px';
-      grid.style.padding = '8px 4px 16px 4px';
-      grid.style.scrollSnapType = 'x mandatory';
-      grid.style.webkitOverflowScrolling = 'touch';
+      grid.style.display = 'grid';
       
       grid.innerHTML = creators.map(c => `
-        <div class="creator-card" style="flex:0 0 160px;scroll-snap-align:start;cursor:pointer;" onclick="window.openProfile('${c.id}')">
-          <div class="avatar" style="background-image:url(${c.avatar || ''}); background-size:cover;">
+        <div class="creator-card" style="cursor:pointer;padding:14px;" onclick="window.openProfile('${c.id}')">
+          <div class="avatar" style="width:50px;height:50px;font-size:1.2rem;margin:0 auto 6px;background-image:url(${c.avatar || ''});background-size:cover;">
             ${!c.avatar ? c.name.charAt(0).toUpperCase() : ''}
           </div>
-          <div class="name">${c.name}</div>
-          <div class="stats">${c.presetCount || 0} प्रीसेट • ${c.totalDownloads || 0} डाउनलोड</div>
-          <div class="followers">${c.followers || 0} फॉलोअर्स</div>
+          <div class="name" style="font-size:0.85rem;">${c.name}</div>
+          <div class="stats" style="font-size:0.7rem;color:#6b6b6b;">${c.presetCount || 0} प्रीसेट</div>
+          <div class="followers" style="font-size:0.7rem;color:#d4a373;"><i class="fas fa-users"></i> ${c.followers || 0}</div>
         </div>
       `).join('');
     }
@@ -1504,49 +1598,49 @@ window.openProfile = async function(userId) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
     modal.innerHTML = `
-      <div class="modal" style="max-width:700px;">
+      <div class="modal" style="max-width:650px;padding:28px;">
         <button class="close">&times;</button>
-        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:20px;">
-          <div style="width:80px;height:80px;border-radius:50%;background:#d4a373;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#fff;${user.avatar ? `background-image:url(${user.avatar});background-size:cover;` : ''}">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+          <div style="width:64px;height:64px;border-radius:50%;background:#d4a373;display:flex;align-items:center;justify-content:center;font-size:1.6rem;color:#fff;${user.avatar ? `background-image:url(${user.avatar});background-size:cover;` : ''}">
             ${!user.avatar ? user.name.charAt(0).toUpperCase() : ''}
           </div>
           <div>
-            <h2 style="color:var(--text, #1e1e1e);">${user.name}</h2>
-            <div style="color:#6b6b6b;">@${user.username || user.email?.split('@')[0] || ''}</div>
-            <div style="margin-top:4px;color:var(--text, #1e1e1e);">${user.bio || 'कोई बायो नहीं'}</div>
-            <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap;">
+            <h2 style="font-size:1.2rem;color:var(--text, #1e1e1e);">${user.name}</h2>
+            <div style="color:#6b6b6b;font-size:0.85rem;">@${user.username || user.email?.split('@')[0] || ''}</div>
+            <div style="margin-top:2px;font-size:0.85rem;color:var(--text, #1e1e1e);">${user.bio || 'कोई बायो नहीं'}</div>
+            <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap;font-size:0.8rem;">
               <span><strong>${user.totalPresets || 0}</strong> प्रीसेट</span>
               <span><strong>${user.totalDownloads || 0}</strong> डाउनलोड</span>
-              <span><strong>${user.followers || 0}</strong> फॉलोअर्स</span>
-              <span><strong>${user.following || 0}</strong> फॉलोइंग</span>
+              <span><strong><i class="fas fa-users"></i> ${user.followers || 0}</strong></span>
+              <span><strong><i class="fas fa-user-plus"></i> ${user.following || 0}</strong></span>
             </div>
           </div>
           <div style="margin-left:auto;">
             ${currentUser && currentUser.id !== userId ? `
-              <button class="btn ${isFollowing ? 'btn-outline' : 'btn-primary'}" id="followBtn">
-                ${isFollowing ? 'अनफॉलो करें' : 'फॉलो करें'}
+              <button class="btn ${isFollowing ? 'btn-outline' : 'btn-primary'}" id="followBtn" style="font-size:0.8rem;padding:6px 14px;">
+                ${isFollowing ? '<i class="fas fa-user-minus"></i> अनफॉलो' : '<i class="fas fa-user-plus"></i> फॉलो'}
               </button>
             ` : ''}
             ${currentUser && currentUser.id === userId ? `
-              <button class="btn btn-outline" onclick="window.openEditProfile()"><i class="fas fa-edit"></i> प्रोफ़ाइल एडिट करें</button>
+              <button class="btn btn-outline" onclick="window.openEditProfile()" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-edit"></i> एडिट</button>
             ` : ''}
           </div>
         </div>
         ${user.socialLinks && Object.values(user.socialLinks).some(v => v) ? `
-          <div style="margin-bottom:16px;">
-            ${user.socialLinks.instagram ? `<a href="${user.socialLinks.instagram}" target="_blank" class="social-icon"><i class="fab fa-instagram"></i></a>` : ''}
-            ${user.socialLinks.youtube ? `<a href="${user.socialLinks.youtube}" target="_blank" class="social-icon"><i class="fab fa-youtube"></i></a>` : ''}
-            ${user.socialLinks.twitter ? `<a href="${user.socialLinks.twitter}" target="_blank" class="social-icon"><i class="fab fa-twitter"></i></a>` : ''}
-            ${user.socialLinks.website ? `<a href="${user.socialLinks.website}" target="_blank" class="social-icon"><i class="fas fa-globe"></i></a>` : ''}
+          <div style="margin-bottom:12px;display:flex;gap:10px;">
+            ${user.socialLinks.instagram ? `<a href="${user.socialLinks.instagram}" target="_blank" style="color:#d4a373;"><i class="fab fa-instagram fa-lg"></i></a>` : ''}
+            ${user.socialLinks.youtube ? `<a href="${user.socialLinks.youtube}" target="_blank" style="color:#d4a373;"><i class="fab fa-youtube fa-lg"></i></a>` : ''}
+            ${user.socialLinks.twitter ? `<a href="${user.socialLinks.twitter}" target="_blank" style="color:#d4a373;"><i class="fab fa-twitter fa-lg"></i></a>` : ''}
+            ${user.socialLinks.website ? `<a href="${user.socialLinks.website}" target="_blank" style="color:#d4a373;"><i class="fas fa-globe fa-lg"></i></a>` : ''}
           </div>
         ` : ''}
-        <h3 style="color:var(--text, #1e1e1e);">📦 ${user.name} के प्रीसेट</h3>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-top:12px;">
-          ${userPresets.length === 0 ? '<p style="grid-column:1/-1;color:#888;">अभी कोई प्रीसेट नहीं</p>' : 
+        <h3 style="font-size:1rem;color:var(--text, #1e1e1e);"><i class="fas fa-cubes"></i> प्रीसेट</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:8px;">
+          ${userPresets.length === 0 ? '<p style="grid-column:1/-1;color:#888;font-size:0.9rem;">अभी कोई प्रीसेट नहीं</p>' : 
             userPresets.map(p => `
-              <div style="background:var(--bg, #f8f6f2);padding:16px;border-radius:12px;cursor:pointer;" onclick="window.openPresetModal('${p.id}')">
-                <strong style="color:var(--text, #1e1e1e);">${p.name}</strong>
-                <div style="font-size:0.8rem;color:#6b6b6b;">${p.category} • ${p.downloads || 0} डाउनलोड</div>
+              <div style="background:var(--bg, #f8f6f2);padding:12px;border-radius:10px;cursor:pointer;" onclick="window.openPresetModal('${p.id}')">
+                <strong style="font-size:0.85rem;color:var(--text, #1e1e1e);">${p.name}</strong>
+                <div style="font-size:0.75rem;color:#6b6b6b;">${p.category} • ${p.downloads || 0} डाउनलोड</div>
               </div>
             `).join('')
           }
@@ -1627,52 +1721,52 @@ window.openEditProfile = async function() {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
     modal.innerHTML = `
-      <div class="modal" style="max-width:550px;">
+      <div class="modal" style="max-width:500px;padding:28px;">
         <button class="close">&times;</button>
-        <h2>✏️ प्रोफ़ाइल एडिट करें</h2>
+        <h2 style="font-size:1.3rem;"><i class="fas fa-edit"></i> प्रोफ़ाइल एडिट करें</h2>
         <form id="editProfileForm" enctype="multipart/form-data">
           <div class="form-group">
-            <label>अवतार</label>
-            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-              <img id="avatarPreview" src="${user.avatar || ''}" alt="Avatar" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #d4a373;${user.avatar ? '' : 'display:none;'}">
+            <label style="font-size:0.85rem;">अवतार</label>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <img id="avatarPreview" src="${user.avatar || ''}" alt="Avatar" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #d4a373;${user.avatar ? '' : 'display:none;'}">
               <div>
-                <input type="file" id="avatarFile" accept="image/*" style="padding:8px;border:1px solid var(--border,#ddd);border-radius:8px;">
-                <div style="font-size:0.8rem;color:#888;margin-top:4px;">Max 5MB, JPG/PNG/GIF/WEBP</div>
+                <input type="file" id="avatarFile" accept="image/*" style="padding:6px;border:1px solid var(--border,#ddd);border-radius:8px;font-size:0.85rem;width:100%;" />
+                <div style="font-size:0.7rem;color:#888;margin-top:2px;">Max 5MB, JPG/PNG/GIF/WEBP</div>
               </div>
             </div>
           </div>
           <div class="form-group">
-            <label>नाम</label>
-            <input type="text" id="editName" value="${user.name || ''}" required />
+            <label style="font-size:0.85rem;">नाम</label>
+            <input type="text" id="editName" value="${user.name || ''}" required style="padding:8px 12px;font-size:0.9rem;" />
           </div>
           <div class="form-group">
-            <label>यूज़रनेम</label>
-            <input type="text" id="editUsername" value="${user.username || ''}" />
+            <label style="font-size:0.85rem;">यूज़रनेम</label>
+            <input type="text" id="editUsername" value="${user.username || ''}" style="padding:8px 12px;font-size:0.9rem;" />
           </div>
           <div class="form-group">
-            <label>बायो</label>
-            <textarea id="editBio" rows="3">${user.bio || ''}</textarea>
+            <label style="font-size:0.85rem;">बायो</label>
+            <textarea id="editBio" rows="3" style="padding:8px 12px;font-size:0.9rem;min-height:60px;">${user.bio || ''}</textarea>
           </div>
-          <div style="border-top:1px solid var(--border, #eee);padding-top:12px;margin-top:12px;">
-            <h4>सोशल लिंक्स</h4>
+          <div style="border-top:1px solid var(--border, #eee);padding-top:10px;margin-top:10px;">
+            <h4 style="font-size:0.95rem;"><i class="fas fa-share-alt"></i> सोशल लिंक्स</h4>
             <div class="form-group">
-              <label><i class="fab fa-instagram"></i> Instagram</label>
-              <input type="text" id="editInstagram" value="${user.socialLinks?.instagram || ''}" />
+              <label style="font-size:0.8rem;"><i class="fab fa-instagram"></i> Instagram</label>
+              <input type="text" id="editInstagram" value="${user.socialLinks?.instagram || ''}" style="padding:8px 12px;font-size:0.9rem;" />
             </div>
             <div class="form-group">
-              <label><i class="fab fa-youtube"></i> YouTube</label>
-              <input type="text" id="editYoutube" value="${user.socialLinks?.youtube || ''}" />
+              <label style="font-size:0.8rem;"><i class="fab fa-youtube"></i> YouTube</label>
+              <input type="text" id="editYoutube" value="${user.socialLinks?.youtube || ''}" style="padding:8px 12px;font-size:0.9rem;" />
             </div>
             <div class="form-group">
-              <label><i class="fab fa-twitter"></i> Twitter</label>
-              <input type="text" id="editTwitter" value="${user.socialLinks?.twitter || ''}" />
+              <label style="font-size:0.8rem;"><i class="fab fa-twitter"></i> Twitter</label>
+              <input type="text" id="editTwitter" value="${user.socialLinks?.twitter || ''}" style="padding:8px 12px;font-size:0.9rem;" />
             </div>
             <div class="form-group">
-              <label><i class="fas fa-globe"></i> Website</label>
-              <input type="text" id="editWebsite" value="${user.socialLinks?.website || ''}" />
+              <label style="font-size:0.8rem;"><i class="fas fa-globe"></i> Website</label>
+              <input type="text" id="editWebsite" value="${user.socialLinks?.website || ''}" style="padding:8px 12px;font-size:0.9rem;" />
             </div>
           </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">सहेजें</button>
+          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;"><i class="fas fa-save"></i> सहेजें</button>
         </form>
       </div>
     `;
@@ -1824,14 +1918,14 @@ function showReferral() {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `
-    <div class="modal" style="max-width:400px;">
+    <div class="modal" style="max-width:380px;padding:24px;">
       <button class="close">&times;</button>
-      <h2>🔗 Referral Program</h2>
-      <p>Share your code: <strong>${code}</strong></p>
-      <p>Link: <a href="${link}" target="_blank">${link}</a></p>
-      <p>You have referred ${subscriptionData.referralCount || 0} users.</p>
-      <p>Earn 28 days free for every 10 referrals!</p>
-      <button class="btn btn-primary" onclick="generateReferral()">Generate Code</button>
+      <h2 style="font-size:1.2rem;"><i class="fas fa-link"></i> Referral Program</h2>
+      <p style="font-size:0.9rem;">Share your code: <strong>${code}</strong></p>
+      <p style="font-size:0.85rem;">Link: <a href="${link}" target="_blank" style="color:#d4a373;word-break:break-all;">${link}</a></p>
+      <p style="font-size:0.85rem;">You have referred ${subscriptionData.referralCount || 0} users.</p>
+      <p style="font-size:0.85rem;">Earn 28 days free for every 10 referrals!</p>
+      <button class="btn btn-primary" onclick="generateReferral()" style="font-size:0.85rem;padding:8px 16px;"><i class="fas fa-sync"></i> Generate Code</button>
     </div>
   `;
   document.body.appendChild(modal);
@@ -1872,21 +1966,21 @@ function openNotifications() {
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `
-    <div class="modal" style="max-width:600px;">
+    <div class="modal" style="max-width:500px;padding:24px;">
       <button class="close">&times;</button>
-      <h2>📥 Inbox</h2>
-      <div id="notifList">
-        ${notifications.length === 0 ? '<p>No notifications</p>' : 
+      <h2 style="font-size:1.2rem;"><i class="fas fa-bell"></i> Inbox</h2>
+      <div id="notifList" style="max-height:300px;overflow-y:auto;">
+        ${notifications.length === 0 ? '<p style="color:#888;font-size:0.9rem;">No notifications</p>' : 
           notifications.map(n => `
-            <div class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}">
-              <div>${n.message}</div>
-              <div class="time">${new Date(n.createdAt).toLocaleString()}</div>
-              <a href="${n.link}" target="_blank">View</a>
+            <div class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" style="padding:10px 12px;border-bottom:1px solid var(--border,#eee);cursor:pointer;${n.read ? '' : 'background:#fef9e7;'}">
+              <div style="font-size:0.9rem;">${n.message}</div>
+              <div style="font-size:0.7rem;color:#888;">${new Date(n.createdAt).toLocaleString()}</div>
+              <a href="${n.link}" target="_blank" style="font-size:0.8rem;color:#d4a373;">View</a>
             </div>
           `).join('')
         }
       </div>
-      <button class="btn btn-sm btn-primary" id="markAllRead">Mark all as read</button>
+      <button class="btn btn-sm btn-primary" id="markAllRead" style="margin-top:10px;font-size:0.8rem;padding:6px 14px;"><i class="fas fa-check-double"></i> Mark all as read</button>
     </div>
   `;
   document.body.appendChild(modal);
@@ -1932,33 +2026,33 @@ window.showEarnings = async function() {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
     modal.innerHTML = `
-      <div class="modal" style="max-width:700px;">
+      <div class="modal" style="max-width:600px;padding:28px;">
         <button class="close">&times;</button>
-        <h2>💰 My Earnings</h2>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0;">
-          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:16px;border-radius:12px;text-align:center;">
-            <div class="num" style="font-size:1.8rem;font-weight:700;color:#d4a373;">${data.totalImpressions}</div>
-            <div class="label">Total Impressions</div>
+        <h2 style="font-size:1.2rem;"><i class="fas fa-rupee-sign"></i> My Earnings</h2>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0;">
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
+            <div class="num" style="font-size:1.4rem;font-weight:700;color:#d4a373;">${data.totalImpressions}</div>
+            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Impressions</div>
           </div>
-          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:16px;border-radius:12px;text-align:center;">
-            <div class="num" style="font-size:1.8rem;font-weight:700;color:#2a9d8f;">₹${data.totalRevenue.toFixed(2)}</div>
-            <div class="label">Total Earnings</div>
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
+            <div class="num" style="font-size:1.4rem;font-weight:700;color:#2a9d8f;">₹${data.totalRevenue.toFixed(2)}</div>
+            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Earnings</div>
           </div>
-          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:16px;border-radius:12px;text-align:center;">
-            <div class="num" style="font-size:1.8rem;font-weight:700;color:#3498db;">${data.totalDownloads}</div>
-            <div class="label">Total Downloads</div>
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
+            <div class="num" style="font-size:1.4rem;font-weight:700;color:#3498db;">${data.totalDownloads}</div>
+            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Downloads</div>
           </div>
         </div>
-        <h3 style="margin:16px 0 8px;">📊 Preset Performance</h3>
-        <div style="max-height:300px;overflow-y:auto;">
-          ${data.presets.length === 0 ? '<p>No presets uploaded yet.</p>' :
+        <h3 style="font-size:0.95rem;margin:10px 0 6px;"><i class="fas fa-chart-bar"></i> Preset Performance</h3>
+        <div style="max-height:250px;overflow-y:auto;font-size:0.85rem;">
+          ${data.presets.length === 0 ? '<p style="color:#888;">No presets uploaded yet.</p>' :
             data.presets.map(p => `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border,#eee);flex-wrap:wrap;gap:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border,#eee);flex-wrap:wrap;gap:4px;">
                 <div>
                   <strong>${p.name}</strong>
-                  <span style="font-size:0.8rem;color:#888;">(${p.category})</span>
+                  <span style="font-size:0.75rem;color:#888;">(${p.category})</span>
                 </div>
-                <div style="display:flex;gap:16px;font-size:0.85rem;">
+                <div style="display:flex;gap:12px;font-size:0.75rem;">
                   <span><i class="fas fa-eye"></i> ${p.impressions}</span>
                   <span><i class="fas fa-download"></i> ${p.downloads}</span>
                   <span style="color:#2a9d8f;font-weight:600;">₹${p.revenue.toFixed(2)}</span>
@@ -1968,16 +2062,16 @@ window.showEarnings = async function() {
           }
         </div>
         ${data.canWithdraw ? `
-          <div style="margin-top:16px;padding:12px;background:#d4edda;border-radius:12px;color:#155724;">
+          <div style="margin-top:12px;padding:10px;background:#d4edda;border-radius:10px;color:#155724;font-size:0.85rem;">
             ✅ You are eligible for withdrawal! (Min. ₹100)
-            <button class="btn btn-sm btn-primary" onclick="requestWithdrawal()" style="margin-left:12px;">Request Withdrawal</button>
+            <button class="btn btn-sm btn-primary" onclick="requestWithdrawal()" style="margin-left:10px;font-size:0.8rem;padding:5px 12px;"><i class="fas fa-hand-holding-usd"></i> Withdraw</button>
           </div>
         ` : `
-          <div style="margin-top:16px;padding:12px;background:#fff3cd;border-radius:12px;color:#856404;">
-            💡 You need ₹100+ to withdraw. Current: ₹${data.totalRevenue.toFixed(2)}
+          <div style="margin-top:12px;padding:10px;background:#fff3cd;border-radius:10px;color:#856404;font-size:0.85rem;">
+            💡 Need ₹100+ to withdraw. Current: ₹${data.totalRevenue.toFixed(2)}
           </div>
         `}
-        ${data.withdrawalStatus ? `<div style="margin-top:8px;">📝 Withdrawal Status: ${data.withdrawalStatus}</div>` : ''}
+        ${data.withdrawalStatus ? `<div style="margin-top:6px;font-size:0.8rem;">📝 Status: ${data.withdrawalStatus}</div>` : ''}
       </div>
     `;
     document.body.appendChild(modal);
