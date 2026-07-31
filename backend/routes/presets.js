@@ -41,15 +41,7 @@ router.get('/', async (req, res) => {
   res.json({ presets: paginated, total: presets.length, page: parseInt(page), totalPages: Math.ceil(presets.length / parseInt(limit)), limit: parseInt(limit) });
 });
 
-// ===== GET single preset =====
-router.get('/:id', async (req, res) => {
-  const db = await getDB();
-  const preset = db.data.presets.find(p => p.id === req.params.id);
-  if (!preset) return res.status(404).json({ error: 'Preset not found' });
-  res.json(preset);
-});
-
-// ===== SMART SEARCH =====
+// ===== SMART SEARCH (must be BEFORE /:id, else "search" is treated as an id) =====
 router.get('/search', async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 2) return res.json([]);
@@ -70,6 +62,14 @@ router.get('/search', async (req, res) => {
     return { ...p, score };
   }).filter(p => p.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
   res.json(results);
+});
+
+// ===== GET single preset =====
+router.get('/:id', async (req, res) => {
+  const db = await getDB();
+  const preset = db.data.presets.find(p => p.id === req.params.id);
+  if (!preset) return res.status(404).json({ error: 'Preset not found' });
+  res.json(preset);
 });
 
 // ===== UPLOAD preset =====
