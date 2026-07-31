@@ -454,15 +454,16 @@ if (token) {
   fetchUserProfile();
 }
 
+// LINE ~457
 async function fetchUserProfile() {
   try {
-    const res = await fetch(`${API_URL}/users/me`, {
+    const res = await fetch(`${API_URL}/auth/me`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (res.ok) {
-      const user = await res.json();
-      currentUser = user;
-      showLoggedInUI(user);
+      const data = await res.json();
+      currentUser = data.user;
+      showLoggedInUI(data.user);
     } else {
       logout();
     }
@@ -667,26 +668,27 @@ window.openAuthModal = openAuthModal;
 // ============================================================
 // ===== WISHLIST =====
 // ============================================================
+// LINE ~670
 async function fetchWishlist() {
   if (!currentUser) return;
   try {
-    const res = await fetch(`${API_URL}/users/me`, {
+    const res = await fetch(`${API_URL}/auth/me/wishlist`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (res.ok) {
-      const user = await res.json();
-      wishlist = user.wishlist || [];
+      const data = await res.json();
+      wishlist = data.wishlist || [];
       updateWishlistUI();
     }
   } catch (err) { console.error(err); }
 }
-
+// LINE ~684
 async function toggleWishlist(presetId) {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
     return;
   }
-  const url = `${API_URL}/users/me/wishlist/${presetId}`;
+  const url = `${API_URL}/auth/me/wishlist/${presetId}`;
   const options = {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` }
@@ -709,7 +711,7 @@ async function toggleWishlist(presetId) {
       updateWishlistUI();
       renderPresets(allPresets);
       loadLatestPresets();
-      showToast(wishlist.includes(presetId) ? '❤️ पसंद में जोड़ा' : '💔 पसंद से हटाया', 'info');
+      showToast(data.isInWishlist ? '❤️ पसंद में जोड़ा' : '💔 पसंद से हटाया', 'info');
     } else {
       showToast('❌ कृपया बाद में प्रयास करें', 'error');
     }
@@ -1643,7 +1645,7 @@ window.openProfile = async function(userId) {
               <span><strong><i class="fas fa-user-plus"></i> ${user.following || 0}</strong></span>
             </div>
           </div>
-          <div style="margin-left:auto;">
+          <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
             ${currentUser && currentUser.id !== userId ? `
               <button class="btn ${isFollowing ? 'btn-outline' : 'btn-primary'}" id="followBtn" style="font-size:0.8rem;padding:6px 14px;">
                 ${isFollowing ? '<i class="fas fa-user-minus"></i> अनफॉलो' : '<i class="fas fa-user-plus"></i> फॉलो'}
@@ -1651,6 +1653,7 @@ window.openProfile = async function(userId) {
             ` : ''}
             ${currentUser && currentUser.id === userId ? `
               <button class="btn btn-outline" onclick="window.openEditProfile()" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-edit"></i> एडिट</button>
+              <button class="btn btn-outline" onclick="window.openChangePassword()" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-key"></i> पासवर्ड</button>
             ` : ''}
           </div>
         </div>
@@ -1694,7 +1697,6 @@ window.openProfile = async function(userId) {
     showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
   }
 };
-
 // ============================================================
 // ===== FOLLOW / UNFOLLOW =====
 // ============================================================
@@ -1731,7 +1733,83 @@ async function toggleFollow(userId) {
   }
 }
 
+
 // ============================================================
+// ===== CHANGE PASSWORD =====
+// ============================================================
+window.openChangePassword = async function() {
+  if (!currentUser) {
+    showToast('कृपया लॉग इन करें', 'warning');
+    return;
+  }
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:450px;padding:28px;">
+      <button class="close">&times;</button>
+      <h2 style="font-size:1.2rem;"><i class="fas fa-key"></i> पासवर्ड बदलें</h2>
+      <form id="changePasswordForm">
+        <div class="form-group">
+          <label style="font-size:0.85rem;">मौजूदा पासवर्ड</label>
+          <input type="password" id="currentPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">नया पासवर्ड (6+ अक्षर, एक नंबर, एक बड़ा अक्षर)</label>
+          <input type="password" id="newPassword" required minlength="6" style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">नया पासवर्ड दोबारा</label>
+          <input type="password" id="confirmPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;margin-top:8px;">
+          <i class="fas fa-save"></i> पासवर्ड बदलें
+        </button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  
+  modal.querySelector('#changePasswordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (newPassword !== confirmPassword) {
+      showToast('नए पासवर्ड मेल नहीं खाते', 'error');
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      showToast('पासवर्ड कम से कम 6 अक्षर का होना चाहिए', 'error');
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${API_URL}/auth/change-password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        showToast('✅ पासवर्ड बदल गया!', 'success');
+        modal.remove();
+      } else {
+        showToast(data.error || 'पासवर्ड बदलने में विफल', 'error');
+      }
+    } catch (err) {
+      showToast('❌ सर्वर से कनेक्ट नहीं हो पाया', 'error');
+    }
+  });
+};
 // ===== EDIT PROFILE =====
 // ============================================================
 window.openEditProfile = async function() {
@@ -1740,10 +1818,16 @@ window.openEditProfile = async function() {
     return;
   }
   try {
-    const res = await fetch(`${API_URL}/users/me`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('Profile not found');
+    // LINE ~1815 - Find this block
+const res = await fetch(`${API_URL}/auth/profile`, {
+  method: 'PUT',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify(payload)
+});   
+if (!res.ok) throw new Error('Profile not found');
     const user = await res.json();
 
     const modal = document.createElement('div');
@@ -1820,30 +1904,30 @@ window.openEditProfile = async function() {
       e.preventDefault();
       
       const avatarFile = modal.querySelector('#avatarFile').files[0];
-      if (avatarFile) {
-        const formData = new FormData();
-        formData.append('avatar', avatarFile);
-        try {
-          const avatarRes = await fetch(`${API_URL}/users/me/avatar`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${token}` },
-            body: formData
-          });
-          if (!avatarRes.ok) {
-            const err = await avatarRes.json();
-            showToast('Avatar upload failed: ' + (err.error || 'unknown'), 'error');
-            return;
-          }
-          const avatarData = await avatarRes.json();
-          currentUser.avatar = avatarData.avatar;
-          showLoggedInUI(currentUser);
-        } catch (err) {
-          showToast('Avatar upload error', 'error');
-          return;
-        }
-      }
-
-      const payload = {
+   // LINE ~1895 - Find this block
+if (avatarFile) {
+  const formData = new FormData();
+  formData.append('avatar', avatarFile);
+  try {
+    const avatarRes = await fetch(`${API_URL}/auth/me/avatar`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    if (!avatarRes.ok) {
+      const err = await avatarRes.json();
+      showToast('Avatar upload failed: ' + (err.error || 'unknown'), 'error');
+      return;
+    }
+    const avatarData = await avatarRes.json();
+    currentUser.avatar = avatarData.avatar;
+    showLoggedInUI(currentUser);
+  } catch (err) {
+    showToast('Avatar upload error', 'error');
+    return;
+  }
+}
+const payload = {
         name: document.getElementById('editName').value,
         username: document.getElementById('editUsername').value,
         bio: document.getElementById('editBio').value,
@@ -1883,7 +1967,75 @@ window.openEditProfile = async function() {
     showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
   }
 };
-
+// Add after change-password function//
+window.openChangePassword = async function() {
+  if (!currentUser) {
+    showToast('कृपया लॉग इन करें', 'warning');
+    return;
+  }
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:450px;padding:28px;">
+      <button class="close">&times;</button>
+      <h2 style="font-size:1.2rem;"><i class="fas fa-key"></i> पासवर्ड बदलें</h2>
+      <form id="changePasswordForm">
+        <div class="form-group">
+          <label style="font-size:0.85rem;">मौजूदा पासवर्ड</label>
+          <input type="password" id="currentPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;" />
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">नया पासवर्ड (6+ अक्षर, एक नंबर, एक बड़ा अक्षर)</label>
+          <input type="password" id="newPassword" required minlength="6" style="padding:8px 12px;font-size:0.9rem;width:100%;" />
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">नया पासवर्ड दोबारा</label>
+          <input type="password" id="confirmPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;" />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;">
+          <i class="fas fa-save"></i> पासवर्ड बदलें
+        </button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  
+  modal.querySelector('#changePasswordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (newPassword !== confirmPassword) {
+      showToast('नए पासवर्ड मेल नहीं खाते', 'error');
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${API_URL}/auth/change-password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        showToast('✅ पासवर्ड बदल गया!', 'success');
+        modal.remove();
+      } else {
+        showToast(data.error || 'पासवर्ड बदलने में विफल', 'error');
+      }
+    } catch (err) {
+      showToast('❌ सर्वर से कनेक्ट नहीं हो पाया', 'error');
+    }
+  });
+};
 // ============================================================
 // ===== SUBSCRIPTION & REFERRAL =====
 // ============================================================
