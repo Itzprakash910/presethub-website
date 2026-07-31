@@ -56,8 +56,15 @@
     <!-- ===== GOOGLE ADSENSE ===== -->
     <!-- ============================================================ -->
     <meta name="google-adsense-account" content="ca-pub-3554311294133493" />
+    
+    <!-- AMP Auto Ads (Fixed) -->
+    <script async custom-element="amp-auto-ads" src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js">
+    </script>
+    
+    <!-- Google AdSense Script -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3554311294133493"
-     crossorigin="anonymous"></script>
+     crossorigin="anonymous">
+    </script>
 
     <!-- ============================================================ -->
     <!-- ===== FAVICONS & APP ICONS ===== -->
@@ -90,6 +97,10 @@
     <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+    <!-- ===== AMP AUTO ADS ===== -->
+    <amp-auto-ads type="adsense" data-ad-client="ca-pub-3554311294133493">
+    </amp-auto-ads>
+
     <div id="app">
         <!-- ===== HEADER ===== -->
         <header id="mainHeader">
@@ -97,7 +108,7 @@
                 <a href="/" class="logo" aria-label="PresetHub Home"><i class="fas fa-camera-retro"></i> Preset<span>Hub</span></a>
 
                 <div class="nav-search">
-                    <input type="text" id="searchInput" placeholder="खोजें प्रीसेट, शैली, या क्रिएटर..." aria-label="Search presets" />
+                    <input type="text" id="searchInput" placeholder="खोजें प्रीसेट, शैली, या क्रिएटर..." aria-label="Search presets" autocomplete="off" />
                     <div id="searchSuggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.1);z-index:10;max-height:300px;overflow-y:auto;margin-top:4px;"></div>
                     <button id="searchBtn" aria-label="Search"><i class="fas fa-search"></i> खोजें</button>
                 </div>
