@@ -31,7 +31,7 @@ let wishlistBtn, exploreBtn, uploadHeroBtn, featuredDownloadBtn;
 let searchSuggestions, themeToggle, loadMoreBtn, offlineIndicator, userDropdown;
 
 // ============================================================
-// ===== DOM READY =====
+// ===== DOM READY – Initialize after DOM load =====
 // ============================================================
 function initDOM() {
   authSection = $('#authSection');
@@ -84,13 +84,15 @@ function showToast(message, type = 'success') {
 window.showToast = showToast;
 
 // ============================================================
-// ===== ATTACH EVENT LISTENERS =====
+// ===== ATTACH ALL EVENT LISTENERS =====
 // ============================================================
 function attachEventListeners() {
+  // --- Auth Buttons ---
   if (loginBtn) loginBtn.addEventListener('click', () => openAuthModal('login'));
   if (signupBtn) signupBtn.addEventListener('click', () => openAuthModal('signup'));
   if (logoutBtn) logoutBtn.addEventListener('click', logout);
 
+  // --- Theme Toggle ---
   if (themeToggle) {
     themeToggle.addEventListener('click', () => {
       document.body.classList.toggle('dark');
@@ -103,6 +105,7 @@ function attachEventListeners() {
     }
   }
 
+  // --- User Avatar Dropdown ---
   if (userAvatar) {
     userAvatar.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -116,18 +119,24 @@ function attachEventListeners() {
     });
   }
 
+  // --- Close dropdown on outside click ---
   document.addEventListener('click', (e) => {
     if (userDropdown && !e.target.closest('#userSection')) {
       userDropdown.style.display = 'none';
     }
   });
 
-  if (wishlistBtn) wishlistBtn.addEventListener('click', showWishlist);
+  // --- Wishlist Button ---
+  if (wishlistBtn) {
+    wishlistBtn.addEventListener('click', showWishlist);
+  }
 
+  // --- Upload Buttons ---
   const uploadBtn = $('#uploadBtn');
   if (uploadBtn) uploadBtn.addEventListener('click', openUploadModal);
   if (uploadHeroBtn) uploadHeroBtn.addEventListener('click', openUploadModal);
 
+  // --- Explore Button ---
   if (exploreBtn) {
     exploreBtn.addEventListener('click', () => {
       const section = document.getElementById('presetsSection');
@@ -135,6 +144,7 @@ function attachEventListeners() {
     });
   }
 
+  // --- Featured Download ---
   if (featuredDownloadBtn) {
     featuredDownloadBtn.addEventListener('click', async () => {
       if (!currentUser) {
@@ -162,11 +172,13 @@ function attachEventListeners() {
           showToast(err.error || 'डाउनलोड विफल', 'error');
         }
       } catch (err) {
+        console.error(err);
         showToast('त्रुटि: ' + err.message, 'error');
       }
     });
   }
 
+  // --- Search Button ---
   if (searchBtn) {
     searchBtn.addEventListener('click', () => {
       if (searchSuggestions) searchSuggestions.style.display = 'none';
@@ -175,6 +187,7 @@ function attachEventListeners() {
     });
   }
 
+  // --- Search Input ---
   if (searchInput) {
     searchInput.addEventListener('keyup', (e) => {
       if (e.key === 'Enter') {
@@ -185,7 +198,7 @@ function attachEventListeners() {
     });
 
     let searchTimeout = null;
-    searchInput.addEventListener('input', function () {
+    searchInput.addEventListener('input', function() {
       const query = this.value.trim();
       if (query.length < 2) {
         if (searchSuggestions) searchSuggestions.style.display = 'none';
@@ -194,7 +207,7 @@ function attachEventListeners() {
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(async () => {
         try {
-          const res = await fetch(`\( {API_URL}/presets/search?q= \){encodeURIComponent(query)}`);
+          const res = await fetch(`${API_URL}/presets/search?q=${encodeURIComponent(query)}`);
           if (res.ok) {
             const suggestions = await res.json();
             if (searchSuggestions) {
@@ -210,7 +223,7 @@ function attachEventListeners() {
               `).join('');
               searchSuggestions.style.display = 'block';
               searchSuggestions.querySelectorAll('.suggestion-item').forEach(item => {
-                item.addEventListener('click', function (e) {
+                item.addEventListener('click', function(e) {
                   e.stopPropagation();
                   const id = this.dataset.id;
                   if (searchInput) searchInput.value = '';
@@ -220,25 +233,32 @@ function attachEventListeners() {
               });
             }
           }
-        } catch (err) {
-          console.error('Search error:', err);
-        }
+        } catch (err) { console.error('Search error:', err); }
       }, 300);
     });
   }
 
+  // --- Close search suggestions ---
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.nav-search')) {
       if (searchSuggestions) searchSuggestions.style.display = 'none';
     }
   });
 
-  if (filterCategory) filterCategory.addEventListener('change', () => { currentPage = 1; loadPresets(); });
-  if (filterPrice) filterPrice.addEventListener('change', () => { currentPage = 1; loadPresets(); });
-  if (filterSort) filterSort.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  // --- Filters ---
+  if (filterCategory) {
+    filterCategory.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  }
+  if (filterPrice) {
+    filterPrice.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  }
+  if (filterSort) {
+    filterSort.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  }
 
+  // --- Category Cards ---
   document.querySelectorAll('.category-card').forEach(card => {
-    card.addEventListener('click', function () {
+    card.addEventListener('click', function() {
       const cat = this.querySelector('.name')?.textContent;
       if (cat && filterCategory) {
         filterCategory.value = cat;
@@ -250,31 +270,39 @@ function attachEventListeners() {
     });
   });
 
+  // --- Load More Button ---
   if (loadMoreBtn) {
     loadMoreBtn.addEventListener('click', () => {
       loadPresets(currentPage + 1, true);
     });
   }
 
+  // --- Notification Button ---
   const notificationBtn = document.getElementById('notificationBtn');
-  if (notificationBtn) notificationBtn.addEventListener('click', openNotifications);
+  if (notificationBtn) {
+    notificationBtn.addEventListener('click', openNotifications);
+  }
 
+  // --- Exit Button ---
   const exitBtn = document.getElementById('exitBtn');
-  if (exitBtn) exitBtn.addEventListener('click', exitSite);
+  if (exitBtn) {
+    exitBtn.addEventListener('click', exitSite);
+  }
 
-  // Grid event delegation
-  [presetGrid, latestGrid].forEach(grid => {
-    if (!grid) return;
-    grid.addEventListener('click', function (e) {
+  // --- Preset Grid Event Delegation ---
+  if (presetGrid) {
+    presetGrid.addEventListener('click', function(e) {
       const card = e.target.closest('.preset-card');
       if (!card) return;
       const id = card.dataset.id;
-      if (e.target.closest('.preview-btn')) {
+      const previewBtn = e.target.closest('.preview-btn');
+      if (previewBtn) {
         e.stopPropagation();
         openPresetModal(id);
         return;
       }
-      if (e.target.closest('.wishlist-toggle')) {
+      const wishBtn = e.target.closest('.wishlist-toggle');
+      if (wishBtn) {
         e.stopPropagation();
         toggleWishlist(id);
         return;
@@ -283,8 +311,33 @@ function attachEventListeners() {
         openPresetModal(id);
       }
     });
-  });
+  }
 
+  // --- Latest Presets Grid ---
+  if (latestGrid) {
+    latestGrid.addEventListener('click', function(e) {
+      const card = e.target.closest('.preset-card');
+      if (!card) return;
+      const id = card.dataset.id;
+      const previewBtn = e.target.closest('.preview-btn');
+      if (previewBtn) {
+        e.stopPropagation();
+        openPresetModal(id);
+        return;
+      }
+      const wishBtn = e.target.closest('.wishlist-toggle');
+      if (wishBtn) {
+        e.stopPropagation();
+        toggleWishlist(id);
+        return;
+      }
+      if (!e.target.closest('.author')) {
+        openPresetModal(id);
+      }
+    });
+  }
+
+  // --- Online/Offline ---
   window.addEventListener('online', async () => {
     isOnline = true;
     if (offlineIndicator) offlineIndicator.style.display = 'none';
@@ -309,7 +362,7 @@ function attachEventListeners() {
 }
 
 // ============================================================
-// ===== OFFLINE QUEUE =====
+// ===== OFFLINE QUEUE UTILITY =====
 // ============================================================
 function openOfflineDB() {
   return new Promise((resolve, reject) => {
@@ -331,8 +384,8 @@ async function addToQueue(action, url, options = {}) {
     const tx = db.transaction('queue', 'readwrite');
     const store = tx.objectStore('queue');
     const item = {
-      action,
-      url,
+      action: action,
+      url: url,
       method: options.method || 'POST',
       headers: options.headers || {},
       body: options.body || null,
@@ -343,37 +396,43 @@ async function addToQueue(action, url, options = {}) {
       request.onsuccess = resolve;
       request.onerror = reject;
     });
-
+    console.log(`📦 Added to queue: ${action} (${url})`);
+    
     if ('serviceWorker' in navigator && 'SyncManager' in window) {
       try {
         const registration = await navigator.serviceWorker.ready;
         await registration.sync.register('presethub-sync');
+        console.log('🔄 Sync registered!');
       } catch (err) {
-        console.warn('Background Sync not available', err);
+        console.warn('Background Sync not available, will retry on next load.', err);
       }
     }
-
+    
     showToast(`⏳ "${action}" saved offline. Will sync when online.`, 'warning');
     return true;
   } catch (err) {
-    console.error('Failed to add to queue:', err);
-    showToast('❌ Failed to save offline.', 'error');
+    console.error('❌ Failed to add to queue:', err);
+    showToast('❌ Failed to save offline. Please try again later.', 'error');
     return false;
   }
 }
 
 // ============================================================
-// ===== SERVICE WORKER MESSAGE =====
+// ===== SERVICE WORKER MESSAGE HANDLER =====
 // ============================================================
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data.type === 'SYNC_SUCCESS') {
       showToast(`✅ "${event.data.action}" synced successfully!`, 'success');
-      if (['review', 'wishlist', 'upload'].includes(event.data.action)) {
+      if (event.data.action === 'review') {
+        loadPresets();
+      } else if (event.data.action === 'wishlist') {
+        fetchWishlist();
+        loadPresets();
+      } else if (event.data.action === 'upload') {
         loadPresets();
         loadLatestPresets();
-      }
-      if (['download', 'follow', 'order'].includes(event.data.action)) {
+      } else if (event.data.action === 'download' || event.data.action === 'follow' || event.data.action === 'order') {
         fetchUserProfile();
       }
     }
@@ -395,6 +454,7 @@ if (token) {
   fetchUserProfile();
 }
 
+// LINE ~457
 async function fetchUserProfile() {
   try {
     const res = await fetch(`${API_URL}/auth/me`, {
@@ -421,8 +481,6 @@ function showLoggedInUI(user) {
       userAvatar.style.backgroundImage = `url(${user.avatar})`;
       userAvatar.style.backgroundSize = 'cover';
       userAvatar.textContent = '';
-    } else {
-      userAvatar.style.backgroundImage = '';
     }
   }
   fetchWishlist();
@@ -448,6 +506,95 @@ function logout() {
 window.logout = logout;
 
 // ============================================================
+// ===== MY PRESETS =====
+// ============================================================
+window.showMyPresets = async function() {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/users/${currentUser.id}/presets`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to load presets');
+    const presets = await res.json();
+    if (!presets.length) {
+      showToast('आपने अभी तक कोई प्रीसेट अपलोड नहीं किया।', 'info');
+      return;
+    }
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:600px;">
+        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+        <h2><i class="fas fa-cubes"></i> मेरे प्रीसेट</h2>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+          ${presets.map(p => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
+              <div>
+                <strong>${p.name}</strong> – ${p.category}
+                <span style="font-size:0.8rem;color:#888;">(${p.status})</span>
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  } catch (err) {
+    console.error(err);
+    showToast('प्रीसेट लोड नहीं हुए', 'error');
+  }
+};
+
+// ============================================================
+// ===== MY DOWNLOADS =====
+// ============================================================
+window.showMyDownloads = async function() {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/users/me/downloads`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to load downloads');
+    const presets = await res.json();
+    if (!presets.length) {
+      showToast('आपने अभी तक कोई प्रीसेट डाउनलोड नहीं किया।', 'info');
+      return;
+    }
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:600px;">
+        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+        <h2><i class="fas fa-download"></i> मेरे डाउनलोड</h2>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+          ${presets.map(p => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
+              <div>
+                <strong>${p.name}</strong> – ${p.author}
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  } catch (err) {
+    console.error(err);
+    showToast('डाउनलोड लोड नहीं हुए', 'error');
+  }
+};
+
+// ============================================================
 // ===== AUTH MODAL =====
 // ============================================================
 function openAuthModal(mode) {
@@ -456,7 +603,6 @@ function openAuthModal(mode) {
   const urlParams = new URLSearchParams(window.location.search);
   const ref = urlParams.get('ref') || '';
   const refInput = ref ? `<input type="hidden" id="authRef" value="${ref}" />` : '';
-
   modal.innerHTML = `
     <div class="modal" style="max-width:450px;">
       <button class="close">&times;</button>
@@ -482,15 +628,12 @@ function openAuthModal(mode) {
     const password = document.getElementById('authPassword').value;
     const name = document.getElementById('authName')?.value;
     const refCode = document.getElementById('authRef')?.value || '';
-
-    let url = `\( {API_URL}/auth/ \){mode}`;
+    let url = `${API_URL}/auth/${mode}`;
     if (mode === 'signup' && refCode) {
       url += `?ref=${encodeURIComponent(refCode)}`;
     }
-
     const payload = { email, password };
     if (mode === 'signup') payload.name = name;
-
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -508,8 +651,9 @@ function openAuthModal(mode) {
         loadLatestPresets();
         loadTopCreators();
         showToast(mode === 'login' ? 'स्वागत है! 🎉' : 'अकाउंट बन गया! 🎉', 'success');
-        if (window.history?.replaceState) {
-          window.history.replaceState({}, document.title, window.location.pathname);
+        if (window.history && window.history.replaceState) {
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
         }
       } else {
         showToast(data.error || 'कुछ गलत हो गया', 'error');
@@ -524,36 +668,31 @@ window.openAuthModal = openAuthModal;
 // ============================================================
 // ===== WISHLIST =====
 // ============================================================
+// LINE ~670
 async function fetchWishlist() {
   if (!currentUser) return;
   try {
-    // Backend returns wishlist inside user profile or via dedicated endpoint
-    // We use the toggle response + profile
-    const res = await fetch(`${API_URL}/users/me`, {
+    const res = await fetch(`${API_URL}/auth/me/wishlist`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (res.ok) {
-      const user = await res.json();
-      wishlist = user.wishlist || [];
+      const data = await res.json();
+      wishlist = data.wishlist || [];
       updateWishlistUI();
     }
-  } catch (err) {
-    console.error(err);
-  }
+  } catch (err) { console.error(err); }
 }
-
+// LINE ~684
 async function toggleWishlist(presetId) {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
     return;
   }
-
-  const url = `\( {API_URL}/users/me/wishlist/ \){presetId}`;
+  const url = `${API_URL}/auth/me/wishlist/${presetId}`;
   const options = {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}` }
   };
-
   try {
     if (!navigator.onLine) {
       await addToQueue('wishlist', url, options);
@@ -561,19 +700,18 @@ async function toggleWishlist(presetId) {
       if (index === -1) wishlist.push(presetId);
       else wishlist.splice(index, 1);
       updateWishlistUI();
-      renderPresetsToContainer(allPresets, presetGrid);
+      renderPresets(allPresets);
       loadLatestPresets();
       return;
     }
-
     const res = await fetch(url, options);
     if (res.ok) {
       const data = await res.json();
       wishlist = data.wishlist || [];
       updateWishlistUI();
-      renderPresetsToContainer(allPresets, presetGrid);
+      renderPresets(allPresets);
       loadLatestPresets();
-      showToast(wishlist.includes(presetId) ? '❤️ पसंद में जोड़ा' : '💔 पसंद से हटाया', 'info');
+      showToast(data.isInWishlist ? '❤️ पसंद में जोड़ा' : '💔 पसंद से हटाया', 'info');
     } else {
       showToast('❌ कृपया बाद में प्रयास करें', 'error');
     }
@@ -586,9 +724,12 @@ window.toggleWishlist = toggleWishlist;
 function updateWishlistUI() {
   if (!wishlistBtn) return;
   const count = wishlist.length;
-  wishlistBtn.innerHTML = `<i class="fa\( {count > 0 ? 's' : 'r'} fa-heart"></i> \){count > 0 ? count : ''}`;
+  wishlistBtn.innerHTML = `<i class="fa${count > 0 ? 's' : 'r'} fa-heart"></i>${count > 0 ? count : ''}`;
 }
 
+// ============================================================
+// ===== WISHLIST MODAL =====
+// ============================================================
 async function showWishlist() {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
@@ -598,20 +739,14 @@ async function showWishlist() {
     showToast('आपकी विशलिस्ट खाली है।', 'info');
     return;
   }
-
-  const presets = [];
-  for (const id of wishlist) {
-    try {
-      const res = await fetch(`\( {API_URL}/presets/ \){id}`);
-      if (res.ok) presets.push(await res.json());
-    } catch (e) {}
-  }
-
+  const presetPromises = wishlist.map(id =>
+    fetch(`${API_URL}/presets/${id}`).then(r => r.ok ? r.json() : null)
+  );
+  const presets = (await Promise.all(presetPromises)).filter(Boolean);
   if (presets.length === 0) {
     showToast('कोई प्रीसेट नहीं मिला।', 'info');
     return;
   }
-
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `
@@ -620,7 +755,7 @@ async function showWishlist() {
       <h2><i class="fas fa-heart" style="color:#e74c3c;"></i> आपकी विशलिस्ट</h2>
       <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
         ${presets.map(p => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg,#f8f6f2);border-radius:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
             <div>
               <strong>${p.name}</strong> – ${p.author}
               <span style="margin-left:8px;font-size:0.8rem;color:#6b6b6b;">${p.category}</span>
@@ -637,32 +772,32 @@ async function showWishlist() {
 window.showWishlist = showWishlist;
 
 // ============================================================
-// ===== RENDER PRESETS =====
+// ===== PRESETS CRUD - FIXED SIZE =====
 // ============================================================
 function renderPresetsToContainer(presets, container) {
   if (!container) return;
   if (!presets || presets.length === 0) {
-    container.innerHTML = `<div class="no-results" style="grid-column:1/-1;text-align:center;padding:30px 15px;color:#7a7a7a;">
-      <i class="fas fa-search" style="font-size:2rem;display:block;margin-bottom:10px;"></i>
-      😕 कोई प्रीसेट नहीं मिला
-    </div>`;
+    container.innerHTML = `<div class="no-results" style="grid-column:1/-1;text-align:center;padding:30px 15px;color:#7a7a7a;font-size:0.9rem;"><i class="fas fa-search" style="font-size:2rem;display:block;margin-bottom:10px;"></i>😕 कोई प्रीसेट नहीं मिला</div>`;
     return;
   }
-
   container.innerHTML = presets.map(p => {
     const isLiked = wishlist.includes(p.id);
-    const priceDisplay = p.price === 0
-      ? `<span class="price free">मुफ्त</span>`
-      : `<span class="price">₹${p.price}</span>`;
+    const priceDisplay = p.price === 0 ?
+      `<span class="price free">मुफ्त</span>` :
+      `<span class="price">₹${p.price}</span>`;
     const stars = '★'.repeat(Math.floor(p.avgRating || 0)) + (p.avgRating % 1 >= 0.5 ? '½' : '');
-    const previewImageSrc = p.previewImage
-      ? (p.previewImage.startsWith('http') ? p.previewImage : window.location.origin + p.previewImage)
-      : null;
-
-    const previewImg = previewImageSrc
-      ? `<img src="\( {previewImageSrc}" alt=" \){p.name}" style="width:100%;height:100%;object-fit:contain;background:#e8e0d6;" onerror="this.style.display='none'">`
-      : `<div style="width:100%;height:100%;background:#d9d0c4;display:flex;align-items:center;justify-content:center;color:#4a3f35;font-size:0.85rem;">${p.name}</div>`;
-
+    const previewImageSrc = p.previewImage ? 
+      (p.previewImage.startsWith('http') ? p.previewImage : window.location.origin + p.previewImage) : 
+      null;
+    const previewImg = previewImageSrc ? 
+      `<img src="${previewImageSrc}" alt="${p.name}" style="width:100%;height:100%;object-fit:contain;background:#e8e0d6;" onerror="this.style.display='none'">` :
+      `<svg viewBox="0 0 270 180" style="background:#d9d0c4;width:100%;height:100%;">
+        <rect x="30" y="20" width="70" height="60" rx="8" fill="#b8aa98" />
+        <rect x="120" y="20" width="70" height="60" rx="8" fill="#c4b5a2" />
+        <rect x="30" y="100" width="70" height="60" rx="8" fill="#a89682" />
+        <rect x="120" y="100" width="70" height="60" rx="8" fill="#d4c5b2" />
+        <text x="50" y="165" font-family="Inter" font-weight="600" font-size="11" fill="#4a3f35"><i class="fas fa-camera"></i> ${p.name}</text>
+      </svg>`;
     return `
       <div class="preset-card" data-id="${p.id}">
         <div class="thumb" style="height:160px;">
@@ -679,10 +814,17 @@ function renderPresetsToContainer(presets, container) {
           <h3 style="font-size:0.95rem;font-weight:700;margin:4px 0 2px;">${p.name}</h3>
           <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.75rem;" onclick="event.stopPropagation(); window.openProfile('${p.authorId}')">
             ${p.author}
+            <span style="font-size:0.6rem;color:#888;margin-left:4px;"><i class="fas fa-users"></i> ${p.authorFollowers || 0}</span>
           </div>
-          <div class="meta" style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border,#f0ebe3);padding-top:8px;margin-top:6px;">
+          <div class="meta" style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border, #f0ebe3);padding-top:8px;margin-top:6px;">
             ${priceDisplay}
             <span class="rating" style="font-size:0.75rem;color:#f4a261;">${stars} ${p.avgRating ? p.avgRating.toFixed(1) : '0'}</span>
+          </div>
+          <div style="display:flex;gap:8px;font-size:0.65rem;color:#888;margin-top:4px;flex-wrap:wrap;">
+            <span><i class="fas fa-eye"></i> ${p.views || 0}</span>
+            <span><i class="fas fa-heart" style="color:#e74c3c;"></i> ${p.likes?.length || 0}</span>
+            <span><i class="fas fa-share-alt"></i> ${p.shares || 0}</span>
+            <span><i class="fas fa-comment"></i> ${p.reviews?.length || 0}</span>
           </div>
         </div>
       </div>
@@ -698,89 +840,188 @@ async function loadPresets(page = 1, append = false) {
     const params = new URLSearchParams();
     const q = searchInput ? searchInput.value.trim() : '';
     if (q) params.append('q', q);
-    if (filterCategory?.value) params.append('category', filterCategory.value);
-    if (filterPrice?.value) params.append('price', filterPrice.value);
-    if (filterSort?.value) params.append('sort', filterSort.value);
+    const cat = filterCategory ? filterCategory.value : '';
+    if (cat) params.append('category', cat);
+    const price = filterPrice ? filterPrice.value : '';
+    if (price) params.append('price', price);
+    const sort = filterSort ? filterSort.value : '';
+    if (sort) params.append('sort', sort);
     params.append('page', page);
     params.append('limit', 20);
-
-    const res = await fetch(`\( {API_URL}/presets? \){params.toString()}`);
-    if (!res.ok) throw new Error('Network error');
-
-    const data = await res.json();
-    allPresets = data.presets || [];
-    totalPages = data.totalPages || 1;
-    currentPage = data.page || 1;
-
-    if (append && presetGrid) {
-      const temp = document.createElement('div');
-      renderPresetsToContainer(allPresets, temp);
-      presetGrid.innerHTML += temp.innerHTML;
-    } else {
-      renderPresetsToContainer(allPresets, presetGrid);
-    }
-
-    if (loadMoreBtn) {
-      loadMoreBtn.style.display = currentPage < totalPages ? 'inline-flex' : 'none';
-      if (currentPage < totalPages) {
-        loadMoreBtn.innerHTML = `<i class="fas fa-plus"></i> और लोड करें (\( {currentPage}/ \){totalPages})`;
+    
+    const url = `${API_URL}/presets?${params.toString()}`;
+    const res = await fetch(url);
+    
+    if (res.ok) {
+      const data = await res.json();
+      let userMap = {};
+      try {
+        const usersRes = await fetch(`${API_URL}/users?limit=100`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (usersRes.ok) {
+          const users = await usersRes.json();
+          users.forEach(u => {
+            userMap[u.id] = { followers: u.followers?.length || 0, name: u.name };
+          });
+        }
+      } catch (e) { console.warn('Could not load follower counts', e); }
+      data.presets.forEach(p => {
+        p.authorFollowers = userMap[p.authorId]?.followers || 0;
+      });
+      allPresets = data.presets || [];
+      totalPages = data.totalPages || 1;
+      currentPage = data.page || 1;
+      
+      if (append) {
+        const existing = presetGrid ? presetGrid.innerHTML : '';
+        const tempDiv = document.createElement('div');
+        renderPresetsToContainer(allPresets, tempDiv);
+        if (presetGrid) presetGrid.innerHTML = existing + tempDiv.innerHTML;
+      } else {
+        renderPresetsToContainer(allPresets, presetGrid);
       }
+      
+      if (loadMoreBtn) {
+        if (currentPage < totalPages) {
+          loadMoreBtn.style.display = 'inline-flex';
+          loadMoreBtn.innerHTML = `<i class="fas fa-plus"></i> और लोड करें (${currentPage}/${totalPages})`;
+        } else {
+          loadMoreBtn.style.display = 'none';
+        }
+      }
+      return;
     }
+    
+    throw new Error('Network or server error');
+    
   } catch (err) {
-    console.warn('Load presets failed:', err);
-    if (presetGrid && !append) {
-      presetGrid.innerHTML = `<div style="padding:30px;text-align:center;grid-column:1/-1;color:#7a7a7a;">
-        <i class="fas fa-triangle-exclamation" style="color:#f39c12;font-size:1.5rem;"></i><br>
-        प्रीसेट लोड नहीं हो पाए।
-        <br><button class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="loadPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
-      </div>`;
+    console.warn('⚠️ Load presets failed, trying cache:', err);
+    try {
+      const params = new URLSearchParams();
+      const q = searchInput ? searchInput.value.trim() : '';
+      if (q) params.append('q', q);
+      const cat = filterCategory ? filterCategory.value : '';
+      if (cat) params.append('category', cat);
+      const price = filterPrice ? filterPrice.value : '';
+      if (price) params.append('price', price);
+      const sort = filterSort ? filterSort.value : '';
+      if (sort) params.append('sort', sort);
+      params.append('page', page);
+      params.append('limit', 20);
+      const url = `${API_URL}/presets?${params.toString()}`;
+      
+      const cache = await caches.open('presethub-api-v1');
+      const cachedResponse = await cache.match(url);
+      if (cachedResponse) {
+        const data = await cachedResponse.json();
+        allPresets = data.presets || [];
+        totalPages = data.totalPages || 1;
+        currentPage = data.page || 1;
+        renderPresetsToContainer(allPresets, presetGrid);
+        showToast('📦 Showing cached presets (offline)', 'info');
+        return;
+      }
+      showToast('😕 No cached presets available offline.', 'error');
+      if (presetGrid && !append) {
+        presetGrid.innerHTML = `<div style="padding:30px;color:#7a7a7a;font-size:0.9rem;text-align:center;grid-column:1/-1;">
+          <i class="fas fa-triangle-exclamation" style="color:#f39c12;font-size:1.5rem;display:block;margin-bottom:10px;"></i>
+          प्रीसेट लोड नहीं हो पाए। कृपया कनेक्शन जांचें।
+          <br><button class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="loadPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+        </div>`;
+      }
+    } catch (cacheErr) {
+      console.error('Cache error:', cacheErr);
+      showToast('❌ Unable to load presets. Please check your connection.', 'error');
+      if (presetGrid && !append) {
+        presetGrid.innerHTML = `<div style="padding:30px;color:#7a7a7a;font-size:0.9rem;text-align:center;grid-column:1/-1;">
+          <i class="fas fa-triangle-exclamation" style="color:#f39c12;font-size:1.5rem;display:block;margin-bottom:10px;"></i>
+          प्रीसेट लोड नहीं हो पाए। कृपया कनेक्शन जांचें।
+          <br><button class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="loadPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+        </div>`;
+      }
     }
   }
 }
 
+// ============================================================
+// ===== LOAD LATEST PRESETS =====
+// ============================================================
 async function loadLatestPresets() {
   try {
     const res = await fetch(`${API_URL}/presets?sort=newest&limit=6`);
-    if (!res.ok) throw new Error('Failed');
     const data = await res.json();
-    renderPresetsToContainer(data.presets || [], latestGrid);
+    const presets = data.presets || [];
+    let userMap = {};
+    try {
+      const usersRes = await fetch(`${API_URL}/users?limit=100`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      if (usersRes.ok) {
+        const users = await usersRes.json();
+        users.forEach(u => {
+          userMap[u.id] = { followers: u.followers?.length || 0, name: u.name };
+        });
+      }
+    } catch (e) { console.warn('Could not load follower counts', e); }
+    presets.forEach(p => {
+      p.authorFollowers = userMap[p.authorId]?.followers || 0;
+    });
+    renderPresetsToContainer(presets, latestGrid);
   } catch (err) {
+    console.warn('⚠️ Load latest failed, trying cache');
+    try {
+      const cache = await caches.open('presethub-api-v1');
+      const cachedResponse = await cache.match(`${API_URL}/presets?sort=newest&limit=6`);
+      if (cachedResponse) {
+        const data = await cachedResponse.json();
+        renderPresetsToContainer(data.presets || [], latestGrid);
+        return;
+      }
+    } catch (cacheErr) {
+      console.error('Latest cache error:', cacheErr);
+    }
     if (latestGrid) {
-      latestGrid.innerHTML = `<div style="padding:20px;text-align:center;color:#7a7a7a;">
+      latestGrid.innerHTML = `<div style="padding:20px;color:#7a7a7a;font-size:0.85rem;text-align:center;width:100%;">
         <i class="fas fa-triangle-exclamation" style="color:#f39c12;"></i> प्रीसेट लोड नहीं हो पाए।
+        <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="loadLatestPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
       </div>`;
     }
   }
 }
 
 // ============================================================
-// ===== PRESET MODAL =====
+// ===== PRESET MODAL - FIXED REVIEWS =====
 // ============================================================
 async function openPresetModal(presetId) {
   try {
-    const res = await fetch(`\( {API_URL}/presets/ \){presetId}`);
+    const res = await fetch(`${API_URL}/presets/${presetId}`);
     if (!res.ok) throw new Error('Preset not found');
     const preset = await res.json();
     const isLiked = wishlist.includes(preset.id);
     const isFree = preset.price === 0;
 
+    // Update Meta Tags for SEO
+    updatePresetMetaTags(preset);
+
     if (!viewedPresets.has(presetId) && currentUser && preset.authorId !== currentUser.id) {
       viewedPresets.add(presetId);
-      fetch(`\( {API_URL}/presets/ \){presetId}/view`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      }).catch(() => {});
-      fetch(`\( {API_URL}/presets/ \){presetId}/ad-impression`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      }).catch(() => {});
+      try {
+        await fetch(`${API_URL}/presets/${presetId}/view`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      } catch (e) { console.warn('View tracking failed:', e); }
+      try {
+        await fetch(`${API_URL}/presets/${presetId}/ad-impression`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      } catch (e) { console.warn('Ad impression tracking failed:', e); }
     }
 
-    const reviews = (preset.reviews || []).sort((a, b) => (b.helpful || 0) - (a.helpful || 0));
-    const topReviews = reviews.slice(0, 5);
-    const previewImageSrc = preset.previewImage
-      ? (preset.previewImage.startsWith('http') ? preset.previewImage : window.location.origin + preset.previewImage)
-      : null;
+    // Get REAL reviews from API
+    const reviews = preset.reviews || [];
+    const sortedReviews = [...reviews].sort((a, b) => (b.helpful || 0) - (a.helpful || 0) || new Date(b.createdAt) - new Date(a.createdAt));
+    const topReviews = sortedReviews.slice(0, 5);
+
+    const previewImageSrc = preset.previewImage ? 
+      (preset.previewImage.startsWith('http') ? preset.previewImage : window.location.origin + preset.previewImage) : 
+      null;
 
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
@@ -789,48 +1030,77 @@ async function openPresetModal(presetId) {
         <button class="close">&times;</button>
         <div class="modal-grid">
           <div class="modal-preview">
-            ${previewImageSrc
-              ? `<img src="\( {previewImageSrc}" alt=" \){preset.name}" style="width:100%;border-radius:12px;" onerror="this.style.display='none'">`
-              : `<div style="background:#d9d0c4;height:200px;border-radius:12px;display:flex;align-items:center;justify-content:center;">${preset.name}</div>`}
+            ${previewImageSrc ? `<img src="${previewImageSrc}" alt="${preset.name}" style="width:100%;height:auto;border-radius:12px;" onerror="this.style.display='none'">` :
+              `<svg viewBox="0 0 300 200" style="width:100%;height:auto;background:#d9d0c4;border-radius:12px;">
+                <rect x="20" y="20" width="100" height="80" rx="8" fill="#b8aa98" />
+                <rect x="140" y="20" width="100" height="80" rx="8" fill="#c4b5a2" />
+                <rect x="20" y="120" width="100" height="60" rx="8" fill="#a89682" />
+                <rect x="140" y="120" width="100" height="60" rx="8" fill="#d4c5b2" />
+                <text x="80" y="185" font-family="Inter" font-weight="600" font-size="14" fill="#4a3f35"><i class="fas fa-camera"></i> ${preset.name}</text>
+              </svg>`
+            }
           </div>
           <div class="modal-details">
             <h2>${preset.name}</h2>
-            <div class="author" style="cursor:pointer;color:#d4a373;" onclick="window.openProfile('\( {preset.authorId}')">by <strong> \){preset.author}</strong></div>
-            <div class="desc" style="margin:8px 0 14px;">${preset.description || 'कोई विवरण नहीं'}</div>
-            <div class="price-lg \( {isFree ? 'free' : ''}" style="font-size:1.4rem;"> \){isFree ? 'मुफ्त' : '₹' + preset.price}</div>
+            <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.9rem;" onclick="window.openProfile('${preset.authorId}')">by <strong>${preset.author}</strong></div>
+            <div class="desc" style="font-size:0.9rem;color:var(--text, #3a3a3a);margin:8px 0 14px;">${preset.description || 'कोई विवरण नहीं'}</div>
+            <div class="price-lg ${isFree ? 'free' : ''}" style="font-size:1.4rem;">${isFree ? 'मुफ्त' : '₹' + preset.price}</div>
             <div class="actions" style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
-              <button class="btn btn-primary download-btn" data-id="${preset.id}">
+              <button class="btn btn-primary download-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 20px;">
                 <i class="fas fa-download"></i> ${isFree ? 'डाउनलोड करें' : 'खरीदें'}
               </button>
-              <button class="btn btn-outline wishlist-btn" data-id="${preset.id}">
+              <button class="btn btn-outline wishlist-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 18px;">
                 <i class="fa${isLiked ? 's' : 'r'} fa-heart"></i> ${isLiked ? 'पसंद में' : 'पसंद करें'}
               </button>
+              <button class="btn btn-outline like-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 16px;">
+                <i class="fa${preset.likes && preset.likes.includes(currentUser?.id) ? 's' : 'r'} fa-heart"></i>
+                <span class="like-count">${preset.likes?.length || 0}</span>
+              </button>
+              <button class="btn btn-outline share-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 16px;">
+                <i class="fas fa-share-alt"></i> <span class="share-count">${preset.shares || 0}</span>
+              </button>
             </div>
-            <div class="meta-list" style="display:flex;flex-wrap:wrap;gap:12px;font-size:0.8rem;margin-top:14px;">
-              <span><i class="fas fa-eye"></i> ${preset.views || 0}</span>
-              <span><i class="fas fa-download"></i> ${preset.downloads || 0}</span>
-              <span><i class="fas fa-star" style="color:#f4a261;"></i> \( {preset.avgRating ? preset.avgRating.toFixed(1) : '0'} ( \){preset.reviews?.length || 0})</span>
+            <div class="meta-list" style="display:flex;flex-wrap:wrap;gap:12px;font-size:0.8rem;color:#5a5a5a;margin-top:14px;">
+              <span><i class="fas fa-eye"></i> ${preset.views || 0} views</span>
+              <span><i class="fas fa-download"></i> ${preset.downloads || 0} downloads</span>
+              <span><i class="fas fa-star" style="color:#f4a261;"></i> ${preset.avgRating ? preset.avgRating.toFixed(1) : '0'} (${preset.reviews?.length || 0})</span>
+              <span><i class="fas fa-tag"></i> ${preset.tags?.join(', ') || '—'}</span>
             </div>
-            <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
-              <h4><i class="fas fa-star" style="color:#f4a261;"></i> समीक्षाएँ (${preset.reviews?.length || 0})</h4>
+            <div style="margin-top:16px;border-top:1px solid var(--border, #eee);padding-top:14px;">
+              <h4 style="font-size:1rem;"><i class="fas fa-star" style="color:#f4a261;"></i> समीक्षाएँ (${preset.reviews?.length || 0})</h4>
               <div id="reviewList" style="max-height:200px;overflow-y:auto;">
                 ${topReviews.length > 0 ? topReviews.map(r => `
-                  <div style="padding:8px 0;border-bottom:1px solid var(--border);">
-                    <strong>${r.userName}</strong>
-                    <span style="color:#f4a261;">${'★'.repeat(r.rating)}</span>
-                    <p style="margin:3px 0 0;font-size:0.85rem;">${r.comment}</p>
+                  <div style="padding:8px 0;border-bottom:1px solid var(--border, #f0ebe3);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+                      <div>
+                        <strong style="font-size:0.85rem;">${r.userName}</strong> 
+                        <span style="color:#f4a261;font-size:0.8rem;">${'★'.repeat(r.rating)}</span>
+                        <span style="color:#888;font-size:0.7rem;">${new Date(r.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <span style="font-size:0.75rem;color:#888;">
+                        <i class="fas fa-thumbs-up" style="color:#d4a373;"></i> ${r.helpful || 0}
+                      </span>
+                    </div>
+                    <p style="margin:3px 0 0;font-size:0.85rem;color:var(--text, #3a3a3a);">${r.comment}</p>
                   </div>
-                `).join('') : '<p style="color:#888;">अभी कोई समीक्षा नहीं</p>'}
+                `).join('') : '<p style="color:#888;font-size:0.85rem;">अभी कोई समीक्षा नहीं</p>'}
+                ${preset.reviews && preset.reviews.length > 5 ? `<p style="color:#888;font-size:0.75rem;margin-top:4px;">... और ${preset.reviews.length - 5} समीक्षाएँ</p>` : ''}
               </div>
               ${currentUser ? `
                 <form id="reviewForm" style="margin-top:10px;">
                   <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    <input type="number" id="reviewRating" min="1" max="5" placeholder="Rating" required style="width:80px;padding:6px;">
-                    <textarea id="reviewComment" placeholder="समीक्षा लिखें..." required style="flex:1;padding:6px;min-height:50px;"></textarea>
+                    <div style="flex:1;min-width:80px;">
+                      <label style="font-size:0.8rem;font-weight:600;">रेटिंग</label>
+                      <input type="number" id="reviewRating" min="1" max="5" style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--border,#ddd);font-size:0.9rem;" required />
+                    </div>
+                    <div style="flex:3;min-width:150px;">
+                      <label style="font-size:0.8rem;font-weight:600;">समीक्षा</label>
+                      <textarea id="reviewComment" placeholder="अपनी समीक्षा लिखें..." style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--border,#ddd);font-size:0.9rem;resize:vertical;min-height:50px;" required></textarea>
+                    </div>
                   </div>
-                  <button type="submit" class="btn btn-sm btn-primary" style="margin-top:8px;"><i class="fas fa-paper-plane"></i> भेजें</button>
+                  <button type="submit" class="btn btn-sm btn-primary" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;"><i class="fas fa-paper-plane"></i> समीक्षा भेजें</button>
                 </form>
-              ` : `<p style="color:#888;margin-top:8px;">समीक्षा के लिए <a href="#" onclick="openAuthModal('login');return false;" style="color:#d4a373;">लॉग इन</a> करें</p>`}
+              ` : `<p style="color:#888;font-size:0.85rem;margin-top:8px;">समीक्षा देने के लिए <a href="#" onclick="openAuthModal('login');return false;" style="color:#d4a373;">लॉग इन</a> करें</p>`}
             </div>
           </div>
         </div>
@@ -845,14 +1115,51 @@ async function openPresetModal(presetId) {
         showToast('कृपया लॉग इन करें', 'warning');
         return;
       }
-      if (preset.price > 0) await buyPreset(preset.id);
-      else await downloadPreset(preset.id);
+      if (preset.price > 0) {
+        await buyPreset(preset.id);
+      } else {
+        await downloadPreset(preset.id);
+      }
     });
 
     modal.querySelector('.wishlist-btn').addEventListener('click', async () => {
       await toggleWishlist(preset.id);
       modal.remove();
       openPresetModal(preset.id);
+    });
+
+    modal.querySelector('.like-btn')?.addEventListener('click', async () => {
+      if (!currentUser) { showToast('Please login', 'warning'); return; }
+      const res = await fetch(`${API_URL}/presets/${preset.id}/like`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const likeSpan = modal.querySelector('.like-count');
+        const icon = modal.querySelector('.like-btn i');
+        icon.className = data.liked ? 'fas fa-heart' : 'far fa-heart';
+        likeSpan.textContent = data.likes;
+        await fetchNotifications();
+      }
+    });
+
+    modal.querySelector('.share-btn')?.addEventListener('click', async () => {
+      if (!currentUser) { showToast('Please login', 'warning'); return; }
+      const res = await fetch(`${API_URL}/presets/${preset.id}/share`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        modal.querySelector('.share-count').textContent = data.shares;
+        const shareLink = `${window.location.origin}/preset/${preset.id}`;
+        if (navigator.share) {
+          navigator.share({ title: preset.name, text: 'Check out this preset!', url: shareLink });
+        } else {
+          navigator.clipboard.writeText(shareLink).then(() => showToast('Link copied!', 'success'));
+        }
+      }
     });
 
     const reviewForm = modal.querySelector('#reviewForm');
@@ -872,10 +1179,100 @@ async function openPresetModal(presetId) {
 window.openPresetModal = openPresetModal;
 
 // ============================================================
-// ===== REVIEW =====
+// ===== UPDATE PRESET META TAGS FOR SEO =====
+// ============================================================
+function updatePresetMetaTags(preset) {
+  // Update title
+  document.title = `${preset.name} – ${preset.category} Preset | PresetHub`;
+  
+  // Update meta description
+  let metaDesc = document.querySelector('meta[name="description"]');
+  if (!metaDesc) {
+    metaDesc = document.createElement('meta');
+    metaDesc.name = 'description';
+    document.head.appendChild(metaDesc);
+  }
+  metaDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset by ${preset.author}. ${preset.description || 'Professional photo editing preset.'} ⭐ ${preset.avgRating || 0} rating.`;
+
+  // Update OG title
+  let ogTitle = document.querySelector('meta[property="og:title"]');
+  if (!ogTitle) {
+    ogTitle = document.createElement('meta');
+    ogTitle.setAttribute('property', 'og:title');
+    document.head.appendChild(ogTitle);
+  }
+  ogTitle.content = `${preset.name} – ${preset.category} Preset | PresetHub`;
+
+  // Update OG description
+  let ogDesc = document.querySelector('meta[property="og:description"]');
+  if (!ogDesc) {
+    ogDesc = document.createElement('meta');
+    ogDesc.setAttribute('property', 'og:description');
+    document.head.appendChild(ogDesc);
+  }
+  ogDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset. ${preset.description || 'Professional preset for photo editing.'}`;
+
+  // Update OG image
+  let ogImage = document.querySelector('meta[property="og:image"]');
+  if (!ogImage) {
+    ogImage = document.createElement('meta');
+    ogImage.setAttribute('property', 'og:image');
+    document.head.appendChild(ogImage);
+  }
+  const imageUrl = preset.previewImage ? 
+    (preset.previewImage.startsWith('http') ? preset.previewImage : window.location.origin + preset.previewImage) : 
+    `${window.location.origin}/assets/images/og-image.jpg`;
+  ogImage.content = imageUrl;
+
+  // Update Twitter card
+  let twitterTitle = document.querySelector('meta[name="twitter:title"]');
+  if (!twitterTitle) {
+    twitterTitle = document.createElement('meta');
+    twitterTitle.name = 'twitter:title';
+    document.head.appendChild(twitterTitle);
+  }
+  twitterTitle.content = `${preset.name} – ${preset.category} Preset`;
+
+  // Update JSON-LD
+  let jsonLd = document.querySelector('script[type="application/ld+json"]');
+  if (!jsonLd) {
+    jsonLd = document.createElement('script');
+    jsonLd.type = 'application/ld+json';
+    document.head.appendChild(jsonLd);
+  }
+  jsonLd.textContent = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": preset.name,
+    "description": preset.description || `${preset.category} Lightroom preset`,
+    "image": imageUrl,
+    "brand": {
+      "@type": "Brand",
+      "name": "PresetHub"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": preset.price,
+      "priceCurrency": "INR",
+      "availability": "https://schema.org/InStock"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": preset.avgRating || 0,
+      "ratingCount": preset.reviews?.length || 0
+    },
+    "author": {
+      "@type": "Person",
+      "name": preset.author
+    }
+  });
+}
+
+// ============================================================
+// ===== REVIEW SUBMIT =====
 // ============================================================
 async function submitReview(presetId, rating, comment) {
-  const url = `\( {API_URL}/reviews/ \){presetId}`;
+  const url = `${API_URL}/reviews/${presetId}`;
   const options = {
     method: 'POST',
     headers: {
@@ -884,10 +1281,10 @@ async function submitReview(presetId, rating, comment) {
     },
     body: JSON.stringify({ rating, comment })
   };
-
   try {
     if (!navigator.onLine) {
       await addToQueue('review', url, options);
+      showToast('⏳ Review saved offline. Will sync when online.', 'info');
       return;
     }
     const res = await fetch(url, options);
@@ -895,8 +1292,11 @@ async function submitReview(presetId, rating, comment) {
       showToast('✅ समीक्षा सहेजी गई', 'success');
       const modal = document.querySelector('.modal-overlay.active');
       if (modal) {
-        modal.remove();
-        openPresetModal(presetId);
+        const id = modal.querySelector('.download-btn')?.dataset.id;
+        if (id) {
+          modal.remove();
+          openPresetModal(id);
+        }
       }
       loadPresets();
     } else {
@@ -944,7 +1344,9 @@ async function downloadPreset(presetId) {
         skipBtn.textContent = 'Download Now';
         skipBtn.classList.add('enabled');
         skipBtn.disabled = false;
-        setTimeout(() => skipBtn.click(), 500);
+        setTimeout(() => {
+          skipBtn.click();
+        }, 500);
       } else {
         timerSpan.textContent = seconds;
       }
@@ -961,12 +1363,12 @@ async function downloadPreset(presetId) {
 }
 
 async function performDownload(presetId) {
-  const url = `\( {API_URL}/presets/ \){presetId}/download`;
+  const url = `${API_URL}/presets/${presetId}/download`;
   const options = { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } };
-
   try {
     if (!navigator.onLine) {
       await addToQueue('download', url, options);
+      showToast('⏳ Download queued. Will start when online.', 'warning');
       return;
     }
     const res = await fetch(url, options);
@@ -977,7 +1379,7 @@ async function performDownload(presetId) {
       a.href = blobUrl;
       const disposition = res.headers.get('content-disposition');
       let filename = 'preset.xmp';
-      if (disposition) {
+      if (disposition && disposition.indexOf('filename=') !== -1) {
         const match = disposition.match(/filename="?(.+)"?/);
         if (match) filename = match[1];
       }
@@ -987,6 +1389,7 @@ async function performDownload(presetId) {
       a.remove();
       URL.revokeObjectURL(blobUrl);
       showToast('✅ प्रीसेट डाउनलोड हो गया!', 'success');
+      await fetchNotifications();
     } else {
       const err = await res.json().catch(() => ({}));
       showToast(err.error || 'डाउनलोड विफल', 'error');
@@ -1005,7 +1408,19 @@ async function buyPreset(presetId) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
     return;
   }
-
+  if (!navigator.onLine) {
+    const url = `${API_URL}/payments/create-order`;
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ presetId })
+    };
+    await addToQueue('order', url, options);
+    return;
+  }
   try {
     const res = await fetch(`${API_URL}/payments/create-order`, {
       method: 'POST',
@@ -1017,7 +1432,6 @@ async function buyPreset(presetId) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Order creation failed');
-
     const options = {
       key: data.key,
       amount: data.amount,
@@ -1030,9 +1444,11 @@ async function buyPreset(presetId) {
       },
       prefill: {
         name: currentUser.name,
-        email: currentUser.email
+        email: currentUser.email,
       },
-      theme: { color: '#d4a373' }
+      theme: {
+        color: '#d4a373'
+      }
     };
     const rzp = new Razorpay(options);
     rzp.open();
@@ -1053,7 +1469,7 @@ async function verifyPayment(response, presetId) {
       body: JSON.stringify({
         razorpay_order_id: response.razorpay_order_id,
         razorpay_payment_id: response.razorpay_payment_id,
-        razorpay_signature: response.razorpay_signature
+        razorpay_signature: response.razorpay_signature,
       })
     });
     const data = await res.json();
@@ -1061,7 +1477,7 @@ async function verifyPayment(response, presetId) {
       showToast('✅ भुगतान सफल! प्रीसेट डाउनलोड हो रहा है...', 'success');
       await downloadPreset(presetId);
     } else {
-      showToast('Payment verification failed: ' + (data.error || 'unknown'), 'error');
+      showToast('Payment verification failed: ' + (data.error || 'unknown error'), 'error');
     }
   } catch (err) {
     showToast('Verification error: ' + err.message, 'error');
@@ -1069,25 +1485,24 @@ async function verifyPayment(response, presetId) {
 }
 
 // ============================================================
-// ===== UPLOAD =====
+// ===== UPLOAD MODAL =====
 // ============================================================
 function openUploadModal() {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
     return;
   }
-
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `
     <div class="modal" style="max-width:500px;padding:28px;">
       <button class="close">&times;</button>
-      <h2><i class="fas fa-cloud-upload-alt"></i> नया प्रीसेट अपलोड करें</h2>
+      <h2 style="font-size:1.4rem;"><i class="fas fa-cloud-upload-alt"></i> नया प्रीसेट अपलोड करें</h2>
       <form id="uploadForm" enctype="multipart/form-data">
-        <div class="form-group"><input type="text" id="uploadName" placeholder="प्रीसेट का नाम" required /></div>
-        <div class="form-group"><textarea id="uploadDesc" placeholder="विवरण"></textarea></div>
+        <div class="form-group"><input type="text" id="uploadName" placeholder="प्रीसेट का नाम" required style="padding:8px 12px;font-size:0.9rem;" /></div>
+        <div class="form-group"><textarea id="uploadDesc" placeholder="विवरण" style="padding:8px 12px;font-size:0.9rem;min-height:60px;"></textarea></div>
         <div class="form-group">
-          <select id="uploadCategory">
+          <select id="uploadCategory" style="padding:8px 12px;font-size:0.9rem;">
             <option value="सनसेट">सनसेट</option>
             <option value="ब्लैक & व्हाइट">ब्लैक & व्हाइट</option>
             <option value="नैचुरल">नैचुरल</option>
@@ -1095,47 +1510,50 @@ function openUploadModal() {
             <option value="सिटीस्केप">सिटीस्केप</option>
           </select>
         </div>
-        <div class="form-group"><input type="text" id="uploadTags" placeholder="टैग्स (कॉमा से अलग)" /></div>
-        <div class="form-group"><input type="number" id="uploadPrice" placeholder="कीमत (0 = मुफ्त)" min="0" step="1" /></div>
+        <div class="form-group"><input type="text" id="uploadTags" placeholder="टैग्स (कॉमा से अलग)" style="padding:8px 12px;font-size:0.9rem;" /></div>
+        <div class="form-group"><input type="number" id="uploadPrice" placeholder="कीमत (0 = मुफ्त)" min="0" step="1" style="padding:8px 12px;font-size:0.9rem;" /></div>
         <div class="form-group">
-          <label>प्रीसेट फ़ाइल (.xmp, .dng, .lrtemplate)</label>
-          <input type="file" id="uploadFile" accept=".xmp,.dng,.lrtemplate" required />
+          <label style="font-size:0.85rem;">प्रीसेट फ़ाइल (.xmp, .dng, .lrtemplate)</label>
+          <input type="file" id="uploadFile" accept=".xmp,.dng,.lrtemplate" required style="padding:6px;font-size:0.85rem;" />
         </div>
         <div class="form-group">
-          <label>प्रीव्यू इमेज (वैकल्पिक)</label>
-          <input type="file" id="uploadPreview" accept="image/*" />
+          <label style="font-size:0.85rem;">प्रीव्यू इमेज (वैकल्पिक)</label>
+          <input type="file" id="uploadPreview" accept="image/*" style="padding:6px;font-size:0.85rem;" />
         </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fas fa-upload"></i> अपलोड करें</button>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;"><i class="fas fa-upload"></i> अपलोड करें</button>
       </form>
     </div>
   `;
   document.body.appendChild(modal);
+
   modal.querySelector('.close').addEventListener('click', () => modal.remove());
 
   modal.querySelector('#uploadForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!navigator.onLine) {
-      showToast('⚠️ Offline. Upload ke liye internet chahiye.', 'warning');
-      return;
-    }
-
     const formData = new FormData();
     formData.append('name', document.getElementById('uploadName').value);
     formData.append('description', document.getElementById('uploadDesc').value);
     formData.append('category', document.getElementById('uploadCategory').value);
     formData.append('tags', document.getElementById('uploadTags').value);
     formData.append('price', document.getElementById('uploadPrice').value || 0);
-    const file = document.getElementById('uploadFile').files[0];
-    if (file) formData.append('file', file);
-    const preview = document.getElementById('uploadPreview').files[0];
-    if (preview) formData.append('previewImage', preview);
+    const fileInput = document.getElementById('uploadFile');
+    if (fileInput.files[0]) formData.append('file', fileInput.files[0]);
+    const previewInput = document.getElementById('uploadPreview');
+    if (previewInput.files[0]) formData.append('previewImage', previewInput.files[0]);
+    
+    const url = `${API_URL}/presets`;
+    const options = {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    };
 
     try {
-      const res = await fetch(`${API_URL}/presets`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
-      });
+      if (!navigator.onLine) {
+        showToast('⚠️ You are offline. Please connect to the internet to upload.', 'warning');
+        return;
+      }
+      const res = await fetch(url, options);
       if (res.ok) {
         showToast('✅ प्रीसेट अपलोड हो गया!', 'success');
         modal.remove();
@@ -1147,7 +1565,7 @@ function openUploadModal() {
         showToast(err.error || 'अपलोड विफल', 'error');
       }
     } catch (err) {
-      showToast('❌ Upload failed', 'error');
+      showToast('❌ Upload failed. Please check your connection.', 'error');
     }
   });
 }
@@ -1158,44 +1576,53 @@ window.openUploadModal = openUploadModal;
 // ============================================================
 async function loadTopCreators() {
   const grid = document.getElementById('topCreatorsGrid');
-  if (!grid) return;
   try {
     const res = await fetch(`${API_URL}/users/top`);
-    if (!res.ok) throw new Error('Failed');
-    const creators = await res.json();
-    if (!creators.length) {
-      grid.innerHTML = '<p style="color:var(--text);">कोई क्रिएटर नहीं</p>';
-      return;
-    }
-    grid.innerHTML = creators.map(c => `
-      <div class="creator-card" style="cursor:pointer;padding:14px;" onclick="window.openProfile('${c.id}')">
-        <div class="avatar" style="width:50px;height:50px;font-size:1.2rem;margin:0 auto 6px;background-image:url(${c.avatar || ''});background-size:cover;">
-          ${!c.avatar ? c.name.charAt(0).toUpperCase() : ''}
+    if (res.ok) {
+      const creators = await res.json();
+      if (!grid) return;
+      if (!creators || creators.length === 0) {
+        grid.innerHTML = '<p style="color:var(--text);font-size:0.9rem;">कोई क्रिएटर नहीं</p>';
+        return;
+      }
+      grid.innerHTML = creators.map(c => `
+        <div class="creator-card" style="cursor:pointer;padding:14px;" onclick="window.openProfile('${c.id}')">
+          <div class="avatar" style="width:50px;height:50px;font-size:1.2rem;margin:0 auto 6px;background-image:url(${c.avatar || ''});background-size:cover;">
+            ${!c.avatar ? c.name.charAt(0).toUpperCase() : ''}
+          </div>
+          <div class="name" style="font-size:0.85rem;">${c.name}</div>
+          <div class="stats" style="font-size:0.7rem;color:#6b6b6b;">${c.presetCount || 0} प्रीसेट</div>
+          <div class="followers" style="font-size:0.7rem;color:#d4a373;"><i class="fas fa-users"></i> ${c.followers || 0}</div>
         </div>
-        <div class="name" style="font-size:0.85rem;">${c.name}</div>
-        <div class="stats" style="font-size:0.7rem;color:#6b6b6b;">${c.presetCount || 0} प्रीसेट</div>
-        <div class="followers" style="font-size:0.7rem;color:#d4a373;"><i class="fas fa-users"></i> ${c.followers || 0}</div>
-      </div>
-    `).join('');
+      `).join('');
+    } else {
+      throw new Error('Server error ' + res.status);
+    }
   } catch (err) {
-    grid.innerHTML = `<div style="padding:20px;text-align:center;color:#7a7a7a;">
-      <i class="fas fa-triangle-exclamation" style="color:#f39c12;"></i> क्रिएटर्स लोड नहीं हो पाए।
-    </div>`;
+    console.error('Top creators error:', err);
+    if (grid) {
+      grid.innerHTML = `<div style="padding:20px;color:#7a7a7a;font-size:0.85rem;text-align:center;width:100%;">
+        <i class="fas fa-triangle-exclamation" style="color:#f39c12;"></i> क्रिएटर्स लोड नहीं हो पाए।
+        <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="loadTopCreators()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+      </div>`;
+    }
   }
 }
 
 // ============================================================
-// ===== PROFILE =====
+// ===== PROFILE MODAL =====
 // ============================================================
-window.openProfile = async function (userId) {
+window.openProfile = async function(userId) {
   try {
     window._currentProfileId = userId;
-    const res = await fetch(`\( {API_URL}/users/ \){userId}`);
+    
+    const res = await fetch(`${API_URL}/users/${userId}`);
     if (!res.ok) throw new Error('User not found');
     const user = await res.json();
 
-    const presetsRes = await fetch(`\( {API_URL}/users/ \){userId}/presets`);
+    const presetsRes = await fetch(`${API_URL}/users/${userId}/presets`);
     const userPresets = presetsRes.ok ? await presetsRes.json() : [];
+
     const isFollowing = currentUser ? (user.followers || []).includes(currentUser.id) : false;
 
     const modal = document.createElement('div');
@@ -1204,64 +1631,85 @@ window.openProfile = async function (userId) {
       <div class="modal" style="max-width:650px;padding:28px;">
         <button class="close">&times;</button>
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
-          <div style="width:64px;height:64px;border-radius:50%;background:#d4a373;display:flex;align-items:center;justify-content:center;font-size:1.6rem;color:#fff;\( {user.avatar ? `background-image:url( \){user.avatar});background-size:cover;` : ''}">
+          <div style="width:64px;height:64px;border-radius:50%;background:#d4a373;display:flex;align-items:center;justify-content:center;font-size:1.6rem;color:#fff;${user.avatar ? `background-image:url(${user.avatar});background-size:cover;` : ''}">
             ${!user.avatar ? user.name.charAt(0).toUpperCase() : ''}
           </div>
           <div>
-            <h2 style="font-size:1.2rem;">${user.name}</h2>
-            <div style="color:#6b6b6b;font-size:0.85rem;">@${user.username || ''}</div>
-            <div style="margin-top:2px;font-size:0.85rem;">${user.bio || 'कोई बायो नहीं'}</div>
-            <div style="display:flex;gap:12px;margin-top:6px;font-size:0.8rem;">
+            <h2 style="font-size:1.2rem;color:var(--text, #1e1e1e);">${user.name}</h2>
+            <div style="color:#6b6b6b;font-size:0.85rem;">@${user.username || user.email?.split('@')[0] || ''}</div>
+            <div style="margin-top:2px;font-size:0.85rem;color:var(--text, #1e1e1e);">${user.bio || 'कोई बायो नहीं'}</div>
+            <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap;font-size:0.8rem;">
               <span><strong>${user.totalPresets || 0}</strong> प्रीसेट</span>
               <span><strong>${user.totalDownloads || 0}</strong> डाउनलोड</span>
               <span><strong><i class="fas fa-users"></i> ${user.followers || 0}</strong></span>
+              <span><strong><i class="fas fa-user-plus"></i> ${user.following || 0}</strong></span>
             </div>
           </div>
-          <div style="margin-left:auto;display:flex;gap:8px;">
+          <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
             ${currentUser && currentUser.id !== userId ? `
-              <button class="btn ${isFollowing ? 'btn-outline' : 'btn-primary'}" id="followBtn">
+              <button class="btn ${isFollowing ? 'btn-outline' : 'btn-primary'}" id="followBtn" style="font-size:0.8rem;padding:6px 14px;">
                 ${isFollowing ? '<i class="fas fa-user-minus"></i> अनफॉलो' : '<i class="fas fa-user-plus"></i> फॉलो'}
               </button>
             ` : ''}
             ${currentUser && currentUser.id === userId ? `
-              <button class="btn btn-outline" onclick="window.openEditProfile()"><i class="fas fa-edit"></i> एडिट</button>
-              <button class="btn btn-outline" onclick="window.openChangePassword()"><i class="fas fa-key"></i> पासवर्ड</button>
+              <button class="btn btn-outline" onclick="window.openEditProfile()" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-edit"></i> एडिट</button>
+              <button class="btn btn-outline" onclick="window.openChangePassword()" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-key"></i> पासवर्ड</button>
             ` : ''}
           </div>
         </div>
-        <h3><i class="fas fa-cubes"></i> प्रीसेट</h3>
+        ${user.socialLinks && Object.values(user.socialLinks).some(v => v) ? `
+          <div style="margin-bottom:12px;display:flex;gap:10px;">
+            ${user.socialLinks.instagram ? `<a href="${user.socialLinks.instagram}" target="_blank" style="color:#d4a373;"><i class="fab fa-instagram fa-lg"></i></a>` : ''}
+            ${user.socialLinks.youtube ? `<a href="${user.socialLinks.youtube}" target="_blank" style="color:#d4a373;"><i class="fab fa-youtube fa-lg"></i></a>` : ''}
+            ${user.socialLinks.twitter ? `<a href="${user.socialLinks.twitter}" target="_blank" style="color:#d4a373;"><i class="fab fa-twitter fa-lg"></i></a>` : ''}
+            ${user.socialLinks.website ? `<a href="${user.socialLinks.website}" target="_blank" style="color:#d4a373;"><i class="fas fa-globe fa-lg"></i></a>` : ''}
+          </div>
+        ` : ''}
+        <h3 style="font-size:1rem;color:var(--text, #1e1e1e);"><i class="fas fa-cubes"></i> प्रीसेट</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:8px;">
-          ${userPresets.length === 0
-            ? '<p style="grid-column:1/-1;color:#888;">अभी कोई प्रीसेट नहीं</p>'
-            : userPresets.map(p => `
-              <div style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;cursor:pointer;" onclick="window.openPresetModal('${p.id}')">
-                <strong style="font-size:0.85rem;">${p.name}</strong>
+          ${userPresets.length === 0 ? '<p style="grid-column:1/-1;color:#888;font-size:0.9rem;">अभी कोई प्रीसेट नहीं</p>' : 
+            userPresets.map(p => `
+              <div style="background:var(--bg, #f8f6f2);padding:12px;border-radius:10px;cursor:pointer;" onclick="window.openPresetModal('${p.id}')">
+                <strong style="font-size:0.85rem;color:var(--text, #1e1e1e);">${p.name}</strong>
                 <div style="font-size:0.75rem;color:#6b6b6b;">${p.category} • ${p.downloads || 0} डाउनलोड</div>
               </div>
-            `).join('')}
+            `).join('')
+          }
         </div>
       </div>
     `;
     document.body.appendChild(modal);
+
     modal.querySelector('.close').addEventListener('click', () => modal.remove());
 
     const followBtn = modal.querySelector('#followBtn');
     if (followBtn) {
       followBtn.addEventListener('click', async () => {
+        if (!currentUser) {
+          showToast('कृपया लॉग इन करें', 'warning');
+          return;
+        }
         await toggleFollow(userId);
       });
     }
   } catch (err) {
+    console.error(err);
     showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
   }
 };
-
+// ============================================================
+// ===== FOLLOW / UNFOLLOW =====
+// ============================================================
 async function toggleFollow(userId) {
-  const url = `\( {API_URL}/users/ \){userId}/follow`;
-  const options = { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } };
+  const url = `${API_URL}/users/${userId}/follow`;
+  const options = {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }
+  };
   try {
     if (!navigator.onLine) {
       await addToQueue('follow', url, options);
+      showToast('⏳ Follow action queued.', 'info');
       return;
     }
     const res = await fetch(url, options);
@@ -1269,30 +1717,117 @@ async function toggleFollow(userId) {
       const data = await res.json();
       showToast(data.following ? '✅ फॉलो कर लिया!' : '❌ अनफॉलो कर दिया', 'info');
       const modal = document.querySelector('.modal-overlay.active');
-      if (modal && window._currentProfileId) {
-        modal.remove();
-        window.openProfile(window._currentProfileId);
+      if (modal) {
+        const currentProfileId = window._currentProfileId;
+        if (currentProfileId) {
+          modal.remove();
+          window.openProfile(currentProfileId);
+        }
       }
+      await fetchNotifications();
+    } else {
+      showToast('कृपया बाद में प्रयास करें', 'error');
     }
   } catch (err) {
     await addToQueue('follow', url, options);
   }
 }
 
+
 // ============================================================
-// ===== EDIT PROFILE (FIXED) =====
+// ===== CHANGE PASSWORD =====
 // ============================================================
-window.openEditProfile = async function () {
+window.openChangePassword = async function() {
   if (!currentUser) {
     showToast('कृपया लॉग इन करें', 'warning');
     return;
   }
-
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:450px;padding:28px;">
+      <button class="close">&times;</button>
+      <h2 style="font-size:1.2rem;"><i class="fas fa-key"></i> पासवर्ड बदलें</h2>
+      <form id="changePasswordForm">
+        <div class="form-group">
+          <label style="font-size:0.85rem;">मौजूदा पासवर्ड</label>
+          <input type="password" id="currentPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">नया पासवर्ड (6+ अक्षर, एक नंबर, एक बड़ा अक्षर)</label>
+          <input type="password" id="newPassword" required minlength="6" style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">नया पासवर्ड दोबारा</label>
+          <input type="password" id="confirmPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;margin-top:8px;">
+          <i class="fas fa-save"></i> पासवर्ड बदलें
+        </button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  
+  modal.querySelector('#changePasswordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (newPassword !== confirmPassword) {
+      showToast('नए पासवर्ड मेल नहीं खाते', 'error');
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      showToast('पासवर्ड कम से कम 6 अक्षर का होना चाहिए', 'error');
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${API_URL}/auth/change-password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        showToast('✅ पासवर्ड बदल गया!', 'success');
+        modal.remove();
+      } else {
+        showToast(data.error || 'पासवर्ड बदलने में विफल', 'error');
+      }
+    } catch (err) {
+      showToast('❌ सर्वर से कनेक्ट नहीं हो पाया', 'error');
+    }
+  });
+};
+// ===== EDIT PROFILE =====
+// ============================================================
+window.openEditProfile = async function() {
+  if (!currentUser) {
+    showToast('कृपया लॉग इन करें', 'warning');
+    return;
+  }
   try {
-    const res = await fetch(`${API_URL}/users/me`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('Profile not found');
+    // LINE ~1815 - Find this block
+const res = await fetch(`${API_URL}/auth/profile`, {
+  method: 'PUT',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify(payload)
+});   
+if (!res.ok) throw new Error('Profile not found');
     const user = await res.json();
 
     const modal = document.createElement('div');
@@ -1300,49 +1835,65 @@ window.openEditProfile = async function () {
     modal.innerHTML = `
       <div class="modal" style="max-width:500px;padding:28px;">
         <button class="close">&times;</button>
-        <h2><i class="fas fa-edit"></i> प्रोफ़ाइल एडिट करें</h2>
-        <form id="editProfileForm">
+        <h2 style="font-size:1.3rem;"><i class="fas fa-edit"></i> प्रोफ़ाइल एडिट करें</h2>
+        <form id="editProfileForm" enctype="multipart/form-data">
           <div class="form-group">
-            <label>अवतार</label>
-            <div style="display:flex;align-items:center;gap:12px;">
-              <img id="avatarPreview" src="\( {user.avatar || ''}" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #d4a373; \){user.avatar ? '' : 'display:none;'}">
-              <input type="file" id="avatarFile" accept="image/*" />
+            <label style="font-size:0.85rem;">अवतार</label>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <img id="avatarPreview" src="${user.avatar || ''}" alt="Avatar" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #d4a373;${user.avatar ? '' : 'display:none;'}">
+              <div>
+                <input type="file" id="avatarFile" accept="image/*" style="padding:6px;border:1px solid var(--border,#ddd);border-radius:8px;font-size:0.85rem;width:100%;" />
+                <div style="font-size:0.7rem;color:#888;margin-top:2px;">Max 5MB, JPG/PNG/GIF/WEBP</div>
+              </div>
             </div>
           </div>
           <div class="form-group">
-            <label>नाम</label>
-            <input type="text" id="editName" value="${user.name || ''}" required />
+            <label style="font-size:0.85rem;">नाम</label>
+            <input type="text" id="editName" value="${user.name || ''}" required style="padding:8px 12px;font-size:0.9rem;" />
           </div>
           <div class="form-group">
-            <label>यूज़रनेम</label>
-            <input type="text" id="editUsername" value="${user.username || ''}" />
+            <label style="font-size:0.85rem;">यूज़रनेम</label>
+            <input type="text" id="editUsername" value="${user.username || ''}" style="padding:8px 12px;font-size:0.9rem;" />
           </div>
           <div class="form-group">
-            <label>बायो</label>
-            <textarea id="editBio" rows="3">${user.bio || ''}</textarea>
+            <label style="font-size:0.85rem;">बायो</label>
+            <textarea id="editBio" rows="3" style="padding:8px 12px;font-size:0.9rem;min-height:60px;">${user.bio || ''}</textarea>
           </div>
-          <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px;">
-            <h4><i class="fas fa-share-alt"></i> सोशल लिंक्स</h4>
-            <div class="form-group"><label>Instagram</label><input type="text" id="editInstagram" value="${user.socialLinks?.instagram || ''}" /></div>
-            <div class="form-group"><label>YouTube</label><input type="text" id="editYoutube" value="${user.socialLinks?.youtube || ''}" /></div>
-            <div class="form-group"><label>Twitter</label><input type="text" id="editTwitter" value="${user.socialLinks?.twitter || ''}" /></div>
-            <div class="form-group"><label>Website</label><input type="text" id="editWebsite" value="${user.socialLinks?.website || ''}" /></div>
+          <div style="border-top:1px solid var(--border, #eee);padding-top:10px;margin-top:10px;">
+            <h4 style="font-size:0.95rem;"><i class="fas fa-share-alt"></i> सोशल लिंक्स</h4>
+            <div class="form-group">
+              <label style="font-size:0.8rem;"><i class="fab fa-instagram"></i> Instagram</label>
+              <input type="text" id="editInstagram" value="${user.socialLinks?.instagram || ''}" style="padding:8px 12px;font-size:0.9rem;" />
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.8rem;"><i class="fab fa-youtube"></i> YouTube</label>
+              <input type="text" id="editYoutube" value="${user.socialLinks?.youtube || ''}" style="padding:8px 12px;font-size:0.9rem;" />
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.8rem;"><i class="fab fa-twitter"></i> Twitter</label>
+              <input type="text" id="editTwitter" value="${user.socialLinks?.twitter || ''}" style="padding:8px 12px;font-size:0.9rem;" />
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.8rem;"><i class="fas fa-globe"></i> Website</label>
+              <input type="text" id="editWebsite" value="${user.socialLinks?.website || ''}" style="padding:8px 12px;font-size:0.9rem;" />
+            </div>
           </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fas fa-save"></i> सहेजें</button>
+          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;"><i class="fas fa-save"></i> सहेजें</button>
         </form>
       </div>
     `;
     document.body.appendChild(modal);
+
     modal.querySelector('.close').addEventListener('click', () => modal.remove());
 
     const avatarFileInput = modal.querySelector('#avatarFile');
     const avatarPreview = modal.querySelector('#avatarPreview');
-    avatarFileInput.addEventListener('change', function (e) {
+    avatarFileInput.addEventListener('change', function(e) {
       const file = e.target.files[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = (ev) => {
-          avatarPreview.src = ev.target.result;
+        reader.onload = function(event) {
+          avatarPreview.src = event.target.result;
           avatarPreview.style.display = 'block';
         };
         reader.readAsDataURL(file);
@@ -1351,32 +1902,32 @@ window.openEditProfile = async function () {
 
     modal.querySelector('#editProfileForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-
-      // Avatar upload first
-      const avatarFile = avatarFileInput.files[0];
-      if (avatarFile) {
-        const formData = new FormData();
-        formData.append('avatar', avatarFile);
-        try {
-          const avatarRes = await fetch(`${API_URL}/users/me/avatar`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${token}` },
-            body: formData
-          });
-          if (!avatarRes.ok) {
-            const err = await avatarRes.json();
-            showToast('Avatar upload failed: ' + (err.error || 'unknown'), 'error');
-            return;
-          }
-          const avatarData = await avatarRes.json();
-          currentUser.avatar = avatarData.avatar;
-        } catch (err) {
-          showToast('Avatar upload error', 'error');
-          return;
-        }
-      }
-
-      const payload = {
+      
+      const avatarFile = modal.querySelector('#avatarFile').files[0];
+   // LINE ~1895 - Find this block
+if (avatarFile) {
+  const formData = new FormData();
+  formData.append('avatar', avatarFile);
+  try {
+    const avatarRes = await fetch(`${API_URL}/auth/me/avatar`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    if (!avatarRes.ok) {
+      const err = await avatarRes.json();
+      showToast('Avatar upload failed: ' + (err.error || 'unknown'), 'error');
+      return;
+    }
+    const avatarData = await avatarRes.json();
+    currentUser.avatar = avatarData.avatar;
+    showLoggedInUI(currentUser);
+  } catch (err) {
+    showToast('Avatar upload error', 'error');
+    return;
+  }
+}
+const payload = {
         name: document.getElementById('editName').value,
         username: document.getElementById('editUsername').value,
         bio: document.getElementById('editBio').value,
@@ -1384,10 +1935,9 @@ window.openEditProfile = async function () {
           instagram: document.getElementById('editInstagram').value,
           youtube: document.getElementById('editYoutube').value,
           twitter: document.getElementById('editTwitter').value,
-          website: document.getElementById('editWebsite').value
+          website: document.getElementById('editWebsite').value,
         }
       };
-
       try {
         const res = await fetch(`${API_URL}/users/me`, {
           method: 'PUT',
@@ -1409,60 +1959,61 @@ window.openEditProfile = async function () {
           showToast(err.error || 'अपडेट विफल', 'error');
         }
       } catch (err) {
-        showToast('❌ Update failed', 'error');
+        showToast('❌ Update failed. Please check your connection.', 'error');
       }
     });
   } catch (err) {
+    console.error(err);
     showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
   }
 };
-
-// ============================================================
-// ===== CHANGE PASSWORD =====
-// ============================================================
-window.openChangePassword = function () {
+// Add after change-password function//
+window.openChangePassword = async function() {
   if (!currentUser) {
     showToast('कृपया लॉग इन करें', 'warning');
     return;
   }
-
+  
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `
     <div class="modal" style="max-width:450px;padding:28px;">
       <button class="close">&times;</button>
-      <h2><i class="fas fa-key"></i> पासवर्ड बदलें</h2>
+      <h2 style="font-size:1.2rem;"><i class="fas fa-key"></i> पासवर्ड बदलें</h2>
       <form id="changePasswordForm">
         <div class="form-group">
-          <label>मौजूदा पासवर्ड</label>
-          <input type="password" id="currentPassword" required />
+          <label style="font-size:0.85rem;">मौजूदा पासवर्ड</label>
+          <input type="password" id="currentPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;" />
         </div>
         <div class="form-group">
-          <label>नया पासवर्ड</label>
-          <input type="password" id="newPassword" required minlength="6" />
+          <label style="font-size:0.85rem;">नया पासवर्ड (6+ अक्षर, एक नंबर, एक बड़ा अक्षर)</label>
+          <input type="password" id="newPassword" required minlength="6" style="padding:8px 12px;font-size:0.9rem;width:100%;" />
         </div>
         <div class="form-group">
-          <label>नया पासवर्ड दोबारा</label>
-          <input type="password" id="confirmPassword" required />
+          <label style="font-size:0.85rem;">नया पासवर्ड दोबारा</label>
+          <input type="password" id="confirmPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;" />
         </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fas fa-save"></i> पासवर्ड बदलें</button>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;">
+          <i class="fas fa-save"></i> पासवर्ड बदलें
+        </button>
       </form>
     </div>
   `;
   document.body.appendChild(modal);
+  
   modal.querySelector('.close').addEventListener('click', () => modal.remove());
-
+  
   modal.querySelector('#changePasswordForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const currentPassword = document.getElementById('currentPassword').value;
     const newPassword = document.getElementById('newPassword').value;
     const confirmPassword = document.getElementById('confirmPassword').value;
-
+    
     if (newPassword !== confirmPassword) {
       showToast('नए पासवर्ड मेल नहीं खाते', 'error');
       return;
     }
-
+    
     try {
       const res = await fetch(`${API_URL}/auth/change-password`, {
         method: 'PUT',
@@ -1472,6 +2023,7 @@ window.openChangePassword = function () {
         },
         body: JSON.stringify({ currentPassword, newPassword })
       });
+      
       const data = await res.json();
       if (res.ok) {
         showToast('✅ पासवर्ड बदल गया!', 'success');
@@ -1484,88 +2036,8 @@ window.openChangePassword = function () {
     }
   });
 };
-
 // ============================================================
-// ===== MY PRESETS / DOWNLOADS =====
-// ============================================================
-window.showMyPresets = async function () {
-  if (!currentUser) {
-    showToast('कृपया पहले लॉग इन करें', 'warning');
-    return;
-  }
-  try {
-    const res = await fetch(`\( {API_URL}/users/ \){currentUser.id}/presets`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('Failed');
-    const presets = await res.json();
-    if (!presets.length) {
-      showToast('आपने अभी तक कोई प्रीसेट अपलोड नहीं किया।', 'info');
-      return;
-    }
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:600px;">
-        <button class="close">&times;</button>
-        <h2><i class="fas fa-cubes"></i> मेरे प्रीसेट</h2>
-        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
-          ${presets.map(p => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg,#f8f6f2);border-radius:12px;">
-              <div><strong>${p.name}</strong> – \( {p.category} <span style="font-size:0.8rem;color:#888;">( \){p.status})</span></div>
-              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    modal.querySelector('.close').addEventListener('click', () => modal.remove());
-  } catch (err) {
-    showToast('प्रीसेट लोड नहीं हुए', 'error');
-  }
-};
-
-window.showMyDownloads = async function () {
-  if (!currentUser) {
-    showToast('कृपया पहले लॉग इन करें', 'warning');
-    return;
-  }
-  try {
-    const res = await fetch(`${API_URL}/users/me/downloads`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('Failed');
-    const presets = await res.json();
-    if (!presets.length) {
-      showToast('आपने अभी तक कोई प्रीसेट डाउनलोड नहीं किया।', 'info');
-      return;
-    }
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:600px;">
-        <button class="close">&times;</button>
-        <h2><i class="fas fa-download"></i> मेरे डाउनलोड</h2>
-        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
-          ${presets.map(p => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg,#f8f6f2);border-radius:12px;">
-              <div><strong>${p.name}</strong> – ${p.author}</div>
-              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    modal.querySelector('.close').addEventListener('click', () => modal.remove());
-  } catch (err) {
-    showToast('डाउनलोड लोड नहीं हुए', 'error');
-  }
-};
-
-// ============================================================
-// ===== SUBSCRIPTION / REFERRAL / NOTIFICATIONS =====
+// ===== SUBSCRIPTION & REFERRAL =====
 // ============================================================
 async function fetchSubscription() {
   if (!token) return;
@@ -1577,7 +2049,7 @@ async function fetchSubscription() {
       subscriptionData = await res.json();
       updateSubscriptionUI();
     }
-  } catch (err) {}
+  } catch (err) { console.error(err); }
 }
 
 function updateSubscriptionUI() {
@@ -1590,21 +2062,23 @@ function updateSubscriptionUI() {
 
 async function adWatched() {
   try {
-    const res = await fetch(`${API_URL}/users/ads/watched`, {
+    const res = await fetch(`${API_URL}/ads/watched`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (res.ok) {
       const data = await res.json();
-      showToast(`✅ Ad watched! (${data.adWatchCount} total)`, 'success');
+      showToast(`✅ Ad watched! (${data.adWatchCount} total, ${data.daysEarned} days earned)`, 'success');
       await fetchSubscription();
     }
-  } catch (err) {}
+  } catch (err) {
+    showToast('Failed to register ad watch', 'error');
+  }
 }
 
 async function generateReferral() {
   try {
-    const res = await fetch(`${API_URL}/users/referrals/generate`, {
+    const res = await fetch(`${API_URL}/referrals/generate`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -1620,17 +2094,18 @@ async function generateReferral() {
 
 function showReferral() {
   const code = subscriptionData.referralCode || 'Generate';
-  const link = `\( {window.location.origin}/?ref= \){code}`;
+  const link = `${window.location.origin}/?ref=${code}`;
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `
     <div class="modal" style="max-width:380px;padding:24px;">
       <button class="close">&times;</button>
-      <h2><i class="fas fa-link"></i> Referral Program</h2>
-      <p>Share your code: <strong>${code}</strong></p>
-      <p style="font-size:0.85rem;">Link: <a href="\( {link}" target="_blank" style="color:#d4a373;word-break:break-all;"> \){link}</a></p>
+      <h2 style="font-size:1.2rem;"><i class="fas fa-link"></i> Referral Program</h2>
+      <p style="font-size:0.9rem;">Share your code: <strong>${code}</strong></p>
+      <p style="font-size:0.85rem;">Link: <a href="${link}" target="_blank" style="color:#d4a373;word-break:break-all;">${link}</a></p>
       <p style="font-size:0.85rem;">You have referred ${subscriptionData.referralCount || 0} users.</p>
-      <button class="btn btn-primary" onclick="generateReferral()"><i class="fas fa-sync"></i> Generate Code</button>
+      <p style="font-size:0.85rem;">Earn 28 days free for every 10 referrals!</p>
+      <button class="btn btn-primary" onclick="generateReferral()" style="font-size:0.85rem;padding:8px 16px;"><i class="fas fa-sync"></i> Generate Code</button>
     </div>
   `;
   document.body.appendChild(modal);
@@ -1638,6 +2113,9 @@ function showReferral() {
 }
 window.showReferral = showReferral;
 
+// ============================================================
+// ===== NOTIFICATIONS =====
+// ============================================================
 async function fetchNotifications() {
   if (!token) return;
   try {
@@ -1648,15 +2126,19 @@ async function fetchNotifications() {
       notifications = await res.json();
       updateNotificationUI();
     }
-  } catch (err) {}
+  } catch (err) { console.error(err); }
 }
 
 function updateNotificationUI() {
   const badge = document.getElementById('notifBadge');
   const unread = notifications.filter(n => !n.read).length;
   if (badge) {
-    badge.style.display = unread > 0 ? 'inline' : 'none';
-    badge.textContent = unread;
+    if (unread > 0) {
+      badge.style.display = 'inline';
+      badge.textContent = unread;
+    } else {
+      badge.style.display = 'none';
+    }
   }
 }
 
@@ -1666,35 +2148,36 @@ function openNotifications() {
   modal.innerHTML = `
     <div class="modal" style="max-width:500px;padding:24px;">
       <button class="close">&times;</button>
-      <h2><i class="fas fa-bell"></i> Inbox</h2>
-      <div style="max-height:300px;overflow-y:auto;">
-        ${notifications.length === 0
-          ? '<p style="color:#888;">No notifications</p>'
-          : notifications.map(n => `
-            <div class="notif-item" data-id="\( {n.id}" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer; \){n.read ? '' : 'background:#fef9e7;'}">
+      <h2 style="font-size:1.2rem;"><i class="fas fa-bell"></i> Inbox</h2>
+      <div id="notifList" style="max-height:300px;overflow-y:auto;">
+        ${notifications.length === 0 ? '<p style="color:#888;font-size:0.9rem;">No notifications</p>' : 
+          notifications.map(n => `
+            <div class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" style="padding:10px 12px;border-bottom:1px solid var(--border,#eee);cursor:pointer;${n.read ? '' : 'background:#fef9e7;'}">
               <div style="font-size:0.9rem;">${n.message}</div>
               <div style="font-size:0.7rem;color:#888;">${new Date(n.createdAt).toLocaleString()}</div>
+              <a href="${n.link}" target="_blank" style="font-size:0.8rem;color:#d4a373;">View</a>
             </div>
-          `).join('')}
+          `).join('')
+        }
       </div>
-      <button class="btn btn-sm btn-primary" id="markAllRead" style="margin-top:10px;"><i class="fas fa-check-double"></i> Mark all as read</button>
+      <button class="btn btn-sm btn-primary" id="markAllRead" style="margin-top:10px;font-size:0.8rem;padding:6px 14px;"><i class="fas fa-check-double"></i> Mark all as read</button>
     </div>
   `;
   document.body.appendChild(modal);
   modal.querySelector('.close').addEventListener('click', () => modal.remove());
-
   modal.querySelector('#markAllRead').addEventListener('click', async () => {
-    await fetch(`${API_URL}/users/notifications/read-all`, {
+    await fetch(`${API_URL}/notifications/read-all`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     });
     await fetchNotifications();
     modal.remove();
+    openNotifications();
   });
-
   modal.querySelectorAll('.notif-item').forEach(item => {
     item.addEventListener('click', async () => {
-      await fetch(`\( {API_URL}/users/notifications/read/ \){item.dataset.id}`, {
+      const id = item.dataset.id;
+      await fetch(`${API_URL}/notifications/read/${id}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -1712,60 +2195,79 @@ function requestNotificationPermission() {
 // ============================================================
 // ===== EARNINGS =====
 // ============================================================
-window.showEarnings = async function () {
-  if (!currentUser) {
-    showToast('Please login', 'warning');
-    return;
-  }
+window.showEarnings = async function() {
+  if (!currentUser) { showToast('Please login', 'warning'); return; }
   try {
-    const res = await fetch(`\( {API_URL}/users/ \){currentUser.id}/earnings`, {
+    const res = await fetch(`${API_URL}/users/${currentUser.id}/earnings`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!res.ok) throw new Error('Failed');
+    if (!res.ok) throw new Error('Failed to fetch earnings');
     const data = await res.json();
-
     const modal = document.createElement('div');
     modal.className = 'modal-overlay active';
     modal.innerHTML = `
       <div class="modal" style="max-width:600px;padding:28px;">
         <button class="close">&times;</button>
-        <h2><i class="fas fa-rupee-sign"></i> My Earnings</h2>
+        <h2 style="font-size:1.2rem;"><i class="fas fa-rupee-sign"></i> My Earnings</h2>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0;">
-          <div style="background:var(--bg);padding:12px;border-radius:10px;text-align:center;">
-            <div style="font-size:1.4rem;font-weight:700;color:#d4a373;">${data.totalImpressions}</div>
-            <div style="font-size:0.75rem;">Impressions</div>
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
+            <div class="num" style="font-size:1.4rem;font-weight:700;color:#d4a373;">${data.totalImpressions}</div>
+            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Impressions</div>
           </div>
-          <div style="background:var(--bg);padding:12px;border-radius:10px;text-align:center;">
-            <div style="font-size:1.4rem;font-weight:700;color:#2a9d8f;">₹${data.totalRevenue.toFixed(2)}</div>
-            <div style="font-size:0.75rem;">Earnings</div>
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
+            <div class="num" style="font-size:1.4rem;font-weight:700;color:#2a9d8f;">₹${data.totalRevenue.toFixed(2)}</div>
+            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Earnings</div>
           </div>
-          <div style="background:var(--bg);padding:12px;border-radius:10px;text-align:center;">
-            <div style="font-size:1.4rem;font-weight:700;color:#3498db;">${data.totalDownloads}</div>
-            <div style="font-size:0.75rem;">Downloads</div>
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
+            <div class="num" style="font-size:1.4rem;font-weight:700;color:#3498db;">${data.totalDownloads}</div>
+            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Downloads</div>
           </div>
         </div>
-        <h3>Preset Performance</h3>
-        <div style="max-height:250px;overflow-y:auto;">
-          ${data.presets.length === 0
-            ? '<p style="color:#888;">No presets yet.</p>'
-            : data.presets.map(p => `
-              <div style="display:flex;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--border);">
-                <div><strong>${p.name}</strong></div>
-                <div style="font-size:0.75rem;">₹${p.revenue.toFixed(2)}</div>
+        <h3 style="font-size:0.95rem;margin:10px 0 6px;"><i class="fas fa-chart-bar"></i> Preset Performance</h3>
+        <div style="max-height:250px;overflow-y:auto;font-size:0.85rem;">
+          ${data.presets.length === 0 ? '<p style="color:#888;">No presets uploaded yet.</p>' :
+            data.presets.map(p => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border,#eee);flex-wrap:wrap;gap:4px;">
+                <div>
+                  <strong>${p.name}</strong>
+                  <span style="font-size:0.75rem;color:#888;">(${p.category})</span>
+                </div>
+                <div style="display:flex;gap:12px;font-size:0.75rem;">
+                  <span><i class="fas fa-eye"></i> ${p.impressions}</span>
+                  <span><i class="fas fa-download"></i> ${p.downloads}</span>
+                  <span style="color:#2a9d8f;font-weight:600;">₹${p.revenue.toFixed(2)}</span>
+                </div>
               </div>
-            `).join('')}
+            `).join('')
+          }
         </div>
+        ${data.canWithdraw ? `
+          <div style="margin-top:12px;padding:10px;background:#d4edda;border-radius:10px;color:#155724;font-size:0.85rem;">
+            ✅ You are eligible for withdrawal! (Min. ₹100)
+            <button class="btn btn-sm btn-primary" onclick="requestWithdrawal()" style="margin-left:10px;font-size:0.8rem;padding:5px 12px;"><i class="fas fa-hand-holding-usd"></i> Withdraw</button>
+          </div>
+        ` : `
+          <div style="margin-top:12px;padding:10px;background:#fff3cd;border-radius:10px;color:#856404;font-size:0.85rem;">
+            💡 Need ₹100+ to withdraw. Current: ₹${data.totalRevenue.toFixed(2)}
+          </div>
+        `}
+        ${data.withdrawalStatus ? `<div style="margin-top:6px;font-size:0.8rem;">📝 Status: ${data.withdrawalStatus}</div>` : ''}
       </div>
     `;
     document.body.appendChild(modal);
     modal.querySelector('.close').addEventListener('click', () => modal.remove());
   } catch (err) {
+    console.error(err);
     showToast('Failed to load earnings', 'error');
   }
 };
 
+window.requestWithdrawal = function() {
+  showToast('Please contact support@presethub.site for withdrawal requests.', 'info');
+};
+
 // ============================================================
-// ===== EXIT + URL ACTIONS =====
+// ===== EXIT BUTTON =====
 // ============================================================
 function exitSite() {
   if (confirm('Are you sure you want to leave PresetHub?')) {
@@ -1774,6 +2276,9 @@ function exitSite() {
   }
 }
 
+// ============================================================
+// ===== HANDLE URL ACTIONS =====
+// ============================================================
 function handleUrlAction() {
   const params = new URLSearchParams(window.location.search);
   const action = params.get('action');
@@ -1782,7 +2287,8 @@ function handleUrlAction() {
   setTimeout(() => {
     switch (action) {
       case 'search':
-        document.getElementById('searchInput')?.focus();
+        const si = document.getElementById('searchInput');
+        if (si) { si.focus(); si.scrollIntoView({ behavior: 'smooth' }); }
         break;
       case 'wishlist':
         showWishlist();
@@ -1799,8 +2305,10 @@ function handleUrlAction() {
         if (currentUser) openEditProfile();
         else showToast('Please login', 'warning');
         break;
+      default:
+        break;
     }
-    if (window.history?.replaceState) {
+    if (window.history && window.history.replaceState) {
       window.history.replaceState({}, document.title, '/');
     }
   }, 500);
@@ -1811,13 +2319,14 @@ function handleUrlAction() {
 // ============================================================
 function init() {
   initDOM();
+
   loadPresets();
   loadLatestPresets();
   loadTopCreators();
   handleUrlAction();
 
-  if (currentTheme === 'dark' && themeToggle) {
-    themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+  if (currentTheme === 'dark') {
+    if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
   }
 
   if (!navigator.onLine && offlineIndicator) {
@@ -1826,13 +2335,14 @@ function init() {
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js')
-      .then(() => console.log('✅ SW registered'))
+      .then(() => console.log('✅ SW registered with offline support'))
       .catch(err => console.error('❌ SW failed', err));
   }
 
-  console.log('🚀 PresetHub frontend loaded');
+  console.log('🚀 PresetHub frontend loaded with all features');
 }
 
+// Run init when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
