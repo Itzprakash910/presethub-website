@@ -9,81 +9,161 @@ let dbPromise = null;
 function migrateData(data) {
   let changed = false;
 
-  if (!data.users) data.users = [];
-  if (!data.presets) data.presets = [];
-  if (!data.downloads) data.downloads = [];
-  if (!data.orders) data.orders = [];
+  // Initialize missing collections
+  if (!data.users) { data.users = []; changed = true; }
+  if (!data.presets) { data.presets = []; changed = true; }
+  if (!data.downloads) { data.downloads = []; changed = true; }
+  if (!data.orders) { data.orders = []; changed = true; }
   if (!data.categories) {
     data.categories = ['सनसेट', 'ब्लैक & व्हाइट', 'नैचुरल', 'विंटेज', 'सिटीस्केप'];
     changed = true;
   }
 
+  // Migrate users
   data.users.forEach(user => {
     if (!user.subscription) {
-      user.subscription = { tier: 'free', expiry: null, adWatchCount: 0, adRewardDays: 0, lastAdWatch: null };
+      user.subscription = { 
+        tier: 'free', 
+        expiry: null, 
+        adWatchCount: 0, 
+        adRewardDays: 0, 
+        lastAdWatch: null 
+      };
       changed = true;
     }
     if (!user.referral) {
-      user.referral = { code: null, referredBy: null, referralCount: 0, referralRewardDays: 0 };
+      user.referral = { 
+        code: null, 
+        referredBy: null, 
+        referralCount: 0, 
+        referralRewardDays: 0 
+      };
       changed = true;
     }
     if (!user.notifications) {
       user.notifications = [];
       changed = true;
     }
-    if (!user.followers) user.followers = [];
-    if (!user.following) user.following = [];
-    if (!user.wishlist) user.wishlist = [];
-  });
-
-  data.presets.forEach(preset => {
-    if (preset.views === undefined) { preset.views = 0; changed = true; }
-    if (!preset.likes) { preset.likes = []; changed = true; }
-    if (preset.shares === undefined) { preset.shares = 0; changed = true; }
-    if (preset.adImpressions === undefined) { preset.adImpressions = 0; changed = true; }
-    if (preset.totalRevenue === undefined) { preset.totalRevenue = 0; changed = true; }
-    if (!preset.status) { preset.status = 'approved'; changed = true; }
-  });
-
-  // Remove duplicate telegram users (keep the latest one)
-  const seenTelegram = new Map();
-  const cleanedUsers = [];
-  for (const user of data.users) {
-    if (user.telegramId || (user.id && user.id.startsWith('tele_'))) {
-      const key = user.telegramId || user.id;
-      if (seenTelegram.has(key)) {
-        // Keep the one with more data / later lastActive
-        const existing = seenTelegram.get(key);
-        const existingTime = new Date(existing.lastActive || existing.createdAt || 0);
-        const currentTime = new Date(user.lastActive || user.createdAt || 0);
-        if (currentTime > existingTime) {
-          seenTelegram.set(key, user);
-        }
-      } else {
-        seenTelegram.set(key, user);
-      }
-    } else {
-      cleanedUsers.push(user);
+    if (!user.followers) { 
+      user.followers = []; 
+      changed = true; 
     }
-  }
-  // Add cleaned telegram users
-  for (const user of seenTelegram.values()) {
-    cleanedUsers.push(user);
-  }
-  if (cleanedUsers.length !== data.users.length) {
-    data.users = cleanedUsers;
-    changed = true;
-    console.log('✅ Cleaned duplicate Telegram users');
+    if (!user.following) { 
+      user.following = []; 
+      changed = true; 
+    }
+    if (!user.wishlist) { 
+      user.wishlist = []; 
+      changed = true; 
+    }
+    if (!user.socialLinks) {
+      user.socialLinks = { 
+        instagram: '', 
+        youtube: '', 
+        twitter: '', 
+        website: '' 
+      };
+      changed = true;
+    }
+    if (user.verified === undefined) {
+      user.verified = true;
+      changed = true;
+    }
+  });
+
+  // Migrate presets
+  data.presets.forEach(preset => {
+    if (preset.views === undefined) { 
+      preset.views = 0; 
+      changed = true; 
+    }
+    if (!preset.likes) { 
+      preset.likes = []; 
+      changed = true; 
+    }
+    if (preset.shares === undefined) { 
+      preset.shares = 0; 
+      changed = true; 
+    }
+    if (preset.adImpressions === undefined) { 
+      preset.adImpressions = 0; 
+      changed = true; 
+    }
+    if (preset.totalRevenue === undefined) { 
+      preset.totalRevenue = 0; 
+      changed = true; 
+    }
+    if (!preset.status) { 
+      preset.status = 'pending';  // ✅ FIXED: Needs admin approval
+      changed = true; 
+    }
+    if (!preset.reviews) { 
+      preset.reviews = []; 
+      changed = true; 
+    }
+    if (!preset.tags) { 
+      preset.tags = []; 
+      changed = true; 
+    }
+  });
+
+  // Migrate orders
+  if (data.orders) {
+    data.orders.forEach(order => {
+      if (!order.status) {
+        order.status = 'created';
+        changed = true;
+      }
+      if (!order.createdAt) {
+        order.createdAt = new Date().toISOString();
+        changed = true;
+      }
+    });
   }
 
+  // Migrate downloads
+  if (data.downloads) {
+    data.downloads.forEach(download => {
+      if (!download.downloadedAt) {
+        download.downloadedAt = new Date().toISOString();
+        changed = true;
+      }
+    });
+  }
+
+  // ✅ FIXED: Save changes if any
   if (changed) {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-    console.log('✅ Database migrated / cleaned');
+    try {
+      fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+      console.log('✅ Database migrated successfully');
+    } catch (err) {
+      console.error('❌ Failed to save migrated data:', err);
+    }
   }
 }
 
+// ===== LOAD DATA =====
 function loadData() {
-  if (!fs.existsSync(DB_PATH)) {
+  try {
+    if (!fs.existsSync(DB_PATH)) {
+      // Create new database
+      dbData = {
+        users: [],
+        presets: [],
+        downloads: [],
+        orders: [],
+        categories: ['सनसेट', 'ब्लैक & व्हाइट', 'नैचुरल', 'विंटेज', 'सिटीस्केप']
+      };
+      fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2));
+      console.log('✅ New database created');
+    } else {
+      const content = fs.readFileSync(DB_PATH, 'utf8');
+      dbData = JSON.parse(content);
+      migrateData(dbData);
+    }
+  } catch (err) {
+    console.error('❌ Error loading database:', err);
+    // Fallback to empty database
     dbData = {
       users: [],
       presets: [],
@@ -91,63 +171,97 @@ function loadData() {
       orders: [],
       categories: ['सनसेट', 'ब्लैक & व्हाइट', 'नैचुरल', 'विंटेज', 'सिटीस्केप']
     };
-    fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2));
-  } else {
-    const content = fs.readFileSync(DB_PATH, 'utf8');
-    dbData = JSON.parse(content);
-    migrateData(dbData);
   }
 }
 
+// ===== SAVE DATA =====
 function saveData() {
-  fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2));
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2));
+  } catch (err) {
+    console.error('❌ Error saving database:', err);
+    throw err;
+  }
 }
 
+// ===== GET DB INSTANCE =====
 async function getDB() {
   if (!dbPromise) {
     dbPromise = (async () => {
       loadData();
       return {
         data: dbData,
-        write: async () => { saveData(); },
-        read: () => { loadData(); }
+        write: async () => { 
+          saveData(); 
+        },
+        read: () => { 
+          loadData(); 
+        }
       };
     })();
   }
   return dbPromise;
 }
 
-// Initialize admin if not exists
+// ===== INITIALIZE ADMIN =====
 async function initAdmin() {
-  const db = await getDB();
-  const adminExists = db.data.users.find(u => u.email === 'admin@presethub.com');
-  if (!adminExists) {
-    const bcrypt = require('bcryptjs');
-    const hashed = await bcrypt.hash('admin123', 10);
-    db.data.users.push({
-      id: 'admin1',
-      email: 'admin@presethub.com',
-      password: hashed,
-      name: 'Admin',
-      username: 'admin',
-      role: 'admin',
-      createdAt: new Date().toISOString(),
-      verified: true,
-      bio: 'Platform administrator',
-      avatar: '',
-      socialLinks: { instagram: '', youtube: '', twitter: '', website: '' },
-      followers: [],
-      following: [],
-      wishlist: [],
-      subscription: { tier: 'free', expiry: null, adWatchCount: 0, adRewardDays: 0, lastAdWatch: null },
-      referral: { code: null, referredBy: null, referralCount: 0, referralRewardDays: 0 },
-      notifications: []
-    });
-    await db.write();
-    console.log('✅ Admin user created');
+  try {
+    const db = await getDB();
+    const adminExists = db.data.users.find(u => u.email === 'admin@presethub.com');
+    
+    if (!adminExists) {
+      const bcrypt = require('bcryptjs');
+      const hashed = await bcrypt.hash('admin123', 10);
+      
+      const adminUser = {
+        id: 'admin_' + Date.now(),
+        email: 'admin@presethub.com',
+        password: hashed,
+        name: 'Admin',
+        username: 'admin',
+        role: 'admin',
+        createdAt: new Date().toISOString(),
+        verified: true,
+        bio: 'Platform administrator',
+        avatar: '',
+        socialLinks: { 
+          instagram: '', 
+          youtube: '', 
+          twitter: '', 
+          website: '' 
+        },
+        followers: [],
+        following: [],
+        wishlist: [],
+        subscription: { 
+          tier: 'free', 
+          expiry: null, 
+          adWatchCount: 0, 
+          adRewardDays: 0, 
+          lastAdWatch: null 
+        },
+        referral: { 
+          code: null, 
+          referredBy: null, 
+          referralCount: 0, 
+          referralRewardDays: 0 
+        },
+        notifications: []
+      };
+      
+      db.data.users.push(adminUser);
+      await db.write();
+      console.log('✅ Admin user created successfully');
+      console.log('📧 Email: admin@presethub.com');
+      console.log('🔑 Password: admin123');
+    }
+  } catch (err) {
+    console.error('❌ Error creating admin:', err);
   }
 }
 
+// ===== STARTUP =====
+// Initialize admin on startup
 initAdmin().catch(console.error);
 
 module.exports = { getDB };
