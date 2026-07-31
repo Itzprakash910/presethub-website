@@ -2,6 +2,7 @@
 // ===== CONFIGURATION =====
 // ============================================================
 const API_URL = window.location.origin + '/api';
+const APP_VERSION = '2.0.0';
 
 // ============================================================
 // ===== GLOBALS =====
@@ -17,6 +18,9 @@ let isOnline = navigator.onLine;
 let subscriptionData = {};
 let notifications = [];
 let viewedPresets = new Set();
+let isProcessing = false;
+let searchTimeout = null;
+let refreshInterval = null;
 
 // ============================================================
 // ===== DOM REFS =====
@@ -61,20 +65,35 @@ function initDOM() {
 }
 
 // ============================================================
-// ===== TOAST SYSTEM =====
+// ===== TOAST SYSTEM (Fixed XSS) =====
 // ============================================================
 function showToast(message, type = 'success') {
+  // Sanitize message to prevent XSS
+  const sanitizedMessage = String(message).replace(/[<>]/g, '');
+  
   let container = document.getElementById('toastContainer');
   if (!container) {
     container = document.createElement('div');
     container.id = 'toastContainer';
-    container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+    container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:350px;';
     document.body.appendChild(container);
   }
+  
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
-  toast.textContent = message;
+  toast.textContent = sanitizedMessage;
+  toast.style.cssText = `
+    padding:12px 16px;
+    border-radius:10px;
+    background:${type === 'success' ? '#2ecc71' : type === 'error' ? '#e74c3c' : type === 'warning' ? '#f39c12' : '#3498db'};
+    color:#fff;
+    font-size:0.9rem;
+    box-shadow:0 4px 12px rgba(0,0,0,0.15);
+    animation:slideIn 0.3s ease;
+    transition:all 0.3s ease;
+  `;
   container.appendChild(toast);
+  
   setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transform = 'translateX(100px)';
@@ -187,7 +206,7 @@ function attachEventListeners() {
     });
   }
 
-  // --- Search Input ---
+  // --- Search Input with Debouncing ---
   if (searchInput) {
     searchInput.addEventListener('keyup', (e) => {
       if (e.key === 'Enter') {
@@ -197,7 +216,6 @@ function attachEventListeners() {
       }
     });
 
-    let searchTimeout = null;
     searchInput.addEventListener('input', function() {
       const query = this.value.trim();
       if (query.length < 2) {
@@ -215,10 +233,11 @@ function attachEventListeners() {
                 searchSuggestions.style.display = 'none';
                 return;
               }
+              // Using textContent to prevent XSS
               searchSuggestions.innerHTML = suggestions.map(p => `
-                <div class="suggestion-item" data-id="${p.id}">
-                  <strong>${p.name}</strong> — ${p.author}
-                  <span style="font-size:0.8rem;color:#6b6b6b;">${p.category}</span>
+                <div class="suggestion-item" data-id="${p.id}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;">
+                  <strong>${escapeHTML(p.name)}</strong> — ${escapeHTML(p.author)}
+                  <span style="font-size:0.8rem;color:#6b6b6b;">${escapeHTML(p.category)}</span>
                 </div>
               `).join('');
               searchSuggestions.style.display = 'block';
@@ -273,7 +292,9 @@ function attachEventListeners() {
   // --- Load More Button ---
   if (loadMoreBtn) {
     loadMoreBtn.addEventListener('click', () => {
-      loadPresets(currentPage + 1, true);
+      if (!isProcessing) {
+        loadPresets(currentPage + 1, true);
+      }
     });
   }
 
@@ -342,6 +363,7 @@ function attachEventListeners() {
     isOnline = true;
     if (offlineIndicator) offlineIndicator.style.display = 'none';
     showToast('🔄 Connection restored! Syncing data...', 'info');
+    await syncOfflineQueue();
     if ('serviceWorker' in navigator) {
       try {
         const registration = await navigator.serviceWorker.ready;
@@ -362,15 +384,28 @@ function attachEventListeners() {
 }
 
 // ============================================================
+// ===== ESCAPE HTML (XSS Prevention) =====
+// ============================================================
+function escapeHTML(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ============================================================
 // ===== OFFLINE QUEUE UTILITY =====
 // ============================================================
 function openOfflineDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('PresetHubOffline', 1);
+    const request = indexedDB.open('PresetHubOffline', 2);
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains('queue')) {
         db.createObjectStore('queue', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('cache')) {
+        db.createObjectStore('cache', { keyPath: 'url' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -389,7 +424,8 @@ async function addToQueue(action, url, options = {}) {
       method: options.method || 'POST',
       headers: options.headers || {},
       body: options.body || null,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      retries: 0
     };
     await new Promise((resolve, reject) => {
       const request = store.add(item);
@@ -417,6 +453,64 @@ async function addToQueue(action, url, options = {}) {
   }
 }
 
+async function syncOfflineQueue() {
+  try {
+    const db = await openOfflineDB();
+    const tx = db.transaction('queue', 'readonly');
+    const store = tx.objectStore('queue');
+    const items = await new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    
+    if (items.length === 0) return;
+    
+    showToast(`🔄 Syncing ${items.length} offline actions...`, 'info');
+    
+    for (const item of items) {
+      try {
+        const options = {
+          method: item.method,
+          headers: item.headers || {},
+          body: item.body
+        };
+        if (item.headers && item.headers['Content-Type'] === 'application/json' && item.body) {
+          options.body = JSON.parse(item.body);
+        }
+        const res = await fetch(item.url, options);
+        if (res.ok) {
+          // Remove from queue on success
+          const deleteTx = db.transaction('queue', 'readwrite');
+          const deleteStore = deleteTx.objectStore('queue');
+          await new Promise((resolve, reject) => {
+            const request = deleteStore.delete(item.id);
+            request.onsuccess = resolve;
+            request.onerror = reject;
+          });
+          showToast(`✅ "${item.action}" synced successfully!`, 'success');
+        } else {
+          // Increment retries
+          item.retries = (item.retries || 0) + 1;
+          if (item.retries > 3) {
+            showToast(`❌ Failed to sync "${item.action}" after 3 attempts`, 'error');
+          }
+        }
+      } catch (err) {
+        console.error('Sync failed for item:', item, err);
+      }
+    }
+    
+    // Reload data after sync
+    await loadPresets();
+    await fetchWishlist();
+    await fetchNotifications();
+    
+  } catch (err) {
+    console.error('Sync error:', err);
+  }
+}
+
 // ============================================================
 // ===== SERVICE WORKER MESSAGE HANDLER =====
 // ============================================================
@@ -432,6 +526,7 @@ if ('serviceWorker' in navigator) {
       } else if (event.data.action === 'upload') {
         loadPresets();
         loadLatestPresets();
+        loadTopCreators();
       } else if (event.data.action === 'download' || event.data.action === 'follow' || event.data.action === 'order') {
         fetchUserProfile();
       }
@@ -454,7 +549,6 @@ if (token) {
   fetchUserProfile();
 }
 
-// LINE ~457
 async function fetchUserProfile() {
   try {
     const res = await fetch(`${API_URL}/auth/me`, {
@@ -469,6 +563,10 @@ async function fetchUserProfile() {
     }
   } catch (err) {
     console.error('Profile fetch error', err);
+    // Try to refresh token or logout
+    if (err.message.includes('401')) {
+      logout();
+    }
   }
 }
 
@@ -533,8 +631,8 @@ window.showMyPresets = async function() {
           ${presets.map(p => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
               <div>
-                <strong>${p.name}</strong> – ${p.category}
-                <span style="font-size:0.8rem;color:#888;">(${p.status})</span>
+                <strong>${escapeHTML(p.name)}</strong> – ${escapeHTML(p.category)}
+                <span style="font-size:0.8rem;color:#888;">(${escapeHTML(p.status)})</span>
               </div>
               <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
             </div>
@@ -578,7 +676,7 @@ window.showMyDownloads = async function() {
           ${presets.map(p => `
             <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
               <div>
-                <strong>${p.name}</strong> – ${p.author}
+                <strong>${escapeHTML(p.name)}</strong> – ${escapeHTML(p.author)}
               </div>
               <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
             </div>
@@ -602,7 +700,7 @@ function openAuthModal(mode) {
   modal.className = 'modal-overlay active';
   const urlParams = new URLSearchParams(window.location.search);
   const ref = urlParams.get('ref') || '';
-  const refInput = ref ? `<input type="hidden" id="authRef" value="${ref}" />` : '';
+  const refInput = ref ? `<input type="hidden" id="authRef" value="${escapeHTML(ref)}" />` : '';
   modal.innerHTML = `
     <div class="modal" style="max-width:450px;">
       <button class="close">&times;</button>
@@ -668,7 +766,6 @@ window.openAuthModal = openAuthModal;
 // ============================================================
 // ===== WISHLIST =====
 // ============================================================
-// LINE ~670
 async function fetchWishlist() {
   if (!currentUser) return;
   try {
@@ -682,7 +779,7 @@ async function fetchWishlist() {
     }
   } catch (err) { console.error(err); }
 }
-// LINE ~684
+
 async function toggleWishlist(presetId) {
   if (!currentUser) {
     showToast('कृपया पहले लॉग इन करें', 'warning');
@@ -757,8 +854,8 @@ async function showWishlist() {
         ${presets.map(p => `
           <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
             <div>
-              <strong>${p.name}</strong> – ${p.author}
-              <span style="margin-left:8px;font-size:0.8rem;color:#6b6b6b;">${p.category}</span>
+              <strong>${escapeHTML(p.name)}</strong> – ${escapeHTML(p.author)}
+              <span style="margin-left:8px;font-size:0.8rem;color:#6b6b6b;">${escapeHTML(p.category)}</span>
             </div>
             <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
           </div>
@@ -772,7 +869,7 @@ async function showWishlist() {
 window.showWishlist = showWishlist;
 
 // ============================================================
-// ===== PRESETS CRUD - FIXED SIZE =====
+// ===== PRESETS CRUD - FIXED XSS =====
 // ============================================================
 function renderPresetsToContainer(presets, container) {
   if (!container) return;
@@ -790,13 +887,13 @@ function renderPresetsToContainer(presets, container) {
       (p.previewImage.startsWith('http') ? p.previewImage : window.location.origin + p.previewImage) : 
       null;
     const previewImg = previewImageSrc ? 
-      `<img src="${previewImageSrc}" alt="${p.name}" style="width:100%;height:100%;object-fit:contain;background:#e8e0d6;" onerror="this.style.display='none'">` :
+      `<img src="${previewImageSrc}" alt="${escapeHTML(p.name)}" style="width:100%;height:100%;object-fit:contain;background:#e8e0d6;" onerror="this.style.display='none'">` :
       `<svg viewBox="0 0 270 180" style="background:#d9d0c4;width:100%;height:100%;">
         <rect x="30" y="20" width="70" height="60" rx="8" fill="#b8aa98" />
         <rect x="120" y="20" width="70" height="60" rx="8" fill="#c4b5a2" />
         <rect x="30" y="100" width="70" height="60" rx="8" fill="#a89682" />
         <rect x="120" y="100" width="70" height="60" rx="8" fill="#d4c5b2" />
-        <text x="50" y="165" font-family="Inter" font-weight="600" font-size="11" fill="#4a3f35"><i class="fas fa-camera"></i> ${p.name}</text>
+        <text x="50" y="165" font-family="Inter" font-weight="600" font-size="11" fill="#4a3f35"><i class="fas fa-camera"></i> ${escapeHTML(p.name)}</text>
       </svg>`;
     return `
       <div class="preset-card" data-id="${p.id}">
@@ -810,10 +907,10 @@ function renderPresetsToContainer(presets, container) {
           </div>
         </div>
         <div class="info" style="padding:12px 14px 14px;">
-          <span class="tag" style="font-size:0.6rem;">${p.category || 'General'}</span>
-          <h3 style="font-size:0.95rem;font-weight:700;margin:4px 0 2px;">${p.name}</h3>
+          <span class="tag" style="font-size:0.6rem;">${escapeHTML(p.category || 'General')}</span>
+          <h3 style="font-size:0.95rem;font-weight:700;margin:4px 0 2px;">${escapeHTML(p.name)}</h3>
           <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.75rem;" onclick="event.stopPropagation(); window.openProfile('${p.authorId}')">
-            ${p.author}
+            ${escapeHTML(p.author)}
             <span style="font-size:0.6rem;color:#888;margin-left:4px;"><i class="fas fa-users"></i> ${p.authorFollowers || 0}</span>
           </div>
           <div class="meta" style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border, #f0ebe3);padding-top:8px;margin-top:6px;">
@@ -836,6 +933,9 @@ function renderPresetsToContainer(presets, container) {
 // ===== LOAD PRESETS =====
 // ============================================================
 async function loadPresets(page = 1, append = false) {
+  if (isProcessing) return;
+  isProcessing = true;
+  
   try {
     const params = new URLSearchParams();
     const q = searchInput ? searchInput.value.trim() : '';
@@ -890,6 +990,7 @@ async function loadPresets(page = 1, append = false) {
           loadMoreBtn.style.display = 'none';
         }
       }
+      isProcessing = false;
       return;
     }
     
@@ -920,6 +1021,7 @@ async function loadPresets(page = 1, append = false) {
         currentPage = data.page || 1;
         renderPresetsToContainer(allPresets, presetGrid);
         showToast('📦 Showing cached presets (offline)', 'info');
+        isProcessing = false;
         return;
       }
       showToast('😕 No cached presets available offline.', 'error');
@@ -941,6 +1043,7 @@ async function loadPresets(page = 1, append = false) {
         </div>`;
       }
     }
+    isProcessing = false;
   }
 }
 
@@ -991,7 +1094,7 @@ async function loadLatestPresets() {
 }
 
 // ============================================================
-// ===== PRESET MODAL - FIXED REVIEWS =====
+// ===== PRESET MODAL - FIXED XSS =====
 // ============================================================
 async function openPresetModal(presetId) {
   try {
@@ -1030,20 +1133,20 @@ async function openPresetModal(presetId) {
         <button class="close">&times;</button>
         <div class="modal-grid">
           <div class="modal-preview">
-            ${previewImageSrc ? `<img src="${previewImageSrc}" alt="${preset.name}" style="width:100%;height:auto;border-radius:12px;" onerror="this.style.display='none'">` :
+            ${previewImageSrc ? `<img src="${previewImageSrc}" alt="${escapeHTML(preset.name)}" style="width:100%;height:auto;border-radius:12px;" onerror="this.style.display='none'">` :
               `<svg viewBox="0 0 300 200" style="width:100%;height:auto;background:#d9d0c4;border-radius:12px;">
                 <rect x="20" y="20" width="100" height="80" rx="8" fill="#b8aa98" />
                 <rect x="140" y="20" width="100" height="80" rx="8" fill="#c4b5a2" />
                 <rect x="20" y="120" width="100" height="60" rx="8" fill="#a89682" />
                 <rect x="140" y="120" width="100" height="60" rx="8" fill="#d4c5b2" />
-                <text x="80" y="185" font-family="Inter" font-weight="600" font-size="14" fill="#4a3f35"><i class="fas fa-camera"></i> ${preset.name}</text>
+                <text x="80" y="185" font-family="Inter" font-weight="600" font-size="14" fill="#4a3f35"><i class="fas fa-camera"></i> ${escapeHTML(preset.name)}</text>
               </svg>`
             }
           </div>
           <div class="modal-details">
-            <h2>${preset.name}</h2>
-            <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.9rem;" onclick="window.openProfile('${preset.authorId}')">by <strong>${preset.author}</strong></div>
-            <div class="desc" style="font-size:0.9rem;color:var(--text, #3a3a3a);margin:8px 0 14px;">${preset.description || 'कोई विवरण नहीं'}</div>
+            <h2>${escapeHTML(preset.name)}</h2>
+            <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.9rem;" onclick="window.openProfile('${preset.authorId}')">by <strong>${escapeHTML(preset.author)}</strong></div>
+            <div class="desc" style="font-size:0.9rem;color:var(--text, #3a3a3a);margin:8px 0 14px;">${escapeHTML(preset.description || 'कोई विवरण नहीं')}</div>
             <div class="price-lg ${isFree ? 'free' : ''}" style="font-size:1.4rem;">${isFree ? 'मुफ्त' : '₹' + preset.price}</div>
             <div class="actions" style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
               <button class="btn btn-primary download-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 20px;">
@@ -1064,7 +1167,7 @@ async function openPresetModal(presetId) {
               <span><i class="fas fa-eye"></i> ${preset.views || 0} views</span>
               <span><i class="fas fa-download"></i> ${preset.downloads || 0} downloads</span>
               <span><i class="fas fa-star" style="color:#f4a261;"></i> ${preset.avgRating ? preset.avgRating.toFixed(1) : '0'} (${preset.reviews?.length || 0})</span>
-              <span><i class="fas fa-tag"></i> ${preset.tags?.join(', ') || '—'}</span>
+              <span><i class="fas fa-tag"></i> ${preset.tags?.map(t => escapeHTML(t)).join(', ') || '—'}</span>
             </div>
             <div style="margin-top:16px;border-top:1px solid var(--border, #eee);padding-top:14px;">
               <h4 style="font-size:1rem;"><i class="fas fa-star" style="color:#f4a261;"></i> समीक्षाएँ (${preset.reviews?.length || 0})</h4>
@@ -1073,7 +1176,7 @@ async function openPresetModal(presetId) {
                   <div style="padding:8px 0;border-bottom:1px solid var(--border, #f0ebe3);">
                     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
                       <div>
-                        <strong style="font-size:0.85rem;">${r.userName}</strong> 
+                        <strong style="font-size:0.85rem;">${escapeHTML(r.userName)}</strong> 
                         <span style="color:#f4a261;font-size:0.8rem;">${'★'.repeat(r.rating)}</span>
                         <span style="color:#888;font-size:0.7rem;">${new Date(r.createdAt).toLocaleDateString()}</span>
                       </div>
@@ -1081,7 +1184,7 @@ async function openPresetModal(presetId) {
                         <i class="fas fa-thumbs-up" style="color:#d4a373;"></i> ${r.helpful || 0}
                       </span>
                     </div>
-                    <p style="margin:3px 0 0;font-size:0.85rem;color:var(--text, #3a3a3a);">${r.comment}</p>
+                    <p style="margin:3px 0 0;font-size:0.85rem;color:var(--text, #3a3a3a);">${escapeHTML(r.comment)}</p>
                   </div>
                 `).join('') : '<p style="color:#888;font-size:0.85rem;">अभी कोई समीक्षा नहीं</p>'}
                 ${preset.reviews && preset.reviews.length > 5 ? `<p style="color:#888;font-size:0.75rem;margin-top:4px;">... और ${preset.reviews.length - 5} समीक्षाएँ</p>` : ''}
@@ -1590,7 +1693,7 @@ async function loadTopCreators() {
           <div class="avatar" style="width:50px;height:50px;font-size:1.2rem;margin:0 auto 6px;background-image:url(${c.avatar || ''});background-size:cover;">
             ${!c.avatar ? c.name.charAt(0).toUpperCase() : ''}
           </div>
-          <div class="name" style="font-size:0.85rem;">${c.name}</div>
+          <div class="name" style="font-size:0.85rem;">${escapeHTML(c.name)}</div>
           <div class="stats" style="font-size:0.7rem;color:#6b6b6b;">${c.presetCount || 0} प्रीसेट</div>
           <div class="followers" style="font-size:0.7rem;color:#d4a373;"><i class="fas fa-users"></i> ${c.followers || 0}</div>
         </div>
@@ -1635,9 +1738,9 @@ window.openProfile = async function(userId) {
             ${!user.avatar ? user.name.charAt(0).toUpperCase() : ''}
           </div>
           <div>
-            <h2 style="font-size:1.2rem;color:var(--text, #1e1e1e);">${user.name}</h2>
-            <div style="color:#6b6b6b;font-size:0.85rem;">@${user.username || user.email?.split('@')[0] || ''}</div>
-            <div style="margin-top:2px;font-size:0.85rem;color:var(--text, #1e1e1e);">${user.bio || 'कोई बायो नहीं'}</div>
+            <h2 style="font-size:1.2rem;color:var(--text, #1e1e1e);">${escapeHTML(user.name)}</h2>
+            <div style="color:#6b6b6b;font-size:0.85rem;">@${escapeHTML(user.username || user.email?.split('@')[0] || '')}</div>
+            <div style="margin-top:2px;font-size:0.85rem;color:var(--text, #1e1e1e);">${escapeHTML(user.bio || 'कोई बायो नहीं')}</div>
             <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap;font-size:0.8rem;">
               <span><strong>${user.totalPresets || 0}</strong> प्रीसेट</span>
               <span><strong>${user.totalDownloads || 0}</strong> डाउनलोड</span>
@@ -1659,10 +1762,10 @@ window.openProfile = async function(userId) {
         </div>
         ${user.socialLinks && Object.values(user.socialLinks).some(v => v) ? `
           <div style="margin-bottom:12px;display:flex;gap:10px;">
-            ${user.socialLinks.instagram ? `<a href="${user.socialLinks.instagram}" target="_blank" style="color:#d4a373;"><i class="fab fa-instagram fa-lg"></i></a>` : ''}
-            ${user.socialLinks.youtube ? `<a href="${user.socialLinks.youtube}" target="_blank" style="color:#d4a373;"><i class="fab fa-youtube fa-lg"></i></a>` : ''}
-            ${user.socialLinks.twitter ? `<a href="${user.socialLinks.twitter}" target="_blank" style="color:#d4a373;"><i class="fab fa-twitter fa-lg"></i></a>` : ''}
-            ${user.socialLinks.website ? `<a href="${user.socialLinks.website}" target="_blank" style="color:#d4a373;"><i class="fas fa-globe fa-lg"></i></a>` : ''}
+            ${user.socialLinks.instagram ? `<a href="${escapeHTML(user.socialLinks.instagram)}" target="_blank" style="color:#d4a373;"><i class="fab fa-instagram fa-lg"></i></a>` : ''}
+            ${user.socialLinks.youtube ? `<a href="${escapeHTML(user.socialLinks.youtube)}" target="_blank" style="color:#d4a373;"><i class="fab fa-youtube fa-lg"></i></a>` : ''}
+            ${user.socialLinks.twitter ? `<a href="${escapeHTML(user.socialLinks.twitter)}" target="_blank" style="color:#d4a373;"><i class="fab fa-twitter fa-lg"></i></a>` : ''}
+            ${user.socialLinks.website ? `<a href="${escapeHTML(user.socialLinks.website)}" target="_blank" style="color:#d4a373;"><i class="fas fa-globe fa-lg"></i></a>` : ''}
           </div>
         ` : ''}
         <h3 style="font-size:1rem;color:var(--text, #1e1e1e);"><i class="fas fa-cubes"></i> प्रीसेट</h3>
@@ -1670,8 +1773,8 @@ window.openProfile = async function(userId) {
           ${userPresets.length === 0 ? '<p style="grid-column:1/-1;color:#888;font-size:0.9rem;">अभी कोई प्रीसेट नहीं</p>' : 
             userPresets.map(p => `
               <div style="background:var(--bg, #f8f6f2);padding:12px;border-radius:10px;cursor:pointer;" onclick="window.openPresetModal('${p.id}')">
-                <strong style="font-size:0.85rem;color:var(--text, #1e1e1e);">${p.name}</strong>
-                <div style="font-size:0.75rem;color:#6b6b6b;">${p.category} • ${p.downloads || 0} डाउनलोड</div>
+                <strong style="font-size:0.85rem;color:var(--text, #1e1e1e);">${escapeHTML(p.name)}</strong>
+                <div style="font-size:0.75rem;color:#6b6b6b;">${escapeHTML(p.category)} • ${p.downloads || 0} डाउनलोड</div>
               </div>
             `).join('')
           }
@@ -1697,6 +1800,7 @@ window.openProfile = async function(userId) {
     showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
   }
 };
+
 // ============================================================
 // ===== FOLLOW / UNFOLLOW =====
 // ============================================================
@@ -1732,7 +1836,6 @@ async function toggleFollow(userId) {
     await addToQueue('follow', url, options);
   }
 }
-
 
 // ============================================================
 // ===== CHANGE PASSWORD =====
@@ -1810,6 +1913,8 @@ window.openChangePassword = async function() {
     }
   });
 };
+
+// ============================================================
 // ===== EDIT PROFILE =====
 // ============================================================
 window.openEditProfile = async function() {
@@ -1818,16 +1923,10 @@ window.openEditProfile = async function() {
     return;
   }
   try {
-    // LINE ~1815 - Find this block
-const res = await fetch(`${API_URL}/auth/profile`, {
-  method: 'PUT',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  },
-  body: JSON.stringify(payload)
-});   
-if (!res.ok) throw new Error('Profile not found');
+    const res = await fetch(`${API_URL}/users/me`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Profile not found');
     const user = await res.json();
 
     const modal = document.createElement('div');
@@ -1849,33 +1948,33 @@ if (!res.ok) throw new Error('Profile not found');
           </div>
           <div class="form-group">
             <label style="font-size:0.85rem;">नाम</label>
-            <input type="text" id="editName" value="${user.name || ''}" required style="padding:8px 12px;font-size:0.9rem;" />
+            <input type="text" id="editName" value="${escapeHTML(user.name || '')}" required style="padding:8px 12px;font-size:0.9rem;" />
           </div>
           <div class="form-group">
             <label style="font-size:0.85rem;">यूज़रनेम</label>
-            <input type="text" id="editUsername" value="${user.username || ''}" style="padding:8px 12px;font-size:0.9rem;" />
+            <input type="text" id="editUsername" value="${escapeHTML(user.username || '')}" style="padding:8px 12px;font-size:0.9rem;" />
           </div>
           <div class="form-group">
             <label style="font-size:0.85rem;">बायो</label>
-            <textarea id="editBio" rows="3" style="padding:8px 12px;font-size:0.9rem;min-height:60px;">${user.bio || ''}</textarea>
+            <textarea id="editBio" rows="3" style="padding:8px 12px;font-size:0.9rem;min-height:60px;">${escapeHTML(user.bio || '')}</textarea>
           </div>
           <div style="border-top:1px solid var(--border, #eee);padding-top:10px;margin-top:10px;">
             <h4 style="font-size:0.95rem;"><i class="fas fa-share-alt"></i> सोशल लिंक्स</h4>
             <div class="form-group">
               <label style="font-size:0.8rem;"><i class="fab fa-instagram"></i> Instagram</label>
-              <input type="text" id="editInstagram" value="${user.socialLinks?.instagram || ''}" style="padding:8px 12px;font-size:0.9rem;" />
+              <input type="text" id="editInstagram" value="${escapeHTML(user.socialLinks?.instagram || '')}" style="padding:8px 12px;font-size:0.9rem;" />
             </div>
             <div class="form-group">
               <label style="font-size:0.8rem;"><i class="fab fa-youtube"></i> YouTube</label>
-              <input type="text" id="editYoutube" value="${user.socialLinks?.youtube || ''}" style="padding:8px 12px;font-size:0.9rem;" />
+              <input type="text" id="editYoutube" value="${escapeHTML(user.socialLinks?.youtube || '')}" style="padding:8px 12px;font-size:0.9rem;" />
             </div>
             <div class="form-group">
               <label style="font-size:0.8rem;"><i class="fab fa-twitter"></i> Twitter</label>
-              <input type="text" id="editTwitter" value="${user.socialLinks?.twitter || ''}" style="padding:8px 12px;font-size:0.9rem;" />
+              <input type="text" id="editTwitter" value="${escapeHTML(user.socialLinks?.twitter || '')}" style="padding:8px 12px;font-size:0.9rem;" />
             </div>
             <div class="form-group">
               <label style="font-size:0.8rem;"><i class="fas fa-globe"></i> Website</label>
-              <input type="text" id="editWebsite" value="${user.socialLinks?.website || ''}" style="padding:8px 12px;font-size:0.9rem;" />
+              <input type="text" id="editWebsite" value="${escapeHTML(user.socialLinks?.website || '')}" style="padding:8px 12px;font-size:0.9rem;" />
             </div>
           </div>
           <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;"><i class="fas fa-save"></i> सहेजें</button>
@@ -1904,30 +2003,30 @@ if (!res.ok) throw new Error('Profile not found');
       e.preventDefault();
       
       const avatarFile = modal.querySelector('#avatarFile').files[0];
-   // LINE ~1895 - Find this block
-if (avatarFile) {
-  const formData = new FormData();
-  formData.append('avatar', avatarFile);
-  try {
-    const avatarRes = await fetch(`${API_URL}/auth/me/avatar`, {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData
-    });
-    if (!avatarRes.ok) {
-      const err = await avatarRes.json();
-      showToast('Avatar upload failed: ' + (err.error || 'unknown'), 'error');
-      return;
-    }
-    const avatarData = await avatarRes.json();
-    currentUser.avatar = avatarData.avatar;
-    showLoggedInUI(currentUser);
-  } catch (err) {
-    showToast('Avatar upload error', 'error');
-    return;
-  }
-}
-const payload = {
+      if (avatarFile) {
+        const formData = new FormData();
+        formData.append('avatar', avatarFile);
+        try {
+          const avatarRes = await fetch(`${API_URL}/auth/me/avatar`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+          });
+          if (!avatarRes.ok) {
+            const err = await avatarRes.json();
+            showToast('Avatar upload failed: ' + (err.error || 'unknown'), 'error');
+            return;
+          }
+          const avatarData = await avatarRes.json();
+          currentUser.avatar = avatarData.avatar;
+          showLoggedInUI(currentUser);
+        } catch (err) {
+          showToast('Avatar upload error', 'error');
+          return;
+        }
+      }
+      
+      const payload = {
         name: document.getElementById('editName').value,
         username: document.getElementById('editUsername').value,
         bio: document.getElementById('editBio').value,
@@ -1967,75 +2066,7 @@ const payload = {
     showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
   }
 };
-// Add after change-password function//
-window.openChangePassword = async function() {
-  if (!currentUser) {
-    showToast('कृपया लॉग इन करें', 'warning');
-    return;
-  }
-  
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay active';
-  modal.innerHTML = `
-    <div class="modal" style="max-width:450px;padding:28px;">
-      <button class="close">&times;</button>
-      <h2 style="font-size:1.2rem;"><i class="fas fa-key"></i> पासवर्ड बदलें</h2>
-      <form id="changePasswordForm">
-        <div class="form-group">
-          <label style="font-size:0.85rem;">मौजूदा पासवर्ड</label>
-          <input type="password" id="currentPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;" />
-        </div>
-        <div class="form-group">
-          <label style="font-size:0.85rem;">नया पासवर्ड (6+ अक्षर, एक नंबर, एक बड़ा अक्षर)</label>
-          <input type="password" id="newPassword" required minlength="6" style="padding:8px 12px;font-size:0.9rem;width:100%;" />
-        </div>
-        <div class="form-group">
-          <label style="font-size:0.85rem;">नया पासवर्ड दोबारा</label>
-          <input type="password" id="confirmPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;" />
-        </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;">
-          <i class="fas fa-save"></i> पासवर्ड बदलें
-        </button>
-      </form>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  
-  modal.querySelector('.close').addEventListener('click', () => modal.remove());
-  
-  modal.querySelector('#changePasswordForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const currentPassword = document.getElementById('currentPassword').value;
-    const newPassword = document.getElementById('newPassword').value;
-    const confirmPassword = document.getElementById('confirmPassword').value;
-    
-    if (newPassword !== confirmPassword) {
-      showToast('नए पासवर्ड मेल नहीं खाते', 'error');
-      return;
-    }
-    
-    try {
-      const res = await fetch(`${API_URL}/auth/change-password`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ currentPassword, newPassword })
-      });
-      
-      const data = await res.json();
-      if (res.ok) {
-        showToast('✅ पासवर्ड बदल गया!', 'success');
-        modal.remove();
-      } else {
-        showToast(data.error || 'पासवर्ड बदलने में विफल', 'error');
-      }
-    } catch (err) {
-      showToast('❌ सर्वर से कनेक्ट नहीं हो पाया', 'error');
-    }
-  });
-};
+
 // ============================================================
 // ===== SUBSCRIPTION & REFERRAL =====
 // ============================================================
@@ -2101,8 +2132,8 @@ function showReferral() {
     <div class="modal" style="max-width:380px;padding:24px;">
       <button class="close">&times;</button>
       <h2 style="font-size:1.2rem;"><i class="fas fa-link"></i> Referral Program</h2>
-      <p style="font-size:0.9rem;">Share your code: <strong>${code}</strong></p>
-      <p style="font-size:0.85rem;">Link: <a href="${link}" target="_blank" style="color:#d4a373;word-break:break-all;">${link}</a></p>
+      <p style="font-size:0.9rem;">Share your code: <strong>${escapeHTML(code)}</strong></p>
+      <p style="font-size:0.85rem;">Link: <a href="${escapeHTML(link)}" target="_blank" style="color:#d4a373;word-break:break-all;">${escapeHTML(link)}</a></p>
       <p style="font-size:0.85rem;">You have referred ${subscriptionData.referralCount || 0} users.</p>
       <p style="font-size:0.85rem;">Earn 28 days free for every 10 referrals!</p>
       <button class="btn btn-primary" onclick="generateReferral()" style="font-size:0.85rem;padding:8px 16px;"><i class="fas fa-sync"></i> Generate Code</button>
@@ -2153,9 +2184,9 @@ function openNotifications() {
         ${notifications.length === 0 ? '<p style="color:#888;font-size:0.9rem;">No notifications</p>' : 
           notifications.map(n => `
             <div class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" style="padding:10px 12px;border-bottom:1px solid var(--border,#eee);cursor:pointer;${n.read ? '' : 'background:#fef9e7;'}">
-              <div style="font-size:0.9rem;">${n.message}</div>
+              <div style="font-size:0.9rem;">${escapeHTML(n.message)}</div>
               <div style="font-size:0.7rem;color:#888;">${new Date(n.createdAt).toLocaleString()}</div>
-              <a href="${n.link}" target="_blank" style="font-size:0.8rem;color:#d4a373;">View</a>
+              ${n.link ? `<a href="${escapeHTML(n.link)}" target="_blank" style="font-size:0.8rem;color:#d4a373;">View</a>` : ''}
             </div>
           `).join('')
         }
@@ -2229,8 +2260,8 @@ window.showEarnings = async function() {
             data.presets.map(p => `
               <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border,#eee);flex-wrap:wrap;gap:4px;">
                 <div>
-                  <strong>${p.name}</strong>
-                  <span style="font-size:0.75rem;color:#888;">(${p.category})</span>
+                  <strong>${escapeHTML(p.name)}</strong>
+                  <span style="font-size:0.75rem;color:#888;">(${escapeHTML(p.category)})</span>
                 </div>
                 <div style="display:flex;gap:12px;font-size:0.75rem;">
                   <span><i class="fas fa-eye"></i> ${p.impressions}</span>
@@ -2251,7 +2282,7 @@ window.showEarnings = async function() {
             💡 Need ₹100+ to withdraw. Current: ₹${data.totalRevenue.toFixed(2)}
           </div>
         `}
-        ${data.withdrawalStatus ? `<div style="margin-top:6px;font-size:0.8rem;">📝 Status: ${data.withdrawalStatus}</div>` : ''}
+        ${data.withdrawalStatus ? `<div style="margin-top:6px;font-size:0.8rem;">📝 Status: ${escapeHTML(data.withdrawalStatus)}</div>` : ''}
       </div>
     `;
     document.body.appendChild(modal);
@@ -2331,6 +2362,11 @@ function init() {
 
   if (!navigator.onLine && offlineIndicator) {
     offlineIndicator.style.display = 'inline-block';
+  }
+
+  // Sync offline queue on startup if online
+  if (navigator.onLine) {
+    syncOfflineQueue();
   }
 
   if ('serviceWorker' in navigator) {
