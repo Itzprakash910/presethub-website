@@ -184,7 +184,7 @@
                             <rect x="180" y="160" width="120" height="100" rx="12" fill="#d4c5b2" />
                             <circle cx="330" cy="80" r="30" fill="#d4a373" opacity="0.6" />
                             <circle cx="340" cy="210" r="24" fill="#d4a373" opacity="0.4" />
-                            <text x="120" y="280" font-family="Inter" font-weight="700" font-size="18" fill="#4a3f35"><i class="fas fa-wand-magic-sparkles"></i> प्रीसेट प्रीव्यू</text>
+                            <text x="120" y="280" font-family="Inter" font-weight="700" font-size="18" fill="#4a3f35">प्रीसेट प्रीव्यू</text>
                         </svg>
                         <div class="hero-badge">
                             <i class="fas fa-star" style="color:#f4a261;"></i> 4.8 <i class="fas fa-star" style="color:#f4a261;font-size:0.8rem;"></i> (2.3K समीक्षाएँ)
@@ -209,7 +209,7 @@
             <section class="container" id="categoriesSection">
                 <div class="section-title">
                     <span><i class="fas fa-folder-open" style="color:#d4a373;"></i> श्रेणियाँ</span>
-                    <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें <i class="fas fa-arrow-right"></i></a>
+                    <a href="#presetsSection">सभी देखें <i class="fas fa-arrow-right"></i></a>
                 </div>
                 <div class="categories" id="categoryList">
                     <div class="category-card" data-category="सनसेट" role="button" tabindex="0"><div class="icon"><i class="fas fa-sun" style="color:#f39c12;"></i></div><div class="name">सनसेट</div><div class="count">1.2K</div></div>
@@ -229,7 +229,7 @@
                             <button class="carousel-arrow" onclick="document.getElementById('latestGrid').scrollBy({left:-290,behavior:'smooth'})" aria-label="Scroll left"><i class="fas fa-chevron-left"></i></button>
                             <button class="carousel-arrow" onclick="document.getElementById('latestGrid').scrollBy({left:290,behavior:'smooth'})" aria-label="Scroll right"><i class="fas fa-chevron-right"></i></button>
                         </div>
-                        <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें <i class="fas fa-arrow-right"></i></a>
+                        <a href="#presetsSection">सभी देखें <i class="fas fa-arrow-right"></i></a>
                     </div>
                 </div>
                 <div class="preset-grid" id="latestGrid"></div>
@@ -326,29 +326,29 @@
                     <div class="footer-col">
                         <h4><i class="fas fa-compass"></i> ब्राउज़ करें</h4>
                         <ul>
-                            <li><a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'});"><i class="fas fa-th"></i> सभी प्रीसेट</a></li>
-                            <li><a href="#" onclick="document.getElementById('categoriesSection').scrollIntoView({behavior:'smooth'});"><i class="fas fa-folder"></i> श्रेणियाँ</a></li>
-                            <li><a href="#" onclick="document.getElementById('latestSection').scrollIntoView({behavior:'smooth'});"><i class="fas fa-clock"></i> नए प्रीसेट</a></li>
-                            <li><a href="#" onclick="filterSort.value='popular'; loadPresets();"><i class="fas fa-fire"></i> ट्रेंडिंग</a></li>
+                            <li><a href="#presetsSection"><i class="fas fa-th"></i> सभी प्रीसेट</a></li>
+                            <li><a href="#categoriesSection"><i class="fas fa-folder"></i> श्रेणियाँ</a></li>
+                            <li><a href="#latestSection"><i class="fas fa-clock"></i> नए प्रीसेट</a></li>
+                            <li><a href="#presetsSection" onclick="if(window.filterSort){filterSort.value='popular'; if(typeof loadPresets==='function') loadPresets();}"><i class="fas fa-fire"></i> ट्रेंडिंग</a></li>
                         </ul>
                     </div>
                     <div class="footer-col">
                         <h4><i class="fas fa-life-ring"></i> सहायता</h4>
                         <ul>
-                            <li><a href="#" onclick="showToast('📖 Download guide coming soon!', 'info'); return false;"><i class="fas fa-download"></i> कैसे डाउनलोड करें</a></li>
-                            <li><a href="#" onclick="showToast('📚 Lightroom guide coming soon!', 'info'); return false;"><i class="fas fa-book"></i> Lightroom गाइड</a></li>
-                            <li><a href="#" onclick="showToast('❓ FAQ page coming soon!', 'info'); return false;"><i class="fas fa-question-circle"></i> FAQ</a></li>
-                            <li><a href="#" onclick="showToast('📧 Contact us at support@presethub.site', 'info'); return false;"><i class="fas fa-envelope"></i> संपर्क करें</a></li>
+                            <li><a href="/download-guide.html"><i class="fas fa-download"></i> कैसे डाउनलोड करें</a></li>
+                            <li><a href="/lightroom-guide.html"><i class="fas fa-book"></i> Lightroom गाइड</a></li>
+                            <li><a href="/faq.html"><i class="fas fa-question-circle"></i> FAQ</a></li>
+                            <li><a href="/contact.html"><i class="fas fa-envelope"></i> संपर्क करें</a></li>
                         </ul>
                     </div>
                     <div class="footer-col">
                         <h4><i class="fas fa-building"></i> कंपनी</h4>
                         <ul>
-                            <li><a href="#" onclick="showToast('ℹ️ About us coming soon!', 'info'); return false;"><i class="fas fa-info-circle"></i> हमारे बारे में</a></li>
-                            <li><a href="#" onclick="showToast('📝 Blog coming soon!', 'info'); return false;"><i class="fas fa-blog"></i> ब्लॉग</a></li>
-                            <li><a href="#" onclick="showToast('👤 Creator program coming soon!', 'info'); return false;"><i class="fas fa-user-tie"></i> क्रिएटर प्रोग्राम</a></li>
-                            <li><a href="#" onclick="showToast('📋 Terms and conditions', 'info'); return false;"><i class="fas fa-gavel"></i> नियम और शर्तें</a></li>
-                            <li><a href="#" onclick="showToast('🔒 Privacy policy', 'info'); return false;"><i class="fas fa-shield-alt"></i> गोपनीयता नीति</a></li>
+                            <li><a href="/about.html"><i class="fas fa-info-circle"></i> हमारे बारे में</a></li>
+                            <li><a href="/blog.html"><i class="fas fa-blog"></i> ब्लॉग</a></li>
+                            <li><a href="/creator-program.html"><i class="fas fa-user-tie"></i> क्रिएटर प्रोग्राम</a></li>
+                            <li><a href="/terms.html"><i class="fas fa-gavel"></i> नियम और शर्तें</a></li>
+                            <li><a href="/privacy.html"><i class="fas fa-shield-alt"></i> गोपनीयता नीति</a></li>
                         </ul>
                     </div>
                 </div>

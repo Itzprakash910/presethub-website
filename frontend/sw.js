@@ -1,7 +1,6 @@
 // frontend/sw.js
-const CACHE_NAME = 'presethub-v3';
-const API_CACHE_NAME = 'presethub-api-v1';
-const STATIC_CACHE_NAME = 'presethub-static-v1';
+const STATIC_CACHE_NAME = 'presethub-static-v2';
+const API_CACHE_NAME = 'presethub-api-v2';
 
 const urlsToCache = [
   '/',
@@ -22,7 +21,7 @@ const urlsToCache = [
   '/manifest.json',
   '/browserconfig.xml',
 
-  // ---- New Icons (Root Directory) ----
+  // Icons
   '/android-icon-36x36.png',
   '/android-icon-48x48.png',
   '/android-icon-72x72.png',
@@ -43,7 +42,7 @@ const urlsToCache = [
   '/favicon-96x96.png',
   '/ms-icon-144x144.png',
 
-  // ---- Optional: keep old assets/icons if needed ----
+  // Optional old assets
   '/assets/icons/icon-72.png',
   '/assets/icons/icon-96.png',
   '/assets/icons/icon-128.png',
@@ -52,11 +51,7 @@ const urlsToCache = [
   '/assets/icons/icon-192.png',
   '/assets/icons/icon-256.png',
   '/assets/icons/icon-384.png',
-  '/assets/icons/icon-512.png',
-
-  // ---- External Resources ----
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css'
+  '/assets/icons/icon-512.png'
 ];
 
 // ==================== INSTALL ====================
@@ -65,6 +60,7 @@ self.addEventListener('install', event => {
     caches.open(STATIC_CACHE_NAME)
       .then(cache => cache.addAll(urlsToCache))
       .then(() => self.skipWaiting())
+      .catch(err => console.error('SW install error:', err))
   );
 });
 
@@ -73,22 +69,19 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys => {
       return Promise.all(
-        keys.filter(key => 
-          key !== STATIC_CACHE_NAME && 
-          key !== API_CACHE_NAME &&
-          key !== CACHE_NAME
-        ).map(key => caches.delete(key))
+        keys
+          .filter(key => key !== STATIC_CACHE_NAME && key !== API_CACHE_NAME)
+          .map(key => caches.delete(key))
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 // ==================== FETCH ====================
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // ---------- 1️⃣ API CALLS (Stale-While-Revalidate) ----------
+  // ---------- 1. API CALLS (Stale-While-Revalidate) ----------
   if (url.pathname.startsWith('/api/')) {
     if (event.request.method !== 'GET') {
       event.respondWith(fetch(event.request));
@@ -98,15 +91,15 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       caches.open(API_CACHE_NAME).then(cache => {
         return cache.match(event.request).then(cachedResponse => {
-          const fetchPromise = fetch(event.request).then(networkResponse => {
-            if (networkResponse && networkResponse.status === 200) {
-              cache.put(event.request, networkResponse.clone());
-            }
-            return networkResponse;
-          }).catch(err => {
-            console.log('⚠️ API fetch failed, using cache if available', err);
-            return null;
-          });
+          const fetchPromise = fetch(event.request)
+            .then(networkResponse => {
+              if (networkResponse && networkResponse.status === 200) {
+                cache.put(event.request, networkResponse.clone());
+              }
+              return networkResponse;
+            })
+            .catch(() => null);
+
           return cachedResponse || fetchPromise;
         });
       })
@@ -114,27 +107,27 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // ---------- 2️⃣ STATIC ASSETS (Cache First) ----------
+  // ---------- 2. STATIC ASSETS (Cache First) ----------
   if (event.request.method === 'GET') {
     event.respondWith(
-      caches.match(event.request)
-        .then(response => {
-          if (response) return response;
-          return fetch(event.request).then(response => {
-            if (response && response.status === 200) {
-              const responseClone = response.clone();
-              caches.open(STATIC_CACHE_NAME).then(cache => {
-                cache.put(event.request, responseClone);
-              });
-            }
-            return response;
-          });
-        }).catch(() => caches.match('/'))
+      caches.match(event.request).then(response => {
+        if (response) return response;
+
+        return fetch(event.request).then(networkResponse => {
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const responseClone = networkResponse.clone();
+            caches.open(STATIC_CACHE_NAME).then(cache => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return networkResponse;
+        }).catch(() => caches.match('/'));
+      })
     );
     return;
   }
 
-  // ---------- 3️⃣ DEFAULT: Network ----------
+  // ---------- 3. DEFAULT ----------
   event.respondWith(fetch(event.request));
 });
 
@@ -163,7 +156,7 @@ async function processSyncQueue() {
       try {
         const fetchOptions = {
           method: item.method,
-          headers: item.headers || {},
+          headers: item.headers || {}
         };
         if (item.body) {
           fetchOptions.body = item.body;
@@ -173,7 +166,7 @@ async function processSyncQueue() {
 
         if (response.ok) {
           await store.delete(item.id);
-          console.log(`✅ Synced: ${item.action} (${item.url})`);
+          console.log(`✅ Synced: \( {item.action} ( \){item.url})`);
           const clients = await self.clients.matchAll();
           clients.forEach(client => {
             client.postMessage({
@@ -194,7 +187,6 @@ async function processSyncQueue() {
     }
 
     console.log('✅ Sync processing complete.');
-
   } catch (err) {
     console.error('❌ Sync processing error:', err);
   }
@@ -222,4 +214,4 @@ function openDB(name, version) {
   });
 }
 
-console.log('🔧 Service Worker loaded with offline support');
+console.log('🔧 Service Worker loaded with offline support (v2)');
