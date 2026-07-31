@@ -196,6 +196,10 @@
             <section class="container" id="topCreatorsSection">
                 <div class="section-title">
                     <span><i class="fas fa-trophy" style="color:#d4a373;"></i> टॉप क्रिएटर्स</span>
+                    <div class="carousel-arrows">
+                        <button class="carousel-arrow" onclick="document.getElementById('topCreatorsGrid').scrollBy({left:-260,behavior:'smooth'})" aria-label="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                        <button class="carousel-arrow" onclick="document.getElementById('topCreatorsGrid').scrollBy({left:260,behavior:'smooth'})" aria-label="Scroll right"><i class="fas fa-chevron-right"></i></button>
+                    </div>
                 </div>
                 <div class="top-creators-grid" id="topCreatorsGrid"></div>
             </section>
@@ -219,7 +223,13 @@
             <section class="container" id="latestSection">
                 <div class="section-title">
                     <span><i class="fas fa-clock" style="color:#d4a373;"></i> ताज़ा प्रीसेट</span>
-                    <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें <i class="fas fa-arrow-right"></i></a>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <div class="carousel-arrows">
+                            <button class="carousel-arrow" onclick="document.getElementById('latestGrid').scrollBy({left:-290,behavior:'smooth'})" aria-label="Scroll left"><i class="fas fa-chevron-left"></i></button>
+                            <button class="carousel-arrow" onclick="document.getElementById('latestGrid').scrollBy({left:290,behavior:'smooth'})" aria-label="Scroll right"><i class="fas fa-chevron-right"></i></button>
+                        </div>
+                        <a href="#" onclick="document.getElementById('presetsSection').scrollIntoView({behavior:'smooth'}); return false;">सभी देखें <i class="fas fa-arrow-right"></i></a>
+                    </div>
                 </div>
                 <div class="preset-grid" id="latestGrid"></div>
             </section>

@@ -788,7 +788,7 @@ function renderPresetsToContainer(presets, container) {
       (p.previewImage.startsWith('http') ? p.previewImage : window.location.origin + p.previewImage) : 
       null;
     const previewImg = previewImageSrc ? 
-      `<img src="${previewImageSrc}" alt="${p.name}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'">` :
+      `<img src="${previewImageSrc}" alt="${p.name}" style="width:100%;height:100%;object-fit:contain;background:#e8e0d6;" onerror="this.style.display='none'">` :
       `<svg viewBox="0 0 270 180" style="background:#d9d0c4;width:100%;height:100%;">
         <rect x="30" y="20" width="70" height="60" rx="8" fill="#b8aa98" />
         <rect x="120" y="20" width="70" height="60" rx="8" fill="#c4b5a2" />
@@ -921,9 +921,23 @@ async function loadPresets(page = 1, append = false) {
         return;
       }
       showToast('😕 No cached presets available offline.', 'error');
+      if (presetGrid && !append) {
+        presetGrid.innerHTML = `<div style="padding:30px;color:#7a7a7a;font-size:0.9rem;text-align:center;grid-column:1/-1;">
+          <i class="fas fa-triangle-exclamation" style="color:#f39c12;font-size:1.5rem;display:block;margin-bottom:10px;"></i>
+          प्रीसेट लोड नहीं हो पाए। कृपया कनेक्शन जांचें।
+          <br><button class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="loadPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+        </div>`;
+      }
     } catch (cacheErr) {
       console.error('Cache error:', cacheErr);
       showToast('❌ Unable to load presets. Please check your connection.', 'error');
+      if (presetGrid && !append) {
+        presetGrid.innerHTML = `<div style="padding:30px;color:#7a7a7a;font-size:0.9rem;text-align:center;grid-column:1/-1;">
+          <i class="fas fa-triangle-exclamation" style="color:#f39c12;font-size:1.5rem;display:block;margin-bottom:10px;"></i>
+          प्रीसेट लोड नहीं हो पाए। कृपया कनेक्शन जांचें।
+          <br><button class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="loadPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+        </div>`;
+      }
     }
   }
 }
@@ -964,6 +978,12 @@ async function loadLatestPresets() {
       }
     } catch (cacheErr) {
       console.error('Latest cache error:', cacheErr);
+    }
+    if (latestGrid) {
+      latestGrid.innerHTML = `<div style="padding:20px;color:#7a7a7a;font-size:0.85rem;text-align:center;width:100%;">
+        <i class="fas fa-triangle-exclamation" style="color:#f39c12;"></i> प्रीसेट लोड नहीं हो पाए।
+        <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="loadLatestPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+      </div>`;
     }
   }
 }
@@ -1553,18 +1573,16 @@ window.openUploadModal = openUploadModal;
 // ===== TOP CREATORS =====
 // ============================================================
 async function loadTopCreators() {
+  const grid = document.getElementById('topCreatorsGrid');
   try {
     const res = await fetch(`${API_URL}/users/top`);
     if (res.ok) {
       const creators = await res.json();
-      const grid = document.getElementById('topCreatorsGrid');
       if (!grid) return;
       if (!creators || creators.length === 0) {
         grid.innerHTML = '<p style="color:var(--text);font-size:0.9rem;">कोई क्रिएटर नहीं</p>';
         return;
       }
-      grid.style.display = 'grid';
-      
       grid.innerHTML = creators.map(c => `
         <div class="creator-card" style="cursor:pointer;padding:14px;" onclick="window.openProfile('${c.id}')">
           <div class="avatar" style="width:50px;height:50px;font-size:1.2rem;margin:0 auto 6px;background-image:url(${c.avatar || ''});background-size:cover;">
@@ -1575,8 +1593,18 @@ async function loadTopCreators() {
           <div class="followers" style="font-size:0.7rem;color:#d4a373;"><i class="fas fa-users"></i> ${c.followers || 0}</div>
         </div>
       `).join('');
+    } else {
+      throw new Error('Server error ' + res.status);
     }
-  } catch (err) { console.error('Top creators error:', err); }
+  } catch (err) {
+    console.error('Top creators error:', err);
+    if (grid) {
+      grid.innerHTML = `<div style="padding:20px;color:#7a7a7a;font-size:0.85rem;text-align:center;width:100%;">
+        <i class="fas fa-triangle-exclamation" style="color:#f39c12;"></i> क्रिएटर्स लोड नहीं हो पाए।
+        <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="loadTopCreators()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+      </div>`;
+    }
+  }
 }
 
 // ============================================================
