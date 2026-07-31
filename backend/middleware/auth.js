@@ -7,9 +7,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
  * Authentication Middleware
  * Verifies JWT token and attaches user info to request
  */
-module.exports = async (req, res, next) => {
+const authenticate = async (req, res, next) => {
   try {
-    // Get token from Authorization header
     const authHeader = req.header('Authorization');
     if (!authHeader) {
       return res.status(401).json({ 
@@ -17,7 +16,6 @@ module.exports = async (req, res, next) => {
       });
     }
 
-    // Extract token (handle both "Bearer token" and just "token")
     let token;
     if (authHeader.startsWith('Bearer ')) {
       token = authHeader.substring(7);
@@ -25,14 +23,12 @@ module.exports = async (req, res, next) => {
       token = authHeader;
     }
     
-    // Validate token format
     if (!token || token === 'null' || token === 'undefined' || token.length < 10) {
       return res.status(401).json({ 
         error: 'Access denied. Invalid token format.' 
       });
     }
 
-    // Verify token
     let decoded;
     try {
       decoded = jwt.verify(token, JWT_SECRET);
@@ -52,7 +48,7 @@ module.exports = async (req, res, next) => {
       throw err;
     }
 
-    // Optional: Verify user still exists in database
+    // Verify user still exists
     try {
       const db = await getDB();
       const user = db.data.users.find(u => u.id === decoded.id);
@@ -64,23 +60,16 @@ module.exports = async (req, res, next) => {
         });
       }
       
-      // Optional: Check if user is blocked/deactivated
       if (user.status === 'blocked' || user.status === 'deactivated') {
         return res.status(403).json({ 
           error: 'Account is blocked or deactivated.',
           code: 'ACCOUNT_BLOCKED'
         });
       }
-      
-      // Attach full user object to request (optional)
-      // req.userFull = user;
     } catch (dbError) {
-      // If database check fails, we'll still proceed with decoded token
-      // but log the error
       console.error('Database check in auth middleware failed:', dbError);
     }
 
-    // Attach decoded user info to request
     req.user = decoded;
     req.token = token;
     next();
@@ -95,7 +84,6 @@ module.exports = async (req, res, next) => {
 
 /**
  * Role-based Authorization Middleware
- * @param {...string} roles - Allowed roles
  */
 const authorize = (...roles) => {
   return (req, res, next) => {
@@ -113,14 +101,11 @@ const authorize = (...roles) => {
   };
 };
 
-/**
- * Optional: Admin middleware (shorthand for authorize('admin'))
- */
 const isAdmin = authorize('admin');
 
-module.exports = {
-  authenticate: module.exports, // For backward compatibility
-  authorize,
-  isAdmin,
-  JWT_SECRET
-};
+// ✅ Correct exports (default + named)
+module.exports = authenticate;
+module.exports.authenticate = authenticate;
+module.exports.authorize = authorize;
+module.exports.isAdmin = isAdmin;
+module.exports.JWT_SECRET = JWT_SECRET;

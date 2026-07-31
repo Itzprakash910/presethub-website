@@ -2,12 +2,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// ✅ Absolute paths from project root
 const projectRoot = path.join(__dirname, '../..');
 const uploadDir = path.join(projectRoot, 'uploads');
 const previewDir = path.join(uploadDir, 'previews');
 
-// Ensure directories exist
 [uploadDir, previewDir].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
@@ -43,7 +41,7 @@ const fileFilter = (req, file, cb) => {
 const uploadFields = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: { fileSize: 50 * 1024 * 1024 }
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 }).fields([
   { name: 'file', maxCount: 1 },
   { name: 'previewImage', maxCount: 1 }
