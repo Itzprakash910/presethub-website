@@ -15,7 +15,6 @@ async function createNotification(userId, type, message, link) {
   if (!user) return;
   if (!user.notifications) user.notifications = [];
 
-  // Avoid exact duplicate unread notifications
   const exists = user.notifications.some(n => n.message === message && n.type === type && !n.read);
   if (exists) return;
 
@@ -117,7 +116,6 @@ router.put('/me/avatar', auth, (req, res) => {
     const user = db.data.users.find(u => u.id === req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    // Delete old avatar
     if (user.avatar && user.avatar.startsWith('/uploads/avatars/')) {
       const oldPath = path.join(__dirname, '../..', user.avatar);
       if (fs.existsSync(oldPath)) {
@@ -210,7 +208,7 @@ router.post('/:id/follow', auth, async (req, res) => {
     target.followers.push(current.id);
     current.following.push(target.id);
     await db.write();
-    await createNotification(target.id, 'follow', `\( {current.name} started following you!`, `/profile/ \){current.id}`);
+    await createNotification(target.id, 'follow', `${current.name} started following you!`, `/profile/${current.id}`);
     return res.json({
       following: true,
       followersCount: target.followers.length,

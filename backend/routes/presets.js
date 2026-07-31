@@ -50,7 +50,7 @@ router.get('/', async (req, res) => {
   });
 });
 
-// ===== SMART SEARCH (must be before /:id) =====
+// ===== SMART SEARCH (must be before /:id) ===== ✅ FIXED
 router.get('/search', async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 2) return res.json([]);
@@ -120,7 +120,7 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
       reviews: [],
       fileUrl: file ? `/uploads/${file.filename}` : '',
       previewImage: preview ? `/uploads/previews/${path.basename(preview.path)}` : '',
-      status: 'pending',           // ✅ Changed: now requires admin approval
+      status: 'pending',  // ✅ FIXED: Needs admin approval
       size: file ? file.size : 0,
       originalName: file ? file.originalname : '',
       views: 0,
@@ -169,7 +169,7 @@ router.post('/:id/download', auth, async (req, res) => {
     await createNotification(
       preset.authorId, 
       'download', 
-      `\( {req.user.name || 'Someone'} downloaded your preset " \){preset.name}"`, 
+      `${req.user.name || 'Someone'} downloaded your preset "${preset.name}"`, 
       `/preset/${preset.id}`
     );
   }
@@ -188,7 +188,7 @@ router.post('/:id/download', auth, async (req, res) => {
 
   if (filePath && fs.existsSync(filePath)) {
     const ext = path.extname(filePath);
-    const downloadName = preset.originalName || `\( {preset.name} \){ext}`;
+    const downloadName = preset.originalName || `${preset.name}${ext}`;
     return res.download(filePath, downloadName, (err) => {
       if (err) console.error('Download error:', err);
     });
@@ -295,7 +295,7 @@ router.post('/:id/like', auth, async (req, res) => {
       await createNotification(
         preset.authorId, 
         'like', 
-        `\( {req.user.name || 'Someone'} liked your preset " \){preset.name}"`, 
+        `${req.user.name || 'Someone'} liked your preset "${preset.name}"`, 
         `/preset/${preset.id}`
       );
     }

@@ -37,12 +37,12 @@ const generateUniqueUsername = (email, existingUsernames) => {
   let suffix = 1;
   
   while (existingUsernames.includes(username) && suffix <= 100) {
-    username = `\( {baseUsername} \){suffix}`;
+    username = `${baseUsername}${suffix}`;
     suffix++;
   }
   
   if (existingUsernames.includes(username)) {
-    username = `\( {baseUsername} \){Date.now().toString().slice(-6)}`;
+    username = `${baseUsername}${Date.now().toString().slice(-6)}`;
   }
   
   return username;
@@ -81,7 +81,7 @@ router.post('/signup', validate(signupValidation), async (req, res) => {
       name: name || username,
       role: 'user',
       createdAt: new Date().toISOString(),
-      verified: true,               // ✅ Changed: allow login immediately
+      verified: true,  // ✅ FIXED: Allow login immediately
       bio: '',
       avatar: '',
       username,
@@ -180,8 +180,7 @@ router.post('/login', validate(loginValidation), async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
-    // ✅ Removed forced verified check (no email verification system exists)
-    
+    // ✅ FIXED: No email verification required
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
       return res.status(401).json({ error: 'Invalid credentials' });
