@@ -1,7 +1,6 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const { getDB } = require('../config/db');
-const { v4: uuidv4 } = require('uuid');
 
 const router = express.Router();
 
@@ -86,8 +85,10 @@ router.put('/users/:id', async (req, res) => {
   if (bio !== undefined) user.bio = bio;
   if (role) user.role = role;
   if (verified !== undefined) user.verified = verified;
+
   await db.write();
-  res.json(user);
+  const { password, ...safeUser } = user;
+  res.json(safeUser);
 });
 
 router.put('/orders/:id/status', async (req, res) => {
@@ -121,7 +122,7 @@ router.get('/presets', async (req, res) => {
   res.json(db.data.presets);
 });
 
-// ===== ANALYTICS with fixed avgRating =====
+// Analytics
 router.get('/analytics', async (req, res) => {
   const db = await getDB();
   const totalUsers = db.data.users.length;
@@ -132,10 +133,9 @@ router.get('/analytics', async (req, res) => {
     .reduce((sum, o) => sum + (o.amount || 0), 0);
   const freePresets = db.data.presets.filter(p => p.price === 0).length;
   const paidPresets = db.data.presets.filter(p => p.price > 0).length;
-  
-  // ✅ FIX: avgRating only from presets with rating > 0
+
   const ratedPresets = db.data.presets.filter(p => p.avgRating > 0);
-  const avgRating = ratedPresets.length 
+  const avgRating = ratedPresets.length
     ? ratedPresets.reduce((sum, p) => sum + p.avgRating, 0) / ratedPresets.length
     : 0;
 
@@ -143,6 +143,7 @@ router.get('/analytics', async (req, res) => {
     const expiry = u.subscription?.expiry ? new Date(u.subscription.expiry) : null;
     return expiry && expiry > new Date();
   }).length;
+
   const totalReferrals = db.data.users.reduce((sum, u) => sum + (u.referral?.referralCount || 0), 0);
   const totalAdWatches = db.data.users.reduce((sum, u) => sum + (u.subscription?.adWatchCount || 0), 0);
   const totalPlatformRevenue = db.data.presets.reduce((sum, p) => sum + (p.totalRevenue || 0), 0);
@@ -156,6 +157,7 @@ router.get('/analytics', async (req, res) => {
     creatorEarnings[p.authorId].revenue += p.totalRevenue || 0;
     creatorEarnings[p.authorId].presets += 1;
   });
+
   const topCreators = Object.values(creatorEarnings)
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 5);
@@ -196,18 +198,18 @@ router.get('/stats', async (req, res) => {
   const db = await getDB();
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  
+
   const newUsersToday = db.data.users.filter(u => new Date(u.createdAt) >= today).length;
   const newPresetsToday = db.data.presets.filter(p => new Date(p.createdAt) >= today).length;
-  const downloadsToday = db.data.downloads.filter(d => new Date(d.downloadedAt) >= today).length;
-  
+  const downloadsToday = (db.data.downloads || []).filter(d => new Date(d.downloadedAt) >= today).length;
+
   res.json({
     newUsersToday,
     newPresetsToday,
     downloadsToday,
     totalUsers: db.data.users.length,
     totalPresets: db.data.presets.length,
-    totalDownloads: db.data.downloads.length,
+    totalDownloads: (db.data.downloads || []).length,
     totalOrders: db.data.orders?.length || 0
   });
 });
