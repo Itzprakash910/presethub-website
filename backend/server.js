@@ -36,7 +36,7 @@ const userRoutes = require('./routes/users');
 const reviewRoutes = require('./routes/reviews');
 const paymentRoutes = require('./routes/payments');
 const adminRoutes = require('./routes/admin');
-const errorHandler = require('./utils/errorHandler'); // ✅ FIXED: Correct path
+const errorHandler = require('./utils/errorHandle'); // ✅ FIXED: Correct path
 
 // ============================================================
 // ===== APP INITIALIZATION =====
