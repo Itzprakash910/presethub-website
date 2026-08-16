@@ -12,7 +12,7 @@
     <meta name="robots" content="index, follow" />
     <link rel="canonical" href="https://presethub.site/" />
 
-    <!-- ===== OPEN GRAPH (Facebook/LinkedIn) ===== -->
+    <!-- ===== OPEN GRAPH ===== -->
     <meta property="og:title" content="PresetHub – Lightroom Presets Marketplace" />
     <meta property="og:description" content="Download free and premium Lightroom presets. Edit your photos like a pro with PresetHub. Thousands of presets, one click download." />
     <meta property="og:type" content="website" />
@@ -30,20 +30,20 @@
     <meta name="twitter:image" content="https://presethub.site/assets/images/og-image.jpg" />
     <meta name="twitter:site" content="@presethub" />
 
-    <!-- ===== JSON-LD (Structured Data for Google) ===== -->
+    <!-- ===== JSON-LD ===== -->
     <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "PresetHub",
-      "url": "https://presethub.site/",
-      "description": "Download free and premium Lightroom presets. Thousands of presets, one-click download.",
-      "potentialAction": {
-        "@type": "SearchAction",
-        "target": "https://presethub.site/?q={search_term_string}",
-        "query-input": "required name=search_term_string"
-      }
-    }
+        {
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": "PresetHub",
+            "url": "https://presethub.site/",
+            "description": "Download free and premium Lightroom presets. Thousands of presets, one-click download.",
+            "potentialAction": {
+                "@type": "SearchAction",
+                "target": "https://presethub.site/?q={search_term_string}",
+                "query-input": "required name=search_term_string"
+            }
+        }
     </script>
 
     <!-- ===== PWA / THEME ===== -->
@@ -53,22 +53,25 @@
     <meta name="apple-mobile-web-app-title" content="PresetHub" />
 
     <!-- ============================================================ -->
-    <!-- ===== GOOGLE ADSENSE ===== -->
+    <!-- ===== GOOGLE ADSENSE (FIXED) ===== -->
     <!-- ============================================================ -->
     <meta name="google-adsense-account" content="ca-pub-3554311294133493" />
-    
-    <!-- AMP Auto Ads (Fixed) -->
-    <script async custom-element="amp-auto-ads" src="https://cdn.ampproject.org/v0/amp-auto-ads-0.1.js">
-    </script>
-    
-    <!-- Google AdSense Script -->
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3554311294133493"
-     crossorigin="anonymous">
+
+    <!-- 
+        ═══════════════════════════════════════════════════════════════════
+        IMPORTANT: Auto Ads for NON-AMP pages
+        ═══════════════════════════════════════════════════════════════════
+        ✅ REMOVED amp-auto-ads (only works on AMP pages)
+        ✅ Using standard AdSense script for Auto Ads
+        ✅ Auto Ads must be ENABLED in your AdSense dashboard
+        ✅ If Auto Ads is disabled, no ads will show — enable it at:
+            https://adsense.google.com → Auto Ads → Enable
+        ═══════════════════════════════════════════════════════════════════
+    -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3554311294133493" crossorigin="anonymous">
     </script>
 
-    <!-- ============================================================ -->
-    <!-- ===== FAVICONS & APP ICONS ===== -->
-    <!-- ============================================================ -->
+    <!-- ===== FAVICONS ===== -->
     <link rel="apple-touch-icon" sizes="57x57" href="/apple-icon-57x57.png" />
     <link rel="apple-touch-icon" sizes="60x60" href="/apple-icon-60x60.png" />
     <link rel="apple-touch-icon" sizes="72x72" href="/apple-icon-72x72.png" />
@@ -87,19 +90,152 @@
     <meta name="msapplication-config" content="/browserconfig.xml" />
     <link rel="manifest" href="/manifest.json" />
 
-    <!-- ============================================================ -->
     <!-- ===== FONTS & STYLES ===== -->
-    <!-- ============================================================ -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
     <link rel="stylesheet" href="style.css" />
+
+    <style>
+        /* ===== DNS ALERT STYLES ===== */
+        #dnsAlert {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 99999;
+            background: #e74c3c;
+            color: #fff;
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+            font-family: 'Inter', sans-serif;
+            max-width: 560px;
+            width: 90%;
+            text-align: center;
+            display: none;
+            animation: slideDown 0.4s ease;
+        }
+        #dnsAlert .alert-inner {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        #dnsAlert .alert-icon {
+            font-size: 28px;
+            flex-shrink: 0;
+        }
+        #dnsAlert .alert-text {
+            flex: 1;
+            min-width: 180px;
+        }
+        #dnsAlert .alert-text strong {
+            display: block;
+            font-size: 16px;
+            margin-bottom: 2px;
+        }
+        #dnsAlert .alert-text p {
+            margin: 0;
+            font-size: 14px;
+            opacity: 0.92;
+            line-height: 1.4;
+        }
+        #dnsAlert .alert-close {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #fff;
+            border-radius: 8px;
+            padding: 4px 14px;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1.4;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+        #dnsAlert .alert-close:hover {
+            background: rgba(255, 255, 255, 0.35);
+        }
+
+        @keyframes slideDown {
+            0% {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-30px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        /* ===== MANUAL AD UNIT PLACEHOLDER ===== */
+        .ad-container {
+            margin: 24px 0;
+            padding: 12px;
+            background: var(--card-bg, #f8f5f0);
+            border-radius: 12px;
+            text-align: center;
+            min-height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px dashed var(--border, #ddd);
+            color: var(--text-muted, #999);
+            font-size: 13px;
+        }
+        .ad-container ins.adsbygoogle {
+            display: block;
+            width: 100%;
+        }
+
+        /* Responsive tweaks */
+        @media (max-width: 480px) {
+            #dnsAlert {
+                padding: 14px 16px;
+                top: 12px;
+            }
+            #dnsAlert .alert-text strong {
+                font-size: 14px;
+            }
+            #dnsAlert .alert-text p {
+                font-size: 13px;
+            }
+        }
+    </style>
 </head>
 <body>
-    <!-- ===== AMP AUTO ADS ===== -->
-    <amp-auto-ads type="adsense" data-ad-client="ca-pub-3554311294133493">
-    </amp-auto-ads>
+
+    <!-- ===== DNS / AD-BLOCKER ALERT ===== -->
+    <div id="dnsAlert" role="alert">
+        <div class="alert-inner">
+            <span class="alert-icon"><i class="fas fa-exclamation-triangle"></i></span>
+            <div class="alert-text">
+                <strong>⚠️ एड-ब्लॉकिंग DNS डिटेक्ट</strong>
+                <p>कृपया अपना DNS बदलें या एड-ब्लॉकर बंद करें ताकि हम आपको मुफ्त प्रीसेट्स दे सकें।</p>
+            </div>
+            <button class="alert-close" onclick="document.getElementById('dnsAlert').style.display='none'" aria-label="Close alert">✕</button>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- ⚠️ MANUAL AD UNIT: LEADERBOARD (top of page)                 -->
+    <!-- Replace data-ad-slot with your own from AdSense dashboard    -->
+    <!-- ============================================================ -->
+    <div class="container" style="max-width:728px; margin:12px auto 0;">
+        <div class="ad-container" id="adTop">
+            <ins class="adsbygoogle"
+                 style="display:block"
+                 data-ad-client="ca-pub-3554311294133493"
+                 data-ad-slot="1234567890"
+                 data-ad-format="auto"
+                 data-full-width-responsive="true"></ins>
+            <script>
+                (adsbygoogle = window.adsbygoogle || []).push({});
+            </script>
+        </div>
+    </div>
 
     <div id="app">
         <!-- ===== HEADER ===== -->
@@ -114,40 +250,25 @@
                 </div>
 
                 <div class="nav-actions">
-                    <!-- Offline Indicator -->
                     <div id="offlineIndicator" style="display:none; background:#f39c12; color:#fff; padding:4px 12px; border-radius:20px; font-size:0.7rem; font-weight:600; margin-right:8px;">
                         <i class="fas fa-wifi"></i> ऑफलाइन
                     </div>
-
-                    <!-- Wishlist -->
                     <button class="icon-btn" id="wishlistBtn" aria-label="Wishlist"><i class="far fa-heart"></i></button>
-
-                    <!-- Upload -->
                     <button class="icon-btn" id="uploadBtn" aria-label="Upload"><i class="fas fa-cloud-upload-alt"></i></button>
-
-                    <!-- Theme Toggle -->
                     <button class="icon-btn" id="themeToggle" aria-label="Toggle Theme">
                         <i class="fas fa-moon"></i>
                     </button>
-
-                    <!-- Notification Bell -->
                     <button class="icon-btn" id="notificationBtn" aria-label="Notifications" style="position:relative;">
                         <i class="fas fa-bell"></i>
                         <span id="notifBadge" style="position:absolute;top:-5px;right:-5px;background:#e74c3c;color:#fff;border-radius:50%;padding:2px 6px;font-size:0.7rem;display:none;">0</span>
                     </button>
-
-                    <!-- Exit Button -->
                     <button class="icon-btn" id="exitBtn" aria-label="Exit" onclick="exitSite()">
                         <i class="fas fa-sign-out-alt"></i>
                     </button>
-
-                    <!-- Auth Section -->
                     <div id="authSection">
                         <button class="btn btn-sm btn-outline" id="loginBtn"><i class="fas fa-sign-in-alt"></i> लॉग इन</button>
                         <button class="btn btn-sm btn-primary" id="signupBtn"><i class="fas fa-user-plus"></i> साइन अप</button>
                     </div>
-
-                    <!-- User Section -->
                     <div id="userSection" style="display:none; position:relative;">
                         <div class="user-avatar" id="userAvatar" role="button" tabindex="0">R</div>
                         <div id="userDropdown" class="dropdown-menu" style="display:none; position:absolute; top:50px; right:0; background:var(--card-bg, #fff); border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.1); min-width:200px; padding:8px 0; z-index:1000;">
@@ -231,6 +352,23 @@
                 </div>
             </section>
 
+            <!-- ============================================================ -->
+            <!-- ⚠️ MANUAL AD UNIT: IN-CONTENT (between sections)            -->
+            <!-- ============================================================ -->
+            <div class="container" style="max-width:728px; margin:0 auto;">
+                <div class="ad-container" id="adMiddle1">
+                    <ins class="adsbygoogle"
+                         style="display:block"
+                         data-ad-client="ca-pub-3554311294133493"
+                         data-ad-slot="1234567890"
+                         data-ad-format="auto"
+                         data-full-width-responsive="true"></ins>
+                    <script>
+                        (adsbygoogle = window.adsbygoogle || []).push({});
+                    </script>
+                </div>
+            </div>
+
             <!-- Latest Presets -->
             <section class="container" id="latestSection">
                 <div class="section-title">
@@ -280,6 +418,23 @@
                     </button>
                 </div>
             </section>
+
+            <!-- ============================================================ -->
+            <!-- ⚠️ MANUAL AD UNIT: IN-CONTENT (between presets & banner)    -->
+            <!-- ============================================================ -->
+            <div class="container" style="max-width:728px; margin:0 auto;">
+                <div class="ad-container" id="adMiddle2">
+                    <ins class="adsbygoogle"
+                         style="display:block"
+                         data-ad-client="ca-pub-3554311294133493"
+                         data-ad-slot="1234567890"
+                         data-ad-format="auto"
+                         data-full-width-responsive="true"></ins>
+                    <script>
+                        (adsbygoogle = window.adsbygoogle || []).push({});
+                    </script>
+                </div>
+            </div>
 
             <!-- Featured Banner -->
             <section class="container" id="featuredBanner">
@@ -375,6 +530,23 @@
             </div>
         </footer>
 
+        <!-- ============================================================ -->
+        <!-- ⚠️ MANUAL AD UNIT: BOTTOM (before footer)                   -->
+        <!-- ============================================================ -->
+        <div class="container" style="max-width:728px; margin:0 auto 24px;">
+            <div class="ad-container" id="adBottom">
+                <ins class="adsbygoogle"
+                     style="display:block"
+                     data-ad-client="ca-pub-3554311294133493"
+                     data-ad-slot="1234567890"
+                     data-ad-format="auto"
+                     data-full-width-responsive="true"></ins>
+                <script>
+                    (adsbygoogle = window.adsbygoogle || []).push({});
+                </script>
+            </div>
+        </div>
+
         <!-- Modal & Toast -->
         <div id="modalContainer"></div>
         <div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;"></div>
@@ -383,5 +555,147 @@
     <!-- ===== SCRIPTS ===== -->
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script src="app.js"></script>
+
+    <!-- ============================================================ -->
+    <!-- ===== DNS / AD-BLOCKER DETECTION (FIXED) ===== -->
+    <!-- ============================================================ -->
+    <script>
+        (function() {
+            'use strict';
+
+            /**
+             * 🛡️ DNS / Ad-Blocker Detection
+             * 
+             * Detects if user is using ad-blocking DNS (like AdGuard, NextDNS, etc.)
+             * by testing access to a known ad-serving domain.
+             * 
+             * If blocked → shows a friendly alert asking to disable DNS blocking.
+             */
+            function detectAdBlockingDNS() {
+                // Don't run if already detected or alert already shown
+                if (window._dnsDetected) return;
+
+                // Use a small, cache-busted image from a domain commonly blocked by ad DNS
+                var testUrl = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?cb=' + Date.now();
+
+                var img = new Image();
+                var timeoutId = setTimeout(function() {
+                    // Timeout = likely blocked or very slow
+                    showAlert();
+                    window._dnsDetected = true;
+                }, 5000);
+
+                img.onload = function() {
+                    clearTimeout(timeoutId);
+                    // Image loaded → ad domain is accessible → DNS is NOT blocking
+                    console.log('✅ AdSense domain accessible. DNS seems clean.');
+                    // Still check if adsbygoogle is defined (script might be blocked by other means)
+                    checkAdsenseScript();
+                };
+
+                img.onerror = function() {
+                    clearTimeout(timeoutId);
+                    // Image failed → domain is blocked → ad-blocking DNS detected
+                    console.warn('⚠️ AdSense domain blocked → ad-blocking DNS detected.');
+                    showAlert();
+                    window._dnsDetected = true;
+                };
+
+                img.src = testUrl;
+            }
+
+            /**
+             * Double-check: verify if the AdSense script actually loaded.
+             * Sometimes the image loads but the script is blocked by other means.
+             */
+            function checkAdsenseScript() {
+                // Wait a bit for the script to fully initialize
+                setTimeout(function() {
+                    if (typeof adsbygoogle === 'undefined') {
+                        console.warn('⚠️ adsbygoogle is undefined → AdSense script may be blocked.');
+                        showAlert();
+                        window._dnsDetected = true;
+                    } else {
+                        console.log('✅ adsbygoogle is defined. AdSense is ready.');
+                    }
+                }, 2000);
+            }
+
+            /**
+             * Show the DNS alert banner with a friendly message.
+             */
+            function showAlert() {
+                var alertEl = document.getElementById('dnsAlert');
+                if (!alertEl) return;
+                // Only show if not already visible
+                if (alertEl.style.display === 'block') return;
+                alertEl.style.display = 'block';
+
+                // Auto-hide after 15 seconds (user can also close manually)
+                setTimeout(function() {
+                    if (alertEl) alertEl.style.display = 'none';
+                }, 15000);
+            }
+
+            // ===== RUN DETECTION =====
+            // Wait for the page to load before checking
+            if (document.readyState === 'complete') {
+                detectAdBlockingDNS();
+            } else {
+                window.addEventListener('load', detectAdBlockingDNS);
+            }
+
+            // Also re-check after a few seconds (in case script loads late)
+            setTimeout(function() {
+                if (!window._dnsDetected) {
+                    checkAdsenseScript();
+                }
+            }, 4000);
+
+        })();
+    </script>
+
+    <!-- ============================================================ -->
+    <!-- ===== RE-RENDER ADS AFTER DYNAMIC CONTENT ===== -->
+    <!-- ============================================================ -->
+    <script>
+        /**
+         * 🔄 Re-push AdSense ads after dynamic content loads.
+         * 
+         * Call this function whenever you add new content to the page
+         * (e.g., after loading presets, filtering, pagination, etc.)
+         * to ensure ads are rendered in new ad containers.
+         */
+        function refreshAds() {
+            if (typeof adsbygoogle !== 'undefined') {
+                try {
+                    // Find all ad units that haven't been rendered yet
+                    var adUnits = document.querySelectorAll('ins.adsbygoogle');
+                    for (var i = 0; i < adUnits.length; i++) {
+                        // Only push if not already rendered (check if child elements exist)
+                        if (adUnits[i].children.length === 0) {
+                            (adsbygoogle = window.adsbygoogle || []).push({});
+                        }
+                    }
+                    console.log('🔄 Ads refreshed.');
+                } catch (e) {
+                    console.warn('Ad refresh error:', e);
+                }
+            }
+        }
+
+        // Auto-refresh after page loads
+        window.addEventListener('load', function() {
+            setTimeout(refreshAds, 1500);
+        });
+
+        // Also refresh when the user interacts with filters (if your app uses them)
+        // You can call refreshAds() inside your filter/pagination functions.
+        // Example: after loadPresets() completes, call refreshAds()
+
+        // Expose globally so your app.js can call it
+        window.refreshAds = refreshAds;
+    </script>
+
 </body>
 </html>
