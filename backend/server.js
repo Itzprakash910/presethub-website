@@ -36,7 +36,7 @@ const userRoutes = require('./routes/users');
 const reviewRoutes = require('./routes/reviews');
 const paymentRoutes = require('./routes/payments');
 const adminRoutes = require('./routes/admin');
-const errorHandler = require('./utils/errorHandle'); // ✅ FIXED: Correct path
+const errorHandler = require('./utils/errorHandler');
 
 // ============================================================
 // ===== APP INITIALIZATION =====
@@ -71,9 +71,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    
     if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
@@ -97,7 +95,7 @@ if (process.env.NODE_ENV !== 'test') {
 // ===== RATE LIMITING =====
 // ============================================================
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 200,
   message: { error: 'Too many requests, please try again later' },
   standardHeaders: true,
@@ -105,7 +103,6 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Stricter rate limit for auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 15,
@@ -122,14 +119,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // ============================================================
 // ===== STATIC FILES =====
 // ============================================================
-// Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
-// Serve frontend static files
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // ============================================================
-// ===== ENSURE UPLOAD DIRECTORIES EXIST =====
+// ===== ENSURE UPLOAD DIRECTORIES =====
 // ============================================================
 const uploadsDir = path.join(__dirname, '../uploads');
 const previewsDir = path.join(uploadsDir, 'previews');
@@ -162,51 +156,41 @@ if (fs.existsSync(adminPath)) {
   });
 } else {
   console.warn('⚠️  admin.html not found at:', adminPath);
+  app.get('/admin', (req, res) => {
+    res.send(`
+      <!DOCTYPE html>
+      <html><head><title>Admin Panel</title></head>
+      <body><h1>Admin Panel</h1><p>admin.html not found. Please build the frontend.</p></body>
+      </html>
+    `);
+  });
 }
 
 // ============================================================
 // ===== STATIC LEGAL & INFO PAGES =====
 // ============================================================
 const staticPages = [
-  'terms.html',
-  'privacy.html', 
-  'about.html',
-  'blog.html',
-  'creator-program.html',
-  'faq.html',
-  'contact.html',
-  'download-guide.html',
-  'lightroom-guide.html'
+  'terms.html', 'privacy.html', 'about.html', 'blog.html',
+  'creator-program.html', 'faq.html', 'contact.html',
+  'download-guide.html', 'lightroom-guide.html'
 ];
 
 staticPages.forEach(page => {
   const pagePath = path.join(__dirname, `../frontend/${page}`);
   if (fs.existsSync(pagePath)) {
-    app.get(`/${page}`, (req, res) => {
-      res.sendFile(pagePath);
-    });
+    app.get(`/${page}`, (req, res) => res.sendFile(pagePath));
   } else {
-    // Create a simple page if it doesn't exist
     app.get(`/${page}`, (req, res) => {
       res.send(`
         <!DOCTYPE html>
         <html>
-        <head>
-          <title>${page.replace('.html', '').replace(/-/g, ' ').toUpperCase()} | PresetHub</title>
-          <style>
-            body { font-family: 'Inter', sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; line-height: 1.6; }
-            h1 { color: #d4a373; }
-            a { color: #d4a373; text-decoration: none; }
-            .container { background: #f8f6f2; padding: 30px; border-radius: 12px; }
-          </style>
+        <head><title>${page.replace('.html', '').replace(/-/g, ' ').toUpperCase()} | PresetHub</title>
+        <style>body{font-family:'Inter',sans-serif;max-width:800px;margin:50px auto;padding:20px;line-height:1.6;}
+        h1{color:#d4a373;}a{color:#d4a373;text-decoration:none;}.container{background:#f8f6f2;padding:30px;border-radius:12px;}</style>
         </head>
-        <body>
-          <div class="container">
-            <h1>📄 ${page.replace('.html', '').replace(/-/g, ' ').toUpperCase()}</h1>
-            <p>This page is coming soon. Please check back later.</p>
-            <p><a href="/">← Back to Home</a></p>
-          </div>
-        </body>
+        <body><div class="container"><h1>📄 ${page.replace('.html', '').replace(/-/g, ' ').toUpperCase()}</h1>
+        <p>This page is coming soon. Please check back later.</p>
+        <p><a href="/">← Back to Home</a></p></div></body>
         </html>
       `);
     });
@@ -217,28 +201,15 @@ staticPages.forEach(page => {
 // ===== SPA CATCH-ALL =====
 // ============================================================
 app.get('*', (req, res) => {
-  // Skip API routes
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'API endpoint not found' });
   }
-  
-  // Check if requesting HTML
   if (req.accepts('html')) {
     const indexPath = path.join(__dirname, '../frontend/index.html');
     if (fs.existsSync(indexPath)) {
       res.sendFile(indexPath);
     } else {
-      res.status(404).send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>PresetHub</title></head>
-        <body>
-          <h1>🚀 PresetHub</h1>
-          <p>Frontend files not found. Please build the frontend first.</p>
-          <p>Expected path: ${indexPath}</p>
-        </body>
-        </html>
-      `);
+      res.status(404).send(`<h1>🚀 PresetHub</h1><p>Frontend files not found at: ${indexPath}</p>`);
     }
   } else {
     res.status(404).json({ error: 'Not found' });
@@ -262,8 +233,6 @@ app.listen(PORT, () => {
   console.log(`🔧 Admin: ${process.env.CLIENT_URL || 'http://localhost:' + PORT}/admin`);
   console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('═══════════════════════════════════════════════');
-  
-  // Show API endpoints
   console.log('\n📋 API Endpoints:');
   console.log('  POST   /api/auth/signup     - Register user');
   console.log('  POST   /api/auth/login      - Login user');
@@ -278,27 +247,9 @@ app.listen(PORT, () => {
   console.log('═══════════════════════════════════════════════\n');
 });
 
-// ============================================================
-// ===== GRACEFUL SHUTDOWN =====
-// ============================================================
-process.on('SIGTERM', () => {
-  console.log('🛑 SIGTERM received, shutting down gracefully...');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('🛑 SIGINT received, shutting down gracefully...');
-  process.exit(0);
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err);
-  // Keep server running
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection:', reason);
-  // Keep server running
-});
+process.on('SIGTERM', () => { console.log('🛑 SIGTERM received'); process.exit(0); });
+process.on('SIGINT', () => { console.log('🛑 SIGINT received'); process.exit(0); });
+process.on('uncaughtException', (err) => console.error('❌ Uncaught Exception:', err));
+process.on('unhandledRejection', (reason) => console.error('❌ Unhandled Rejection:', reason));
 
 module.exports = app;
