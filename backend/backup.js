@@ -2,9 +2,9 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const FormData = require('form-data'); // ✅ import form-data
+const FormData = require('form-data');
 
-const source = path.join(__dirname, 'db.json');
+const source = path.join(__dirname, '../db.json');
 const backupDir = path.join(__dirname, '../backups');
 
 if (!fs.existsSync(backupDir)) {
