@@ -213,6 +213,7 @@ const allowedOrigins = [
   'https://www.presethub.site',
   'http://presethub.site',
   'http://www.presethub.site',
+'https://presethub-website.onrender.com/',
   'https://preset.site',
   'https://www.preset.site',
   'http://localhost:4000',
@@ -352,8 +353,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('🚀 PresetHub Server Started');
   console.log('═══════════════════════════════════════════════');
   console.log(`📡 Server: http://localhost:${PORT}`);
-  console.log(`📱 Frontend: ${process.env.CLIENT_URL || 'https://presethub.site'}`);
-  console.log(`🔧 Admin: ${process.env.CLIENT_URL || 'https://presethub.site'}/admin`);
+  console.log(`📱 Frontend: ${process.env.CLIENT_URL || 'https://presethub-website.onrender.com/','https://presethub.site'}`);
+  console.log(`🔧 Admin: ${process.env.CLIENT_URL || 'https://presethub-website.onrender.com'}/admin`,'https://presethub.site'}/admin`);
   console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🤖 Bot Token: ${process.env.BOT_TOKEN ? '✅ Configured' : '❌ Missing'}`);
   console.log(`📱 Admin Chat ID: ${process.env.ADMIN_CHAT_ID || '❌ Missing'}`);
