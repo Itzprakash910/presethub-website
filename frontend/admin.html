@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        /* पहले से दिए गए स्टाइल – unchanged */
         .admin-container { max-width: 1200px; margin: 40px auto; padding: 0 20px; }
         .admin-card { background: var(--card-bg, #fff); border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .admin-card h2 { margin-top: 0; display: flex; align-items: center; gap: 8px; }
@@ -48,6 +47,17 @@
         .modal-overlay.active { display: flex; }
         .modal { background: var(--modal-bg, #fff); padding: 30px; border-radius: 16px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; position: relative; }
         .modal .close { position: absolute; top: 12px; right: 16px; font-size: 1.5rem; background: none; border: none; cursor: pointer; }
+        
+        @media (max-width: 640px) {
+            .admin-container { margin: 20px auto; padding: 0 12px; }
+            .admin-card { padding: 16px; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .stat-item .num { font-size: 1.4rem; }
+            .user-table, .order-table { font-size: 0.75rem; }
+            .user-table th, .user-table td, .order-table th, .order-table td { padding: 4px 6px; }
+            .tab-btn { font-size: 0.7rem; padding: 4px 10px; }
+            .preset-item { font-size: 0.8rem; padding: 8px; }
+        }
     </style>
 </head>
 <body>
@@ -256,10 +266,9 @@
             renderUsers(filtered);
         }
 
-        // ===== PRESETS (limit increased to 1000) =====
+        // ===== PRESETS =====
         async function loadPresets() {
             try {
-                // ✅ FIX: increased limit to 1000
                 const response = await fetch(`${API_URL}/presets?limit=1000`);
                 const data = await response.json();
                 const presets = data.presets || [];
@@ -432,7 +441,6 @@
             }
         };
 
-        // ===== EDIT USER (Admin role edit disabled) =====
         window.editUser = async function(id) {
             try {
                 const user = await apiFetch(`/admin/users/${id}`);
@@ -474,7 +482,7 @@
                         username: document.getElementById('editUserUsername').value,
                         email: document.getElementById('editUserEmail').value,
                         bio: document.getElementById('editUserBio').value,
-                        role: isAdmin ? user.role : document.getElementById('editUserRole').value, // preserve admin role
+                        role: isAdmin ? user.role : document.getElementById('editUserRole').value,
                         verified: document.getElementById('editUserVerified').value === 'true'
                     };
                     try {
@@ -498,7 +506,6 @@
             }
         };
 
-        // ===== EDIT PRESET =====
         window.editPreset = async function(id) {
             try {
                 const preset = await apiFetch(`/presets/${id}`);

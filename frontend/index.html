@@ -170,7 +170,6 @@
             width: 100%;
         }
 
-        /* Responsive tweaks */
         @media (max-width: 480px) {
             #dnsAlert { padding: 14px 16px; top: 12px; }
             #dnsAlert .alert-text strong { font-size: 14px; }
@@ -200,7 +199,8 @@
                  data-ad-client="ca-pub-3554311294133493"
                  data-ad-slot="1234567890"
                  data-ad-format="auto"
-                 data-full-width-responsive="true"></ins>
+                 data-full-width-responsive="true"
+                 id="adTopSlot"></ins>
             <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
         </div>
     </div>
@@ -320,7 +320,7 @@
                 </div>
             </section>
 
-            <!-- ===== IN-CONTENT AD ===== -->
+            <!-- ===== IN-CONTENT AD 1 ===== -->
             <div class="container" style="max-width:728px; margin:0 auto;">
                 <div class="ad-container" id="adMiddle1">
                     <ins class="adsbygoogle"
@@ -328,7 +328,8 @@
                          data-ad-client="ca-pub-3554311294133493"
                          data-ad-slot="1234567890"
                          data-ad-format="auto"
-                         data-full-width-responsive="true"></ins>
+                         data-full-width-responsive="true"
+                         id="adMiddle1Slot"></ins>
                     <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
                 </div>
             </div>
@@ -383,7 +384,7 @@
                 </div>
             </section>
 
-            <!-- ===== IN-CONTENT AD ===== -->
+            <!-- ===== IN-CONTENT AD 2 ===== -->
             <div class="container" style="max-width:728px; margin:0 auto;">
                 <div class="ad-container" id="adMiddle2">
                     <ins class="adsbygoogle"
@@ -391,7 +392,8 @@
                          data-ad-client="ca-pub-3554311294133493"
                          data-ad-slot="1234567890"
                          data-ad-format="auto"
-                         data-full-width-responsive="true"></ins>
+                         data-full-width-responsive="true"
+                         id="adMiddle2Slot"></ins>
                     <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
                 </div>
             </div>
@@ -498,7 +500,8 @@
                      data-ad-client="ca-pub-3554311294133493"
                      data-ad-slot="1234567890"
                      data-ad-format="auto"
-                     data-full-width-responsive="true"></ins>
+                     data-full-width-responsive="true"
+                     id="adBottomSlot"></ins>
                 <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
             </div>
         </div>
@@ -581,9 +584,6 @@
 
     <!-- ===== REFRESH ADS FUNCTION ===== -->
     <script>
-        /**
-         * 🔄 Re-push AdSense ads after dynamic content loads.
-         */
         function refreshAds() {
             if (typeof adsbygoogle !== 'undefined') {
                 try {

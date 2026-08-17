@@ -2137,8 +2137,15 @@ async function fetchNotifications() {
     if (res.ok) {
       notifications = await res.json();
       updateNotificationUI();
+    } else {
+      notifications = [];
+      updateNotificationUI();
     }
-  } catch (err) { console.error(err); }
+  } catch (err) { 
+    console.error('Notification fetch error:', err);
+    notifications = [];
+    updateNotificationUI();
+  }
 }
 
 function updateNotificationUI() {
@@ -2172,28 +2179,46 @@ function openNotifications() {
           `).join('')
         }
       </div>
-      <button class="btn btn-sm btn-primary" id="markAllRead" style="margin-top:10px;font-size:0.8rem;padding:6px 14px;"><i class="fas fa-check-double"></i> Mark all as read</button>
+      ${notifications.length > 0 ? `
+        <button class="btn btn-sm btn-primary" id="markAllRead" style="margin-top:10px;font-size:0.8rem;padding:6px 14px;">
+          <i class="fas fa-check-double"></i> Mark all as read
+        </button>
+      ` : ''}
     </div>
   `;
   document.body.appendChild(modal);
+  
   modal.querySelector('.close').addEventListener('click', () => modal.remove());
-  modal.querySelector('#markAllRead').addEventListener('click', async () => {
-    await fetch(`${API_URL}/notifications/read-all`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
+  
+  const markBtn = modal.querySelector('#markAllRead');
+  if (markBtn) {
+    markBtn.addEventListener('click', async () => {
+      try {
+        await fetch(`${API_URL}/notifications/read-all`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        await fetchNotifications();
+        modal.remove();
+        openNotifications();
+      } catch (err) {
+        showToast('Failed to mark all as read', 'error');
+      }
     });
-    await fetchNotifications();
-    modal.remove();
-    openNotifications();
-  });
+  }
+  
   modal.querySelectorAll('.notif-item').forEach(item => {
     item.addEventListener('click', async () => {
       const id = item.dataset.id;
-      await fetch(`${API_URL}/notifications/read/${id}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      await fetchNotifications();
+      try {
+        await fetch(`${API_URL}/notifications/read/${id}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        await fetchNotifications();
+      } catch (err) {
+        console.error('Failed to mark notification as read:', err);
+      }
     });
   });
 }
@@ -2287,6 +2312,25 @@ function exitSite() {
     window.location.href = 'about:blank';
   }
 }
+
+// ============================================================
+// ===== REFRESH ADS =====
+// ============================================================
+window.refreshAds = function() {
+    if (typeof adsbygoogle !== 'undefined') {
+        try {
+            var adUnits = document.querySelectorAll('ins.adsbygoogle');
+            for (var i = 0; i < adUnits.length; i++) {
+                if (adUnits[i].children.length === 0) {
+                    (adsbygoogle = window.adsbygoogle || []).push({});
+                }
+            }
+            console.log('🔄 Ads refreshed.');
+        } catch (e) {
+            console.warn('Ad refresh error:', e);
+        }
+    }
+};
 
 // ============================================================
 // ===== HANDLE URL ACTIONS =====

@@ -166,7 +166,7 @@ async function processSyncQueue() {
 
         if (response.ok) {
           await store.delete(item.id);
-          console.log(`✅ Synced: \( {item.action} ( \){item.url})`);
+          console.log(`✅ Synced: ${item.action} (${item.url})`);
           const clients = await self.clients.matchAll();
           clients.forEach(client => {
             client.postMessage({
