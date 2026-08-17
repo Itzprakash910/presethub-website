@@ -13,7 +13,7 @@ if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
 }
 
 if (!process.env.CLIENT_URL) {
-  process.env.CLIENT_URL = 'https://presethub.site';
+  process.env.CLIENT_URL = 'https://presethub.site', 'https://presethub-website.onrender.com';
 }
 
 // ============================================================
