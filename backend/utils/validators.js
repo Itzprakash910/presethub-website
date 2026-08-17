@@ -24,7 +24,6 @@ const signupValidation = [
     .normalizeEmail()
     .trim()
     .custom((value) => {
-      // Optional: Block disposable email domains
       const disposableDomains = ['tempmail.com', 'throwaway.com', 'mailinator.com'];
       const domain = value.split('@')[1];
       if (disposableDomains.includes(domain)) {
