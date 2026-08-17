@@ -68,7 +68,6 @@ function initDOM() {
 // ===== TOAST SYSTEM (Fixed XSS) =====
 // ============================================================
 function showToast(message, type = 'success') {
-  // Sanitize message to prevent XSS
   const sanitizedMessage = String(message).replace(/[<>]/g, '');
   
   let container = document.getElementById('toastContainer');
@@ -82,10 +81,16 @@ function showToast(message, type = 'success') {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   toast.textContent = sanitizedMessage;
+  const colors = {
+    success: '#2ecc71',
+    error: '#e74c3c',
+    warning: '#f39c12',
+    info: '#3498db'
+  };
   toast.style.cssText = `
     padding:12px 16px;
     border-radius:10px;
-    background:${type === 'success' ? '#2ecc71' : type === 'error' ? '#e74c3c' : type === 'warning' ? '#f39c12' : '#3498db'};
+    background:${colors[type] || '#3498db'};
     color:#fff;
     font-size:0.9rem;
     box-shadow:0 4px 12px rgba(0,0,0,0.15);
@@ -233,7 +238,6 @@ function attachEventListeners() {
                 searchSuggestions.style.display = 'none';
                 return;
               }
-              // Using textContent to prevent XSS
               searchSuggestions.innerHTML = suggestions.map(p => `
                 <div class="suggestion-item" data-id="${p.id}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;">
                   <strong>${escapeHTML(p.name)}</strong> — ${escapeHTML(p.author)}
@@ -480,7 +484,6 @@ async function syncOfflineQueue() {
         }
         const res = await fetch(item.url, options);
         if (res.ok) {
-          // Remove from queue on success
           const deleteTx = db.transaction('queue', 'readwrite');
           const deleteStore = deleteTx.objectStore('queue');
           await new Promise((resolve, reject) => {
@@ -490,7 +493,6 @@ async function syncOfflineQueue() {
           });
           showToast(`✅ "${item.action}" synced successfully!`, 'success');
         } else {
-          // Increment retries
           item.retries = (item.retries || 0) + 1;
           if (item.retries > 3) {
             showToast(`❌ Failed to sync "${item.action}" after 3 attempts`, 'error');
@@ -501,7 +503,6 @@ async function syncOfflineQueue() {
       }
     }
     
-    // Reload data after sync
     await loadPresets();
     await fetchWishlist();
     await fetchNotifications();
@@ -563,7 +564,6 @@ async function fetchUserProfile() {
     }
   } catch (err) {
     console.error('Profile fetch error', err);
-    // Try to refresh token or logout
     if (err.message.includes('401')) {
       logout();
     }
@@ -1104,7 +1104,6 @@ async function openPresetModal(presetId) {
     const isLiked = wishlist.includes(preset.id);
     const isFree = preset.price === 0;
 
-    // Update Meta Tags for SEO
     updatePresetMetaTags(preset);
 
     if (!viewedPresets.has(presetId) && currentUser && preset.authorId !== currentUser.id) {
@@ -1117,7 +1116,6 @@ async function openPresetModal(presetId) {
       } catch (e) { console.warn('Ad impression tracking failed:', e); }
     }
 
-    // Get REAL reviews from API
     const reviews = preset.reviews || [];
     const sortedReviews = [...reviews].sort((a, b) => (b.helpful || 0) - (a.helpful || 0) || new Date(b.createdAt) - new Date(a.createdAt));
     const topReviews = sortedReviews.slice(0, 5);
@@ -1285,10 +1283,8 @@ window.openPresetModal = openPresetModal;
 // ===== UPDATE PRESET META TAGS FOR SEO =====
 // ============================================================
 function updatePresetMetaTags(preset) {
-  // Update title
   document.title = `${preset.name} – ${preset.category} Preset | PresetHub`;
   
-  // Update meta description
   let metaDesc = document.querySelector('meta[name="description"]');
   if (!metaDesc) {
     metaDesc = document.createElement('meta');
@@ -1297,7 +1293,6 @@ function updatePresetMetaTags(preset) {
   }
   metaDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset by ${preset.author}. ${preset.description || 'Professional photo editing preset.'} ⭐ ${preset.avgRating || 0} rating.`;
 
-  // Update OG title
   let ogTitle = document.querySelector('meta[property="og:title"]');
   if (!ogTitle) {
     ogTitle = document.createElement('meta');
@@ -1306,7 +1301,6 @@ function updatePresetMetaTags(preset) {
   }
   ogTitle.content = `${preset.name} – ${preset.category} Preset | PresetHub`;
 
-  // Update OG description
   let ogDesc = document.querySelector('meta[property="og:description"]');
   if (!ogDesc) {
     ogDesc = document.createElement('meta');
@@ -1315,7 +1309,6 @@ function updatePresetMetaTags(preset) {
   }
   ogDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset. ${preset.description || 'Professional preset for photo editing.'}`;
 
-  // Update OG image
   let ogImage = document.querySelector('meta[property="og:image"]');
   if (!ogImage) {
     ogImage = document.createElement('meta');
@@ -1327,7 +1320,6 @@ function updatePresetMetaTags(preset) {
     `${window.location.origin}/assets/images/og-image.jpg`;
   ogImage.content = imageUrl;
 
-  // Update Twitter card
   let twitterTitle = document.querySelector('meta[name="twitter:title"]');
   if (!twitterTitle) {
     twitterTitle = document.createElement('meta');
@@ -1336,7 +1328,6 @@ function updatePresetMetaTags(preset) {
   }
   twitterTitle.content = `${preset.name} – ${preset.category} Preset`;
 
-  // Update JSON-LD
   let jsonLd = document.querySelector('script[type="application/ld+json"]');
   if (!jsonLd) {
     jsonLd = document.createElement('script');
@@ -1349,10 +1340,7 @@ function updatePresetMetaTags(preset) {
     "name": preset.name,
     "description": preset.description || `${preset.category} Lightroom preset`,
     "image": imageUrl,
-    "brand": {
-      "@type": "Brand",
-      "name": "PresetHub"
-    },
+    "brand": { "@type": "Brand", "name": "PresetHub" },
     "offers": {
       "@type": "Offer",
       "price": preset.price,
@@ -1364,10 +1352,7 @@ function updatePresetMetaTags(preset) {
       "ratingValue": preset.avgRating || 0,
       "ratingCount": preset.reviews?.length || 0
     },
-    "author": {
-      "@type": "Person",
-      "name": preset.author
-    }
+    "author": { "@type": "Person", "name": preset.author }
   });
 }
 
@@ -1447,9 +1432,7 @@ async function downloadPreset(presetId) {
         skipBtn.textContent = 'Download Now';
         skipBtn.classList.add('enabled');
         skipBtn.disabled = false;
-        setTimeout(() => {
-          skipBtn.click();
-        }, 500);
+        setTimeout(() => { skipBtn.click(); }, 500);
       } else {
         timerSpan.textContent = seconds;
       }
@@ -1549,9 +1532,7 @@ async function buyPreset(presetId) {
         name: currentUser.name,
         email: currentUser.email,
       },
-      theme: {
-        color: '#d4a373'
-      }
+      theme: { color: '#d4a373' }
     };
     const rzp = new Razorpay(options);
     rzp.open();
@@ -2364,7 +2345,6 @@ function init() {
     offlineIndicator.style.display = 'inline-block';
   }
 
-  // Sync offline queue on startup if online
   if (navigator.onLine) {
     syncOfflineQueue();
   }
@@ -2378,7 +2358,6 @@ function init() {
   console.log('🚀 PresetHub frontend loaded with all features');
 }
 
-// Run init when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
