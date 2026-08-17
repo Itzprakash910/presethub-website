@@ -1,15 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, '../db.json');
+const DB_PATH = path.join(__dirname, '../../db.json');
 let dbData = null;
 let dbPromise = null;
 
-// ===== MIGRATION FUNCTION =====
 function migrateData(data) {
   let changed = false;
 
-  // Initialize missing collections
   if (!data.users) { data.users = []; changed = true; }
   if (!data.presets) { data.presets = []; changed = true; }
   if (!data.downloads) { data.downloads = []; changed = true; }
@@ -19,119 +17,46 @@ function migrateData(data) {
     changed = true;
   }
 
-  // Migrate users
   data.users.forEach(user => {
     if (!user.subscription) {
-      user.subscription = { 
-        tier: 'free', 
-        expiry: null, 
-        adWatchCount: 0, 
-        adRewardDays: 0, 
-        lastAdWatch: null 
-      };
+      user.subscription = { tier: 'free', expiry: null, adWatchCount: 0, adRewardDays: 0, lastAdWatch: null };
       changed = true;
     }
     if (!user.referral) {
-      user.referral = { 
-        code: null, 
-        referredBy: null, 
-        referralCount: 0, 
-        referralRewardDays: 0 
-      };
+      user.referral = { code: null, referredBy: null, referralCount: 0, referralRewardDays: 0 };
       changed = true;
     }
-    if (!user.notifications) {
-      user.notifications = [];
-      changed = true;
-    }
-    if (!user.followers) { 
-      user.followers = []; 
-      changed = true; 
-    }
-    if (!user.following) { 
-      user.following = []; 
-      changed = true; 
-    }
-    if (!user.wishlist) { 
-      user.wishlist = []; 
-      changed = true; 
-    }
+    if (!user.notifications) { user.notifications = []; changed = true; }
+    if (!user.followers) { user.followers = []; changed = true; }
+    if (!user.following) { user.following = []; changed = true; }
+    if (!user.wishlist) { user.wishlist = []; changed = true; }
     if (!user.socialLinks) {
-      user.socialLinks = { 
-        instagram: '', 
-        youtube: '', 
-        twitter: '', 
-        website: '' 
-      };
+      user.socialLinks = { instagram: '', youtube: '', twitter: '', website: '' };
       changed = true;
     }
-    if (user.verified === undefined) {
-      user.verified = true;
-      changed = true;
-    }
+    if (user.verified === undefined) { user.verified = true; changed = true; }
   });
 
-  // Migrate presets
   data.presets.forEach(preset => {
-    if (preset.views === undefined) { 
-      preset.views = 0; 
-      changed = true; 
-    }
-    if (!preset.likes) { 
-      preset.likes = []; 
-      changed = true; 
-    }
-    if (preset.shares === undefined) { 
-      preset.shares = 0; 
-      changed = true; 
-    }
-    if (preset.adImpressions === undefined) { 
-      preset.adImpressions = 0; 
-      changed = true; 
-    }
-    if (preset.totalRevenue === undefined) { 
-      preset.totalRevenue = 0; 
-      changed = true; 
-    }
-    if (!preset.status) { 
-      preset.status = 'pending';  // ✅ FIXED: Needs admin approval
-      changed = true; 
-    }
-    if (!preset.reviews) { 
-      preset.reviews = []; 
-      changed = true; 
-    }
-    if (!preset.tags) { 
-      preset.tags = []; 
-      changed = true; 
-    }
+    if (preset.views === undefined) { preset.views = 0; changed = true; }
+    if (!preset.likes) { preset.likes = []; changed = true; }
+    if (preset.shares === undefined) { preset.shares = 0; changed = true; }
+    if (preset.adImpressions === undefined) { preset.adImpressions = 0; changed = true; }
+    if (preset.totalRevenue === undefined) { preset.totalRevenue = 0; changed = true; }
+    if (!preset.status) { preset.status = 'pending'; changed = true; }
+    if (!preset.reviews) { preset.reviews = []; changed = true; }
+    if (!preset.tags) { preset.tags = []; changed = true; }
   });
 
-  // Migrate orders
-  if (data.orders) {
-    data.orders.forEach(order => {
-      if (!order.status) {
-        order.status = 'created';
-        changed = true;
-      }
-      if (!order.createdAt) {
-        order.createdAt = new Date().toISOString();
-        changed = true;
-      }
-    });
-  }
+  data.orders.forEach(order => {
+    if (!order.status) { order.status = 'created'; changed = true; }
+    if (!order.createdAt) { order.createdAt = new Date().toISOString(); changed = true; }
+  });
 
-  // Migrate downloads
-  if (data.downloads) {
-    data.downloads.forEach(download => {
-      if (!download.downloadedAt) {
-        download.downloadedAt = new Date().toISOString();
-        changed = true;
-      }
-    });
-  }
+  data.downloads.forEach(download => {
+    if (!download.downloadedAt) { download.downloadedAt = new Date().toISOString(); changed = true; }
+  });
 
-  // ✅ FIXED: Save changes if any
   if (changed) {
     try {
       fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
@@ -142,11 +67,9 @@ function migrateData(data) {
   }
 }
 
-// ===== LOAD DATA =====
 function loadData() {
   try {
     if (!fs.existsSync(DB_PATH)) {
-      // Create new database
       dbData = {
         users: [],
         presets: [],
@@ -163,7 +86,6 @@ function loadData() {
     }
   } catch (err) {
     console.error('❌ Error loading database:', err);
-    // Fallback to empty database
     dbData = {
       users: [],
       presets: [],
@@ -174,7 +96,6 @@ function loadData() {
   }
 }
 
-// ===== SAVE DATA =====
 function saveData() {
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2));
@@ -184,35 +105,27 @@ function saveData() {
   }
 }
 
-// ===== GET DB INSTANCE =====
 async function getDB() {
   if (!dbPromise) {
     dbPromise = (async () => {
       loadData();
       return {
         data: dbData,
-        write: async () => { 
-          saveData(); 
-        },
-        read: () => { 
-          loadData(); 
-        }
+        write: async () => { saveData(); },
+        read: () => { loadData(); }
       };
     })();
   }
   return dbPromise;
 }
 
-// ===== INITIALIZE ADMIN =====
 async function initAdmin() {
   try {
     const db = await getDB();
     const adminExists = db.data.users.find(u => u.email === 'admin@presethub.com');
-    
     if (!adminExists) {
       const bcrypt = require('bcryptjs');
       const hashed = await bcrypt.hash('admin123', 10);
-      
       const adminUser = {
         id: 'admin_' + Date.now(),
         email: 'admin@presethub.com',
@@ -224,31 +137,14 @@ async function initAdmin() {
         verified: true,
         bio: 'Platform administrator',
         avatar: '',
-        socialLinks: { 
-          instagram: '', 
-          youtube: '', 
-          twitter: '', 
-          website: '' 
-        },
+        socialLinks: { instagram: '', youtube: '', twitter: '', website: '' },
         followers: [],
         following: [],
         wishlist: [],
-        subscription: { 
-          tier: 'free', 
-          expiry: null, 
-          adWatchCount: 0, 
-          adRewardDays: 0, 
-          lastAdWatch: null 
-        },
-        referral: { 
-          code: null, 
-          referredBy: null, 
-          referralCount: 0, 
-          referralRewardDays: 0 
-        },
+        subscription: { tier: 'free', expiry: null, adWatchCount: 0, adRewardDays: 0, lastAdWatch: null },
+        referral: { code: null, referredBy: null, referralCount: 0, referralRewardDays: 0 },
         notifications: []
       };
-      
       db.data.users.push(adminUser);
       await db.write();
       console.log('✅ Admin user created successfully');
@@ -260,8 +156,6 @@ async function initAdmin() {
   }
 }
 
-// ===== STARTUP =====
-// Initialize admin on startup
 initAdmin().catch(console.error);
 
 module.exports = { getDB };
