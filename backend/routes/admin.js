@@ -4,6 +4,7 @@ const { getDB } = require('../config/db');
 
 const router = express.Router();
 
+// ===== DEFINE isAdmin FIRST =====
 const isAdmin = (req, res, next) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' });
@@ -11,6 +12,7 @@ const isAdmin = (req, res, next) => {
   next();
 };
 
+// ===== THEN USE IT =====
 router.use(auth, isAdmin);
 
 // Get all users

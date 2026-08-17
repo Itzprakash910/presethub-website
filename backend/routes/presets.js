@@ -50,7 +50,7 @@ router.get('/', async (req, res) => {
   });
 });
 
-// ===== SMART SEARCH (must be before /:id) ===== ✅ FIXED
+// ===== SMART SEARCH (must be before /:id) =====
 router.get('/search', async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 2) return res.json([]);
@@ -120,7 +120,7 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
       reviews: [],
       fileUrl: file ? `/uploads/${file.filename}` : '',
       previewImage: preview ? `/uploads/previews/${path.basename(preview.path)}` : '',
-      status: 'pending',  // ✅ FIXED: Needs admin approval
+      status: 'pending',
       size: file ? file.size : 0,
       originalName: file ? file.originalname : '',
       views: 0,

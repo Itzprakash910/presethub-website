@@ -60,7 +60,7 @@ router.post('/:presetId', auth, [
     await createNotification(
       preset.authorId,
       'review',
-      `\( {user.name} reviewed your preset " \){preset.name}" (${rating}★)`,
+      `${user.name} reviewed your preset "${preset.name}" (${rating}★)`,
       `/preset/${preset.id}`
     );
   }

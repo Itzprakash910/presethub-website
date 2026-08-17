@@ -2,10 +2,18 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+const fs = require('fs');
 const { getDB } = require('../config/db');
-const { validate, signupValidation, loginValidation, changePasswordValidation } = require('../utils/validators');
+const { 
+  validate, 
+  signupValidation, 
+  loginValidation,
+  changePasswordValidation
+} = require('../utils/validators');
 const rateLimit = require('express-rate-limit');
 const auth = require('../middleware/auth');
+const { uploadAvatar } = require('../middleware/upload');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
@@ -32,6 +40,7 @@ const generateUniqueUsername = (email, existingUsernames) => {
   return username;
 };
 
+// ===== SIGNUP =====
 router.post('/signup', validate(signupValidation), async (req, res) => {
   try {
     let { email, password, name, username } = req.body;
@@ -123,6 +132,7 @@ router.post('/signup', validate(signupValidation), async (req, res) => {
   }
 });
 
+// ===== LOGIN =====
 router.post('/login', validate(loginValidation), async (req, res) => {
   try {
     let { email, password } = req.body;
@@ -164,6 +174,7 @@ router.post('/login', validate(loginValidation), async (req, res) => {
   }
 });
 
+// ===== GET CURRENT USER =====
 router.get('/me', auth, async (req, res) => {
   try {
     const db = await getDB();
@@ -177,47 +188,7 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
-router.put('/change-password', auth, validate(changePasswordValidation), async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    const db = await getDB();
-    const user = db.data.users.find(u => u.id === req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const valid = await bcrypt.compare(currentPassword, user.password);
-    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
-
-    user.password = await bcrypt.hash(newPassword, 10);
-    user.updatedAt = new Date().toISOString();
-    await db.write();
-    res.json({ success: true, message: 'Password changed successfully' });
-  } catch (error) {
-    console.error('Change password error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.post('/logout', auth, async (req, res) => {
-  res.json({ success: true, message: 'Logged out successfully' });
-});
-
-router.post('/refresh-token', auth, async (req, res) => {
-  try {
-    const db = await getDB();
-    const user = db.data.users.find(u => u.id === req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-    res.json({ success: true, token });
-  } catch (error) {
-    console.error('Refresh token error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
+// ===== UPDATE PROFILE =====
 router.put('/profile', auth, async (req, res) => {
   try {
     const { name, username, bio, avatar, socialLinks } = req.body;
@@ -246,21 +217,77 @@ router.put('/profile', auth, async (req, res) => {
   }
 });
 
-router.put('/me/avatar', auth, require('../middleware/upload').uploadAvatar, async (req, res) => {
+// ===== CHANGE PASSWORD =====
+router.put('/change-password', auth, validate(changePasswordValidation), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const { currentPassword, newPassword } = req.body;
     const db = await getDB();
     const user = db.data.users.find(u => u.id === req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.updatedAt = new Date().toISOString();
+    await db.write();
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===== LOGOUT =====
+router.post('/logout', auth, async (req, res) => {
+  res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// ===== REFRESH TOKEN =====
+router.post('/refresh-token', auth, async (req, res) => {
+  try {
+    const db = await getDB();
+    const user = db.data.users.find(u => u.id === req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    res.json({ success: true, token });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ===== UPLOAD AVATAR =====
+router.put('/me/avatar', auth, uploadAvatar, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    const db = await getDB();
+    const user = db.data.users.find(u => u.id === req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
     if (user.avatar && user.avatar.startsWith('/uploads/avatars/')) {
       const oldPath = path.join(__dirname, '../../uploads/avatars', path.basename(user.avatar));
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      if (fs.existsSync(oldPath)) {
+        try { fs.unlinkSync(oldPath); } catch (e) {}
+      }
     }
 
     user.avatar = `/uploads/avatars/${req.file.filename}`;
     await db.write();
-    res.json({ avatar: user.avatar });
+    
+    res.json({ 
+      success: true, 
+      avatar: user.avatar,
+      message: 'Avatar updated successfully'
+    });
   } catch (error) {
     console.error('Avatar upload error:', error);
     res.status(500).json({ error: 'Avatar upload failed' });
