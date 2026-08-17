@@ -103,7 +103,6 @@ const authorize = (...roles) => {
 
 const isAdmin = authorize('admin');
 
-// ✅ Correct exports (default + named)
 module.exports = authenticate;
 module.exports.authenticate = authenticate;
 module.exports.authorize = authorize;
