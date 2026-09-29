@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin Panel – PresetHub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <main id="main" class="admin-container">
+    <h1><i class="fas fa-crown" aria-hidden="true"></i> Admin Dashboard</h1>
+    <div id="message" role="status" aria-live="polite"></div>
+
+    <section class="admin-card">
+      <h2><i class="fas fa-chart-simple" aria-hidden="true"></i> Platform Analytics</h2>
+      <div class="stats-grid" id="analytics"><div class="skeleton" style="height:80px"></div></div>
+    </section>
+
+    <section class="admin-card">
+      <h2><i class="fas fa-cubes" aria-hidden="true"></i> Presets</h2>
+      <div id="presetsList"><div class="skeleton" style="height:120px"></div></div>
+    </section>
+
+    <section class="admin-card">
+      <h2><i class="fas fa-users" aria-hidden="true"></i> Users</h2>
+      <div class="table-wrap" id="usersList"><div class="skeleton" style="height:120px"></div></div>
+    </section>
+  </main>
+  <script src="admin.js"></script>
+</body>
+</html>

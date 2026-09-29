@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PresetHub – Free Lightroom Presets & Premium Lightroom Presets</title>
+  <meta name="description" content="Discover, preview, download and sell Lightroom presets on PresetHub. Find free and premium presets by style, category and creator.">
+  <meta name="keywords" content="Lightroom presets, free Lightroom presets, premium presets, XMP presets, DNG presets, photo presets, mobile presets">
+  <link rel="canonical" href="https://presethub.site/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="PresetHub – Lightroom Presets Marketplace">
+  <meta property="og:description" content="Discover, preview, download and sell Lightroom presets.">
+  <meta property="og:url" content="https://presethub.site/">
+  <meta property="og:image" content="https://presethub.site/assets/images/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="PresetHub – Lightroom Presets Marketplace">
+  <meta name="twitter:description" content="Discover free and premium Lightroom presets.">
+  <meta name="twitter:image" content="https://presethub.site/assets/images/og-image.png">
+  <meta name="google-site-verification" content="">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3554311294133493" crossorigin="anonymous"></script>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"WebSite","name":"PresetHub","url":"https://presethub.site/","potentialAction":{"@type":"SearchAction","target":"https://presethub.site/?q={search_term_string}","query-input":"required name=search_term_string"}}
+  </script>
+  <meta name="description" content="Download free & premium Lightroom presets from creators.">
+  <meta name="theme-color" content="#d4a373">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/assets/icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<a class="skip-link" href="#presets">Skip to presets</a>
+
+<header>
+  <div class="container nav">
+    <a class="logo" href="/"><i class="fas fa-sliders" aria-hidden="true"></i>Preset<span>Hub</span></a>
+    <form class="nav-search" id="searchForm" role="search" autocomplete="off">
+      <input id="searchInput" type="search" placeholder="प्रीसेट, क्रिएटर या टैग खोजें…" aria-label="Search presets" maxlength="100">
+      <button type="submit"><i class="fas fa-search" aria-hidden="true"></i> खोजें</button>
+      <div id="searchSuggestions" hidden></div>
+    </form>
+    <div class="nav-actions">\n      <button class="btn btn-outline btn-sm" data-action="install" title="Install PresetHub"><i class="fas fa-download"></i> Install</button>
+      <button class="icon-btn" data-action="theme" aria-label="Toggle dark mode"><i class="fas fa-moon" aria-hidden="true"></i></button>
+      <div id="authSection">
+        <button class="btn btn-outline btn-sm" data-action="login">लॉग इन</button>
+        <button class="btn btn-primary btn-sm" data-action="signup">साइन अप</button>
+      </div>
+      <div id="userSection">
+        <a class="btn btn-outline btn-sm hidden" id="adminLink" href="/admin.html">Admin</a>
+        <button class="btn btn-accent btn-sm" data-action="upload"><i class="fas fa-upload" aria-hidden="true"></i> अपलोड</button>
+        <button class="user-avatar" id="avatar" data-action="account" title="मेरा अकाउंट" aria-label="My account"></button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="container hero-grid">
+      <div>
+        <h1>बेहतरीन <span>Lightroom Presets</span>, एक क्लिक में</h1>
+        <p>Free और premium presets खोजें, डाउनलोड करें, या अपने बनाए presets बेचें।</p>
+        <div class="hero-btns">
+          <a class="btn btn-primary" href="#presets">Presets देखें</a>
+          <button class="btn btn-outline" data-action="upload">अपना preset बेचें</button>
+        </div>
+        <div class="hero-stats">
+          <div><div class="num" id="statPresets">–</div><div class="label">Presets</div></div>
+          <div><div class="num" id="statFree">–</div><div class="label">Free</div></div>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <svg viewBox="0 0 400 260" role="img" aria-label="Before and after photo preview">
+          <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#8a8a8a"/><stop offset="1" stop-color="#d4a373"/></linearGradient></defs>
+          <rect width="400" height="260" rx="16" fill="url(#g)"/>
+          <circle cx="290" cy="80" r="34" fill="#fff4d6" opacity=".9"/>
+          <path d="M0 200 L110 120 L200 190 L290 110 L400 200 V260 H0Z" fill="#3b2f2a" opacity=".75"/>
+        </svg>
+        <div class="hero-badge"><i class="fas fa-bolt" aria-hidden="true"></i> Instant download</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="container">
+    <h2 class="section-title">Categories</h2>
+    <div class="categories" id="categories"></div>
+
+    <h2 class="section-title" id="presets">
+      <span id="listTitle">सभी Presets</span>
+      <span style="display:flex;gap:8px;flex-wrap:wrap">
+        <select class="filter-select" id="priceFilter" aria-label="Price filter">
+          <option value="">सभी कीमतें</option><option value="free">Free</option><option value="paid">Paid</option>
+        </select>
+        <select class="filter-select" id="sortFilter" aria-label="Sort">
+          <option value="newest">नए पहले</option><option value="popular">Popular</option><option value="rating">Top rated</option>
+        </select>
+      </span>
+    </h2>
+    <div class="preset-grid" id="presetGrid" aria-live="polite"></div>
+
+    <h2 class="section-title">Top Creators</h2>
+    <div class="top-creators-grid" id="creators"></div>
+  </div>
+</main>
+
+<footer>
+  <div class="container footer-bottom" style="border-top:0">
+    <span>© PresetHub</span><span>Made for photographers 📷</span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a> · <a href="/download-app.html">Install App</a></span>
+  </div>
+</footer>
+
+<div class="modal-overlay" id="overlay" role="dialog" aria-modal="true">
+  <div class="modal"><button class="close" data-action="close" aria-label="Close">×</button><div id="modalBody"></div></div>
+</div>
+<div id="toastBox" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body>
+</html>
