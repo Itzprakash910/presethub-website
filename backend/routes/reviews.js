@@ -1,64 +1,112 @@
 const express = require('express');
 const auth = require('../middleware/auth');
-const { getDB } = require('../db/db');
+const { getDB } = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
-const { str } = require('../utils/helpers');
+const { body, validationResult } = require('express-validator');
+const { createNotification } = require('./users');
 
 const router = express.Router();
 
+// Get reviews for a preset
 router.get('/:presetId', async (req, res) => {
   const db = await getDB();
-  const preset = db.data.presets.find(p => p.id === req.params.presetId && p.status === 'approved');
+  const preset = db.data.presets.find(p => p.id === req.params.presetId);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
-  // helpfulBy (user ids) stays private
-  res.json((preset.reviews || []).map(({ helpfulBy, ...r }) => r));
+  res.json(preset.reviews || []);
 });
 
-router.post('/:presetId', auth, async (req, res) => {
-  const rating = Number(req.body.rating);
-  const comment = str(req.body.comment, 500);
-  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-    return res.status(400).json({ error: 'Rating must be a whole number from 1 to 5' });
+// Post a review
+router.post('/:presetId', auth, [
+  body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
+  body('comment').notEmpty().withMessage('Comment is required')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ error: errors.array()[0].msg });
   }
 
+  const { rating, comment } = req.body;
+  const userId = req.user.id;
   const db = await getDB();
-  const preset = db.data.presets.find(p => p.id === req.params.presetId && p.status === 'approved');
+  const preset = db.data.presets.find(p => p.id === req.params.presetId);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
-  if (preset.authorId === req.user.id) return res.status(400).json({ error: 'You cannot review your own preset' });
 
-  const user = db.data.users.find(u => u.id === req.user.id);
+  const existingReview = preset.reviews?.find(r => r.userId === userId);
+  if (existingReview) {
+    return res.status(400).json({ error: 'You have already reviewed this preset' });
+  }
+
+  const user = db.data.users.find(u => u.id === userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  preset.reviews = preset.reviews || [];
-  if (preset.reviews.some(r => r.userId === user.id)) {
-    return res.status(409).json({ error: 'You already reviewed this preset' });
+  const review = {
+    id: uuidv4(),
+    userId,
+    userName: user.name,
+    rating: parseInt(rating),
+    comment,
+    createdAt: new Date().toISOString(),
+    helpful: 0,
+  };
+
+  if (!preset.reviews) preset.reviews = [];
+  preset.reviews.push(review);
+
+  const total = preset.reviews.reduce((sum, r) => sum + r.rating, 0);
+  preset.avgRating = parseFloat((total / preset.reviews.length).toFixed(1));
+  await db.write();
+
+  if (preset.authorId !== userId) {
+    await createNotification(
+      preset.authorId,
+      'review',
+      `${user.name} reviewed your preset "${preset.name}" (${rating}★)`,
+      `/preset/${preset.id}`
+    );
   }
 
-  const review = {
-    id: uuidv4(), userId: user.id, userName: user.name, rating, comment,
-    createdAt: new Date().toISOString(), helpful: 0, helpfulBy: []
-  };
-  preset.reviews.push(review);
-  const total = preset.reviews.reduce((s, r) => s + r.rating, 0);
-  preset.avgRating = Math.round((total / preset.reviews.length) * 10) / 10;
-  await db.write();
-  const { helpfulBy, ...out } = review;
-  res.status(201).json(out);
+  res.status(201).json(review);
 });
 
+// Mark review as helpful
 router.post('/:presetId/reviews/:reviewId/helpful', auth, async (req, res) => {
   const db = await getDB();
-  const preset = db.data.presets.find(p => p.id === req.params.presetId && p.status === 'approved');
-  const review = preset?.reviews?.find(r => r.id === req.params.reviewId);
-  if (!review) return res.status(404).json({ error: 'Review not found' });
-  if (review.userId === req.user.id) return res.status(400).json({ error: 'Cannot vote on your own review' });
+  const preset = db.data.presets.find(p => p.id === req.params.presetId);
+  if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
-  review.helpfulBy = review.helpfulBy || [];
-  if (review.helpfulBy.includes(req.user.id)) return res.status(409).json({ error: 'Already marked helpful' });
-  review.helpfulBy.push(req.user.id);
-  review.helpful = review.helpfulBy.length;
+  const review = (preset.reviews || []).find(r => r.id === req.params.reviewId);
+  if (!review) return res.status(404).json({ error: 'Review not found' });
+
+  review.helpful = (review.helpful || 0) + 1;
   await db.write();
   res.json({ helpful: review.helpful });
+});
+
+// Delete review
+router.delete('/:presetId/reviews/:reviewId', auth, async (req, res) => {
+  const db = await getDB();
+  const preset = db.data.presets.find(p => p.id === req.params.presetId);
+  if (!preset) return res.status(404).json({ error: 'Preset not found' });
+
+  const reviewIndex = (preset.reviews || []).findIndex(r => r.id === req.params.reviewId);
+  if (reviewIndex === -1) return res.status(404).json({ error: 'Review not found' });
+
+  const review = preset.reviews[reviewIndex];
+  if (review.userId !== req.user.id && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  preset.reviews.splice(reviewIndex, 1);
+
+  if (preset.reviews.length > 0) {
+    const total = preset.reviews.reduce((sum, r) => sum + r.rating, 0);
+    preset.avgRating = parseFloat((total / preset.reviews.length).toFixed(1));
+  } else {
+    preset.avgRating = 0;
+  }
+
+  await db.write();
+  res.json({ success: true });
 });
 
 module.exports = router;
