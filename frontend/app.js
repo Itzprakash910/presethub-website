@@ -1,356 +1,2392 @@
-(() => {
-  'use strict';
-  const $ = s => document.querySelector(s);
-  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const CATS = [['Portrait', '🧑'], ['Travel', '✈️'], ['सनसेट', '🌅'], ['Street', '🏙️'], ['Wedding', '💍'], ['Moody', '🌫️'], ['General', '🎨']];
-  const state = { token: localStorage.getItem('token'), me: null, category: '', q: '', list: [] };
+// ============================================================
+// ===== CONFIGURATION =====
+// ============================================================
+const API_URL = window.location.origin + '/api';
+const APP_VERSION = '2.0.0';
 
-  // ---------- helpers ----------
-  async function api(path, opts = {}) {
-    const headers = { ...(opts.headers || {}) };
-    if (state.token) headers.Authorization = 'Bearer ' + state.token;
-    if (opts.json) { headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(opts.json); }
-    const res = await fetch('/api' + path, { ...opts, headers });
-    if (res.status === 401 && state.token) { logout(true); throw new Error('Session expired, login again'); }
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Request failed');
-    return opts.blob ? res : res.json();
-  }
-  function toast(msg) {
-    const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
-    $('#toastBox').appendChild(t); setTimeout(() => t.remove(), 3200);
-  }
-  const money = p => (p > 0 ? '₹' + p : 'Free');
-  const stars = r => '★'.repeat(Math.round(r || 0)) + '☆'.repeat(5 - Math.round(r || 0));
-  const openModal = html => { $('#modalBody').innerHTML = html; $('#overlay').classList.add('active'); };
-  const closeModal = () => $('#overlay').classList.remove('active');
-  const need = () => { if (state.token) return true; showAuth('login'); toast('पहले लॉग इन करें'); return false; };
+// ============================================================
+// ===== GLOBALS =====
+// ============================================================
+let currentUser = null;
+let token = localStorage.getItem('token');
+let allPresets = [];
+let wishlist = [];
+let currentPage = 1;
+let totalPages = 1;
+let currentFilters = {};
+let isOnline = navigator.onLine;
+let subscriptionData = {};
+let notifications = [];
+let viewedPresets = new Set();
+let isProcessing = false;
+let searchTimeout = null;
+let refreshInterval = null;
 
-  // ---------- auth ----------
-  function renderUser() {
-    const on = !!state.me;
-    $('#authSection').classList.toggle('hidden', on);
-    $('#userSection').style.display = on ? 'flex' : 'none';
-    if (on) {
-      $('#avatar').textContent = (state.me.name || '?').trim().charAt(0).toUpperCase();
-      $('#adminLink').classList.toggle('hidden', state.me.role !== 'admin');
+// ============================================================
+// ===== DOM REFS =====
+// ============================================================
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+function slugifyClient(value) {
+  return String(value || 'preset').toLowerCase().trim()
+    .replace(/[^a-z0-9\u0900-\u097f]+/g, '-').replace(/^-+|-+$/g, '') || 'preset';
+}
+
+let authSection, userSection, userAvatar, loginBtn, signupBtn, logoutBtn;
+let presetGrid, latestGrid, searchInput, searchBtn;
+let filterCategory, filterPrice, filterSort;
+let wishlistBtn, exploreBtn, uploadHeroBtn, featuredDownloadBtn;
+let searchSuggestions, themeToggle, loadMoreBtn, offlineIndicator, userDropdown;
+
+// ============================================================
+// ===== DOM READY – Initialize after DOM load =====
+// ============================================================
+function initDOM() {
+  authSection = $('#authSection');
+  userSection = $('#userSection');
+  userAvatar = $('#userAvatar');
+  loginBtn = $('#loginBtn');
+  signupBtn = $('#signupBtn');
+  logoutBtn = $('#logoutBtn');
+  presetGrid = $('#presetGrid');
+  latestGrid = $('#latestGrid');
+  searchInput = $('#searchInput');
+  searchBtn = $('#searchBtn');
+  filterCategory = $('#filterCategory');
+  filterPrice = $('#filterPrice');
+  filterSort = $('#filterSort');
+  wishlistBtn = $('#wishlistBtn');
+  exploreBtn = $('#exploreBtn');
+  uploadHeroBtn = $('#uploadHeroBtn');
+  featuredDownloadBtn = $('#featuredDownloadBtn');
+  searchSuggestions = $('#searchSuggestions');
+  themeToggle = $('#themeToggle');
+  loadMoreBtn = $('#loadMoreBtn');
+  offlineIndicator = $('#offlineIndicator');
+  userDropdown = document.getElementById('userDropdown');
+
+  attachEventListeners();
+}
+
+// ============================================================
+// ===== TOAST SYSTEM (Fixed XSS) =====
+// ============================================================
+function showToast(message, type = 'success') {
+  const sanitizedMessage = String(message).replace(/[<>]/g, '');
+  
+  let container = document.getElementById('toastContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:350px;';
+    document.body.appendChild(container);
+  }
+  
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = sanitizedMessage;
+  const colors = {
+    success: '#2ecc71',
+    error: '#e74c3c',
+    warning: '#f39c12',
+    info: '#3498db'
+  };
+  toast.style.cssText = `
+    padding:12px 16px;
+    border-radius:10px;
+    background:${colors[type] || '#3498db'};
+    color:#fff;
+    font-size:0.9rem;
+    box-shadow:0 4px 12px rgba(0,0,0,0.15);
+    animation:slideIn 0.3s ease;
+    transition:all 0.3s ease;
+  `;
+  container.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(100px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+window.showToast = showToast;
+
+// ============================================================
+// ===== ATTACH ALL EVENT LISTENERS =====
+// ============================================================
+function attachEventListeners() {
+  // --- Auth Buttons ---
+  if (loginBtn) loginBtn.addEventListener('click', () => openAuthModal('login'));
+  if (signupBtn) signupBtn.addEventListener('click', () => openAuthModal('signup'));
+  if (logoutBtn) logoutBtn.addEventListener('click', logout);
+
+  // --- Theme Toggle ---
+  if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('dark');
+      const isDark = document.body.classList.contains('dark');
+      themeToggle.innerHTML = isDark ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    });
+    if (document.body.classList.contains('dark')) {
+      themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
     }
   }
-  function logout(silent) {
-    closeModal(); localStorage.removeItem('token'); state.token = null; state.me = null; renderUser();
-    if (!silent) toast('लॉग आउट हो गए');
-  }
-  function showAuth(mode) {
-    const su = mode === 'signup';
-    openModal(`<h2 style="margin-bottom:16px">${su ? 'नया अकाउंट' : 'लॉग इन'}</h2>
-      <form id="authForm" novalidate>
-        ${su ? '<div class="form-group"><label for="fName">नाम</label><input id="fName" required maxlength="60" autocomplete="name"></div>' : ''}
-        <div class="form-group"><label for="fEmail">ईमेल</label><input id="fEmail" type="email" required autocomplete="email"></div>
-        <div class="form-group"><label for="fPass">पासवर्ड ${su ? '(कम से कम 8)' : ''}</label>
-          <input id="fPass" type="password" required minlength="8" maxlength="72" autocomplete="${su ? 'new-password' : 'current-password'}"></div>
-        <div id="formErr" role="alert" style="color:#c0392b;min-height:22px;margin-bottom:8px"></div>
-        <button class="btn btn-primary" style="width:100%;justify-content:center" type="submit">${su ? 'साइन अप' : 'लॉग इन'}</button>
-      </form>
-      <p class="mt-2 text-center"><a href="#" data-action="${su ? 'login' : 'signup'}" style="color:var(--accent-text)">${su ? 'पहले से अकाउंट है? लॉग इन' : 'नया अकाउंट बनाएं'}</a></p>`);
-    $('#authForm').addEventListener('submit', async e => {
-      e.preventDefault();
-      const btn = e.target.querySelector('button'); btn.disabled = true;
-      try {
-        const body = { email: $('#fEmail').value, password: $('#fPass').value };
-        if (su) body.name = $('#fName').value;
-        const d = await api('/auth/' + mode, { method: 'POST', json: body });
-        state.token = d.token; localStorage.setItem('token', d.token);
-        state.me = await api('/users/me'); renderUser(); closeModal(); toast('स्वागत है, ' + d.user.name + '!');
-      } catch (err) { $('#formErr').textContent = err.message; btn.disabled = false; }
-    });
-  }
 
-  // ---------- lists ----------
-  function card(p) {
-    const img = p.previewImage
-      ? `<img src="${esc(p.previewImage)}" alt="${esc(p.name)}" loading="lazy" style="width:100%;height:100%;object-fit:cover">`
-      : '<span style="font-size:3rem" aria-hidden="true">🎞️</span>';
-    return `<article class="preset-card" data-action="open" data-id="${esc(p.id)}" tabindex="0" role="button" aria-label="${esc(p.name)}">
-      <div class="thumb">${img}<div class="overlay"><span class="btn btn-sm">देखें</span></div></div>
-      <div class="info"><span class="tag">${esc(p.category)}</span><h3>${esc(p.name)}</h3>
-        <div class="author">by ${esc(p.author)}</div>
-        <div class="meta"><span class="price ${p.price > 0 ? '' : 'free'}">${money(p.price)}</span>
-        <span class="rating" aria-label="${p.avgRating || 0} stars">${stars(p.avgRating)}</span></div></div></article>`;
-  }
-  async function loadPresets() {
-    const grid = $('#presetGrid');
-    const qs = new URLSearchParams({ sort: $('#sortFilter').value });
-    if ($('#priceFilter').value) qs.set('price', $('#priceFilter').value);
-    if (state.category) qs.set('category', state.category);
-    if (state.q) qs.set('q', state.q);
-    grid.innerHTML = '<div class="skeleton" style="height:260px"></div>'.repeat(4);
-    try {
-      state.list = await api('/presets?' + qs);
-      grid.innerHTML = state.list.length ? state.list.map(card).join('')
-        : '<p style="grid-column:1/-1;text-align:center;color:var(--muted)">कोई preset नहीं मिला।</p>';
-      if (!qs.has('q') && !qs.has('category') && !qs.has('price')) {
-        $('#statPresets').textContent = state.list.length;
-        $('#statFree').textContent = state.list.filter(p => !p.price).length;
+  // --- User Avatar Dropdown ---
+  if (userAvatar) {
+    userAvatar.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!currentUser) {
+        showToast('कृपया पहले लॉग इन करें', 'warning');
+        return;
       }
-    } catch (err) { grid.innerHTML = `<p style="grid-column:1/-1">${esc(err.message)}</p>`; }
-    $('#listTitle').textContent = state.q ? `"${state.q}" के नतीजे` : state.category || 'सभी Presets';
-  }
-  function renderCategories() {
-    $('#categories').innerHTML = CATS.map(([n, i]) =>
-      `<div class="category-card" data-action="cat" data-cat="${esc(n)}" tabindex="0" role="button"><div class="icon">${i}</div><div class="name">${esc(n)}</div></div>`).join('');
-  }
-  async function loadCreators() {
-    try {
-      const c = await api('/users/top');
-      $('#creators').innerHTML = c.map(u => `<div class="creator-card" data-action="creator" data-id="${esc(u.id)}" tabindex="0" role="button"><div class="user-avatar" style="margin:0 auto 8px">${esc((u.name || '?')[0].toUpperCase())}</div>
-        <div class="name">${esc(u.name)}</div><div class="stats">${u.presetCount} presets · ${u.totalDownloads} downloads</div></div>`).join('')
-        || '<p style="color:var(--muted)">अभी कोई creator नहीं।</p>';
-    } catch { /* non-critical */ }
-  }
-
-  // ---------- preset modal ----------
-  async function openPreset(id) {
-    const p = state.list.find(x => x.id === id) || (await api('/presets?q=')).find(x => x.id === id);
-    if (!p) return;
-    openModal(`<div class="modal-grid">
-      <div class="modal-preview">${p.previewImage ? `<img src="${esc(p.previewImage)}" alt="${esc(p.name)}">` : '<span style="font-size:4rem">🎞️</span>'}</div>
-      <div class="modal-details"><h2>${esc(p.name)}</h2><div class="author">by ${esc(p.author)} · ${esc(p.category)}</div>
-        <div class="price-lg ${p.price > 0 ? '' : 'free'}">${money(p.price)}</div>
-        <p class="desc">${esc(p.description) || 'कोई विवरण नहीं।'}</p>
-        <div class="actions">
-          <button class="btn btn-primary" data-action="get" data-id="${esc(p.id)}"><i class="fas fa-download" aria-hidden="true"></i> ${p.price > 0 ? 'खरीदें' : 'Download'}</button>
-          <button class="btn btn-outline" data-action="wish" data-id="${esc(p.id)}" aria-label="Wishlist"><i class="${state.me?.wishlist?.includes(p.id) ? 'fas' : 'far'} fa-heart" aria-hidden="true"></i></button>
-        </div>
-        <div class="meta-list"><span><i class="fas fa-download"></i>${p.downloads || 0}</span><span><i class="fas fa-star"></i>${p.avgRating || 0}</span></div>
-      </div></div>
-      <h3 style="margin:24px 0 8px">Reviews</h3><div id="reviews"><div class="skeleton" style="height:50px"></div></div>
-      <form id="revForm" class="mt-2"><div class="form-group"><label for="rRate">Rating</label>
-        <select id="rRate">${[5, 4, 3, 2, 1].map(n => `<option value="${n}">${'★'.repeat(n)}</option>`).join('')}</select></div>
-        <div class="form-group"><textarea id="rText" maxlength="500" placeholder="आपका अनुभव…" aria-label="Comment"></textarea></div>
-        <button class="btn btn-accent btn-sm" type="submit">Review भेजें</button></form>`);
-    try {
-      const r = await api('/reviews/' + encodeURIComponent(id));
-      $('#reviews').innerHTML = r.length ? r.map(x => `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
-        <strong>${esc(x.userName)}</strong> <span style="color:var(--star)">${stars(x.rating)}</span><p>${esc(x.comment)}</p></div>`).join('')
-        : '<p style="color:var(--muted)">अभी कोई review नहीं।</p>';
-    } catch { $('#reviews').textContent = ''; }
-    $('#revForm').addEventListener('submit', async e => {
-      e.preventDefault(); if (!need()) return;
-      try {
-        await api('/reviews/' + encodeURIComponent(id), { method: 'POST', json: { rating: +$('#rRate').value, comment: $('#rText').value } });
-        toast('Review जुड़ गया'); openPreset(id); loadPresets();
-      } catch (err) { toast(err.message); }
+      if (userDropdown) {
+        userDropdown.style.display = userDropdown.style.display === 'block' ? 'none' : 'block';
+      }
     });
   }
 
-  async function download(id) {
-    const res = await api(`/presets/${encodeURIComponent(id)}/download`, { method: 'POST', blob: true });
-    const name = /filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(res.headers.get('Content-Disposition') || '')?.[1] || 'preset.xmp';
-    const url = URL.createObjectURL(await res.blob());
-    const a = Object.assign(document.createElement('a'), { href: url, download: decodeURIComponent(name) });
-    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
-    toast('Download शुरू हो गया');
-  }
-  const loadRzp = () => new Promise((ok, no) => {
-    if (window.Razorpay) return ok();
-    const s = document.createElement('script'); s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    s.onload = ok; s.onerror = () => no(new Error('Payment gateway load नहीं हुआ')); document.head.appendChild(s);
+  // --- Close dropdown on outside click ---
+  document.addEventListener('click', (e) => {
+    if (userDropdown && !e.target.closest('#userSection')) {
+      userDropdown.style.display = 'none';
+    }
   });
-  async function get(id) {
-    if (!need()) return;
-    const p = state.list.find(x => x.id === id);
+
+  // --- Wishlist Button ---
+  if (wishlistBtn) {
+    wishlistBtn.addEventListener('click', showWishlist);
+  }
+
+  // --- Upload Buttons ---
+  const uploadBtn = $('#uploadBtn');
+  if (uploadBtn) uploadBtn.addEventListener('click', openUploadModal);
+  if (uploadHeroBtn) uploadHeroBtn.addEventListener('click', openUploadModal);
+
+  // --- Explore Button ---
+  if (exploreBtn) {
+    exploreBtn.addEventListener('click', () => {
+      const section = document.getElementById('presetsSection');
+      if (section) section.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  // --- Featured Presets CTA ---
+  if (featuredDownloadBtn) {
+    featuredDownloadBtn.addEventListener('click', () => {
+      const section = document.getElementById('presetsSection');
+      if (filterSort) filterSort.value = 'popular';
+      currentPage = 1;
+      loadPresets();
+      if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  // --- Search Button ---
+  if (searchBtn) {
+    searchBtn.addEventListener('click', () => {
+      if (searchSuggestions) searchSuggestions.style.display = 'none';
+      currentPage = 1;
+      loadPresets();
+    });
+  }
+
+  // --- Search Input with Debouncing ---
+  if (searchInput) {
+    searchInput.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') {
+        if (searchSuggestions) searchSuggestions.style.display = 'none';
+        currentPage = 1;
+        loadPresets();
+      }
+    });
+
+    searchInput.addEventListener('input', function() {
+      const query = this.value.trim();
+      if (query.length < 2) {
+        if (searchSuggestions) searchSuggestions.style.display = 'none';
+        return;
+      }
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(async () => {
+        try {
+          const res = await fetch(`${API_URL}/presets/search?q=${encodeURIComponent(query)}`);
+          if (res.ok) {
+            const suggestions = await res.json();
+            if (searchSuggestions) {
+              const googleUrl = 'https://www.google.com/search?q=' + encodeURIComponent('site:presethub.site ' + query);
+              searchSuggestions.innerHTML = (suggestions.length ? suggestions.map(p => `
+                <div class="suggestion-item" data-id="${p.id}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;">
+                  <strong>${escapeHTML(p.name)}</strong> — ${escapeHTML(p.author)}
+                  <span style="font-size:0.8rem;color:#6b6b6b;">${escapeHTML(p.category)}</span>
+                </div>
+              `).join('') : `<div style="padding:10px 12px;color:#777;">इस साइट पर अभी सीधा मैच नहीं मिला।</div>`) +
+              `<a href="${googleUrl}" target="_blank" rel="noopener" style="display:block;padding:10px 12px;font-weight:700;color:#2563eb;text-decoration:none;">🔎 Google पर “${escapeHTML(query)}” खोजें</a>`;
+              searchSuggestions.style.display = 'block';
+              searchSuggestions.querySelectorAll('.suggestion-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                  e.stopPropagation();
+                  const id = this.dataset.id;
+                  if (searchInput) searchInput.value = '';
+                  if (searchSuggestions) searchSuggestions.style.display = 'none';
+                  openPresetModal(id);
+                });
+              });
+            }
+          }
+        } catch (err) { console.error('Search error:', err); }
+      }, 300);
+    });
+  }
+
+  // --- Close search suggestions ---
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.nav-search')) {
+      if (searchSuggestions) searchSuggestions.style.display = 'none';
+    }
+  });
+
+  // --- Filters ---
+  if (filterCategory) {
+    filterCategory.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  }
+  if (filterPrice) {
+    filterPrice.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  }
+  if (filterSort) {
+    filterSort.addEventListener('change', () => { currentPage = 1; loadPresets(); });
+  }
+
+  // --- Category Cards ---
+  document.querySelectorAll('.category-card').forEach(card => {
+    card.addEventListener('click', function() {
+      const cat = this.querySelector('.name')?.textContent;
+      if (cat && filterCategory) {
+        filterCategory.value = cat;
+        currentPage = 1;
+        loadPresets();
+        const section = document.getElementById('presetsSection');
+        if (section) section.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+  });
+
+  // --- Load More Button ---
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', () => {
+      if (!isProcessing) {
+        loadPresets(currentPage + 1, true);
+      }
+    });
+  }
+
+  // --- Notification Button ---
+  const notificationBtn = document.getElementById('notificationBtn');
+  if (notificationBtn) {
+    notificationBtn.addEventListener('click', openNotifications);
+  }
+
+  // --- Exit Button ---
+  const exitBtn = document.getElementById('exitBtn');
+  if (exitBtn) {
+    exitBtn.addEventListener('click', exitSite);
+  }
+
+  // --- Preset Grid Event Delegation ---
+  if (presetGrid) {
+    presetGrid.addEventListener('click', function(e) {
+      const card = e.target.closest('.preset-card');
+      if (!card) return;
+      const id = card.dataset.id;
+      const previewBtn = e.target.closest('.preview-btn');
+      if (previewBtn) {
+        e.stopPropagation();
+        openPresetModal(id);
+        return;
+      }
+      const wishBtn = e.target.closest('.wishlist-toggle');
+      if (wishBtn) {
+        e.stopPropagation();
+        toggleWishlist(id);
+        return;
+      }
+      if (!e.target.closest('.author')) {
+        openPresetModal(id);
+      }
+    });
+  }
+
+  // --- Latest Presets Grid ---
+  if (latestGrid) {
+    latestGrid.addEventListener('click', function(e) {
+      const card = e.target.closest('.preset-card');
+      if (!card) return;
+      const id = card.dataset.id;
+      const previewBtn = e.target.closest('.preview-btn');
+      if (previewBtn) {
+        e.stopPropagation();
+        openPresetModal(id);
+        return;
+      }
+      const wishBtn = e.target.closest('.wishlist-toggle');
+      if (wishBtn) {
+        e.stopPropagation();
+        toggleWishlist(id);
+        return;
+      }
+      if (!e.target.closest('.author')) {
+        openPresetModal(id);
+      }
+    });
+  }
+
+  // --- Online/Offline ---
+  window.addEventListener('online', async () => {
+    isOnline = true;
+    if (offlineIndicator) offlineIndicator.style.display = 'none';
+    showToast('🔄 Connection restored! Syncing data...', 'info');
+    await syncOfflineQueue();
+    if ('serviceWorker' in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if ('SyncManager' in window) {
+          await registration.sync.register('presethub-sync');
+        }
+      } catch (err) {
+        console.warn('Sync registration failed:', err);
+      }
+    }
+  });
+
+  window.addEventListener('offline', () => {
+    isOnline = false;
+    if (offlineIndicator) offlineIndicator.style.display = 'inline-block';
+    showToast('📴 You are offline. Actions will be queued.', 'warning');
+  });
+}
+
+// ============================================================
+// ===== ESCAPE HTML (XSS Prevention) =====
+// ============================================================
+function escapeHTML(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ============================================================
+// ===== OFFLINE QUEUE UTILITY =====
+// ============================================================
+function openOfflineDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('PresetHubOffline', 2);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('queue')) {
+        db.createObjectStore('queue', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('cache')) {
+        db.createObjectStore('cache', { keyPath: 'url' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function addToQueue(action, url, options = {}) {
+  try {
+    const db = await openOfflineDB();
+    const tx = db.transaction('queue', 'readwrite');
+    const store = tx.objectStore('queue');
+    const item = {
+      action: action,
+      url: url,
+      method: options.method || 'POST',
+      headers: options.headers || {},
+      body: options.body || null,
+      timestamp: Date.now(),
+      retries: 0
+    };
+    await new Promise((resolve, reject) => {
+      const request = store.add(item);
+      request.onsuccess = resolve;
+      request.onerror = reject;
+    });
+    console.log(`📦 Added to queue: ${action} (${url})`);
+    
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.sync.register('presethub-sync');
+        console.log('🔄 Sync registered!');
+      } catch (err) {
+        console.warn('Background Sync not available, will retry on next load.', err);
+      }
+    }
+    
+    showToast(`⏳ "${action}" saved offline. Will sync when online.`, 'warning');
+    return true;
+  } catch (err) {
+    console.error('❌ Failed to add to queue:', err);
+    showToast('❌ Failed to save offline. Please try again later.', 'error');
+    return false;
+  }
+}
+
+async function syncOfflineQueue() {
+  try {
+    const db = await openOfflineDB();
+    const tx = db.transaction('queue', 'readonly');
+    const store = tx.objectStore('queue');
+    const items = await new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    
+    if (items.length === 0) return;
+    
+    showToast(`🔄 Syncing ${items.length} offline actions...`, 'info');
+    
+    for (const item of items) {
+      try {
+        const options = {
+          method: item.method,
+          headers: item.headers || {},
+          body: item.body
+        };
+        if (item.headers && item.headers['Content-Type'] === 'application/json' && item.body) {
+          options.body = JSON.parse(item.body);
+        }
+        const res = await fetch(item.url, options);
+        if (res.ok) {
+          const deleteTx = db.transaction('queue', 'readwrite');
+          const deleteStore = deleteTx.objectStore('queue');
+          await new Promise((resolve, reject) => {
+            const request = deleteStore.delete(item.id);
+            request.onsuccess = resolve;
+            request.onerror = reject;
+          });
+          showToast(`✅ "${item.action}" synced successfully!`, 'success');
+        } else {
+          item.retries = (item.retries || 0) + 1;
+          if (item.retries > 3) {
+            showToast(`❌ Failed to sync "${item.action}" after 3 attempts`, 'error');
+          }
+        }
+      } catch (err) {
+        console.error('Sync failed for item:', item, err);
+      }
+    }
+    
+    await loadPresets();
+    await fetchWishlist();
+    await fetchNotifications();
+    
+  } catch (err) {
+    console.error('Sync error:', err);
+  }
+}
+
+// ============================================================
+// ===== SERVICE WORKER MESSAGE HANDLER =====
+// ============================================================
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data.type === 'SYNC_SUCCESS') {
+      showToast(`✅ "${event.data.action}" synced successfully!`, 'success');
+      if (event.data.action === 'review') {
+        loadPresets();
+      } else if (event.data.action === 'wishlist') {
+        fetchWishlist();
+        loadPresets();
+      } else if (event.data.action === 'upload') {
+        loadPresets();
+        loadLatestPresets();
+        loadTopCreators();
+      } else if (event.data.action === 'download' || event.data.action === 'follow' || event.data.action === 'order') {
+        fetchUserProfile();
+      }
+    }
+  });
+}
+
+// ============================================================
+// ===== DARK MODE =====
+// ============================================================
+const currentTheme = localStorage.getItem('theme') || 'light';
+if (currentTheme === 'dark') {
+  document.body.classList.add('dark');
+}
+
+// ============================================================
+// ===== AUTH =====
+// ============================================================
+if (token) {
+  fetchUserProfile();
+}
+
+async function fetchUserProfile() {
+  try {
+    const res = await fetch(`${API_URL}/auth/me`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      currentUser = data.user;
+      showLoggedInUI(data.user);
+    } else {
+      logout();
+    }
+  } catch (err) {
+    console.error('Profile fetch error', err);
+    if (err.message.includes('401')) {
+      logout();
+    }
+  }
+}
+
+function showLoggedInUI(user) {
+  if (authSection) authSection.style.display = 'none';
+  if (userSection) userSection.style.display = 'flex';
+  if (userAvatar) {
+    userAvatar.textContent = user.name.charAt(0).toUpperCase();
+    if (user.avatar) {
+      userAvatar.style.backgroundImage = `url(${user.avatar})`;
+      userAvatar.style.backgroundSize = 'cover';
+      userAvatar.textContent = '';
+    }
+  }
+  fetchWishlist();
+  fetchSubscription();
+  fetchNotifications();
+  if (userDropdown) userDropdown.style.display = 'none';
+  requestNotificationPermission();
+}
+
+function logout() {
+  localStorage.removeItem('token');
+  token = null;
+  currentUser = null;
+  if (authSection) authSection.style.display = 'flex';
+  if (userSection) userSection.style.display = 'none';
+  wishlist = [];
+  notifications = [];
+  subscriptionData = {};
+  updateWishlistUI();
+  if (userDropdown) userDropdown.style.display = 'none';
+  showToast('लॉगआउट हो गया', 'info');
+}
+window.logout = logout;
+
+// ============================================================
+// ===== MY PRESETS =====
+// ============================================================
+window.showMyPresets = async function() {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/users/${currentUser.id}/presets`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to load presets');
+    const presets = await res.json();
+    if (!presets.length) {
+      showToast('आपने अभी तक कोई प्रीसेट अपलोड नहीं किया।', 'info');
+      return;
+    }
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:600px;">
+        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+        <h2><i class="fas fa-cubes"></i> मेरे प्रीसेट</h2>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+          ${presets.map(p => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
+              <div>
+                <strong>${escapeHTML(p.name)}</strong> – ${escapeHTML(p.category)}
+                <span style="font-size:0.8rem;color:#888;">(${escapeHTML(p.status)})</span>
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  } catch (err) {
+    console.error(err);
+    showToast('प्रीसेट लोड नहीं हुए', 'error');
+  }
+};
+
+// ============================================================
+// ===== MY DOWNLOADS =====
+// ============================================================
+window.showMyDownloads = async function() {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/users/me/downloads`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to load downloads');
+    const presets = await res.json();
+    if (!presets.length) {
+      showToast('आपने अभी तक कोई प्रीसेट डाउनलोड नहीं किया।', 'info');
+      return;
+    }
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:600px;">
+        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+        <h2><i class="fas fa-download"></i> मेरे डाउनलोड</h2>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+          ${presets.map(p => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
+              <div>
+                <strong>${escapeHTML(p.name)}</strong> – ${escapeHTML(p.author)}
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  } catch (err) {
+    console.error(err);
+    showToast('डाउनलोड लोड नहीं हुए', 'error');
+  }
+};
+
+// ============================================================
+// ===== AUTH MODAL =====
+// ============================================================
+function openAuthModal(mode) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  const urlParams = new URLSearchParams(window.location.search);
+  const ref = urlParams.get('ref') || '';
+  const refInput = ref ? `<input type="hidden" id="authRef" value="${escapeHTML(ref)}" />` : '';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:450px;">
+      <button class="close">&times;</button>
+      <h2>${mode === 'login' ? 'लॉग इन' : 'साइन अप'}</h2>
+      <form id="authForm">
+        ${mode === 'signup' ? `<div class="form-group"><input type="text" id="authName" placeholder="आपका नाम" required /></div>` : ''}
+        <div class="form-group"><input type="email" id="authEmail" placeholder="ईमेल" required /></div>
+        <div class="form-group"><input type="password" id="authPassword" placeholder="पासवर्ड (6+ अक्षर)" required minlength="6" /></div>
+        ${refInput}
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
+          ${mode === 'login' ? '<i class="fas fa-sign-in-alt"></i> लॉग इन करें' : '<i class="fas fa-user-plus"></i> साइन अप करें'}
+        </button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+
+  modal.querySelector('#authForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    const name = document.getElementById('authName')?.value;
+    const refCode = document.getElementById('authRef')?.value || '';
+    let url = `${API_URL}/auth/${mode}`;
+    if (mode === 'signup' && refCode) {
+      url += `?ref=${encodeURIComponent(refCode)}`;
+    }
+    const payload = { email, password };
+    if (mode === 'signup') payload.name = name;
     try {
-      if (p && p.price > 0) {
-        const o = await api('/payments/create-order', { method: 'POST', json: { presetId: id } }).catch(e => {
-          if (/already own/i.test(e.message)) return null; throw e; });
-        if (o) {
-          await loadRzp();
-          return new Promise(resolve => new window.Razorpay({
-            key: o.key, amount: o.amount, currency: o.currency, order_id: o.orderId, name: 'PresetHub', description: p.name,
-            prefill: { email: state.me?.email, name: state.me?.name },
-            handler: async r => { try { await api('/payments/verify', { method: 'POST', json: r }); await download(id); } catch (e) { toast(e.message); } resolve(); },
-            modal: { ondismiss: resolve }
-          }).open());
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        localStorage.setItem('token', data.token);
+        token = data.token;
+        currentUser = data.user;
+        showLoggedInUI(data.user);
+        modal.remove();
+        loadPresets();
+        loadLatestPresets();
+        loadTopCreators();
+        showToast(mode === 'login' ? 'स्वागत है! 🎉' : 'अकाउंट बन गया! 🎉', 'success');
+        if (window.history && window.history.replaceState) {
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
+        }
+      } else {
+        showToast(data.error || 'कुछ गलत हो गया', 'error');
+      }
+    } catch (err) {
+      showToast('सर्वर से कनेक्ट नहीं हो पाया', 'error');
+    }
+  });
+}
+window.openAuthModal = openAuthModal;
+
+// ============================================================
+// ===== WISHLIST =====
+// ============================================================
+async function fetchWishlist() {
+  if (!currentUser) return;
+  try {
+    const res = await fetch(`${API_URL}/auth/me/wishlist`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      wishlist = data.wishlist || [];
+      updateWishlistUI();
+    }
+  } catch (err) { console.error(err); }
+}
+
+async function toggleWishlist(presetId) {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  const url = `${API_URL}/auth/me/wishlist/${presetId}`;
+  const options = {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }
+  };
+  try {
+    if (!navigator.onLine) {
+      await addToQueue('wishlist', url, options);
+      const index = wishlist.indexOf(presetId);
+      if (index === -1) wishlist.push(presetId);
+      else wishlist.splice(index, 1);
+      updateWishlistUI();
+      renderPresets(allPresets);
+      loadLatestPresets();
+      return;
+    }
+    const res = await fetch(url, options);
+    if (res.ok) {
+      const data = await res.json();
+      wishlist = data.wishlist || [];
+      updateWishlistUI();
+      renderPresets(allPresets);
+      loadLatestPresets();
+      showToast(data.isInWishlist ? '❤️ पसंद में जोड़ा' : '💔 पसंद से हटाया', 'info');
+    } else {
+      showToast('❌ कृपया बाद में प्रयास करें', 'error');
+    }
+  } catch (err) {
+    await addToQueue('wishlist', url, options);
+  }
+}
+window.toggleWishlist = toggleWishlist;
+
+function updateWishlistUI() {
+  if (!wishlistBtn) return;
+  const count = wishlist.length;
+  wishlistBtn.innerHTML = `<i class="fa${count > 0 ? 's' : 'r'} fa-heart"></i>${count > 0 ? count : ''}`;
+}
+
+// ============================================================
+// ===== WISHLIST MODAL =====
+// ============================================================
+async function showWishlist() {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  if (wishlist.length === 0) {
+    showToast('आपकी विशलिस्ट खाली है।', 'info');
+    return;
+  }
+  const presetPromises = wishlist.map(id =>
+    fetch(`${API_URL}/presets/${id}`).then(r => r.ok ? r.json() : null)
+  );
+  const presets = (await Promise.all(presetPromises)).filter(Boolean);
+  if (presets.length === 0) {
+    showToast('कोई प्रीसेट नहीं मिला।', 'info');
+    return;
+  }
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <button class="close">&times;</button>
+      <h2><i class="fas fa-heart" style="color:#e74c3c;"></i> आपकी विशलिस्ट</h2>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
+        ${presets.map(p => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
+            <div>
+              <strong>${escapeHTML(p.name)}</strong> – ${escapeHTML(p.author)}
+              <span style="margin-left:8px;font-size:0.8rem;color:#6b6b6b;">${escapeHTML(p.category)}</span>
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+}
+window.showWishlist = showWishlist;
+
+// ============================================================
+// ===== PRESETS CRUD - FIXED XSS =====
+// ============================================================
+function renderPresetsToContainer(presets, container) {
+  if (!container) return;
+  if (!presets || presets.length === 0) {
+    container.innerHTML = `<div class="no-results" style="grid-column:1/-1;text-align:center;padding:30px 15px;color:#7a7a7a;font-size:0.9rem;"><i class="fas fa-search" style="font-size:2rem;display:block;margin-bottom:10px;"></i>😕 कोई प्रीसेट नहीं मिला</div>`;
+    return;
+  }
+  container.innerHTML = presets.map(p => {
+    const isLiked = wishlist.includes(p.id);
+    const priceDisplay = p.price === 0 ?
+      `<span class="price free">मुफ्त</span>` :
+      `<span class="price">₹${p.price}</span>`;
+    const stars = '★'.repeat(Math.floor(p.avgRating || 0)) + (p.avgRating % 1 >= 0.5 ? '½' : '');
+    const previewImageSrc = p.previewImage ? 
+      (p.previewImage.startsWith('http') ? p.previewImage : window.location.origin + p.previewImage) : 
+      null;
+    const previewImg = previewImageSrc ? 
+      `<img src="${previewImageSrc}" alt="${escapeHTML(p.name)}" style="width:100%;height:100%;object-fit:contain;background:#e8e0d6;" onerror="this.style.display='none'">` :
+      `<svg viewBox="0 0 270 180" style="background:#d9d0c4;width:100%;height:100%;">
+        <rect x="30" y="20" width="70" height="60" rx="8" fill="#b8aa98" />
+        <rect x="120" y="20" width="70" height="60" rx="8" fill="#c4b5a2" />
+        <rect x="30" y="100" width="70" height="60" rx="8" fill="#a89682" />
+        <rect x="120" y="100" width="70" height="60" rx="8" fill="#d4c5b2" />
+        <text x="50" y="165" font-family="Inter" font-weight="600" font-size="11" fill="#4a3f35"><i class="fas fa-camera"></i> ${escapeHTML(p.name)}</text>
+      </svg>`;
+    return `
+      <div class="preset-card" data-id="${p.id}">
+        <div class="thumb" style="height:160px;">
+          ${previewImg}
+          <div class="overlay">
+            <button class="btn btn-sm preview-btn" data-id="${p.id}" style="font-size:0.7rem;padding:5px 12px;"><i class="fas fa-eye"></i> प्रीव्यू</button>
+            <button class="btn btn-sm wishlist-toggle" data-id="${p.id}" style="background:#fff;color:#e74c3c;font-size:0.7rem;padding:5px 10px;">
+              <i class="fa${isLiked ? 's' : 'r'} fa-heart"></i>
+            </button>
+          </div>
+        </div>
+        <div class="info" style="padding:12px 14px 14px;">
+          <span class="tag" style="font-size:0.6rem;">${escapeHTML(p.category || 'General')}</span>
+          <h3 style="font-size:0.95rem;font-weight:700;margin:4px 0 2px;"><a href="/preset/${encodeURIComponent(p.id)}/${encodeURIComponent(slugifyClient(p.name))}" class="preset-seo-link" style="color:inherit;text-decoration:none;" onclick="event.stopPropagation();">${escapeHTML(p.name)}</a></h3>
+          <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.75rem;" onclick="event.stopPropagation(); window.openProfile('${p.authorId}')">
+            ${escapeHTML(p.author)}
+            <span style="font-size:0.6rem;color:#888;margin-left:4px;"><i class="fas fa-users"></i> ${p.authorFollowers || 0}</span>
+          </div>
+          <div class="meta" style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border, #f0ebe3);padding-top:8px;margin-top:6px;">
+            ${priceDisplay}
+            <span class="rating" style="font-size:0.75rem;color:#f4a261;">${stars} ${p.avgRating ? p.avgRating.toFixed(1) : '0'}</span>
+          </div>
+          <div style="display:flex;gap:8px;font-size:0.65rem;color:#888;margin-top:4px;flex-wrap:wrap;">
+            <span><i class="fas fa-eye"></i> ${p.views || 0}</span>
+            <span><i class="fas fa-heart" style="color:#e74c3c;"></i> ${p.likes?.length || 0}</span>
+            <span><i class="fas fa-share-alt"></i> ${p.shares || 0}</span>
+            <span><i class="fas fa-comment"></i> ${p.reviews?.length || 0}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ============================================================
+// ===== LOAD PRESETS =====
+// ============================================================
+async function loadPresets(page = 1, append = false) {
+  if (isProcessing) return;
+  isProcessing = true;
+  
+  try {
+    const params = new URLSearchParams();
+    const q = searchInput ? searchInput.value.trim() : '';
+    if (q) params.append('q', q);
+    const cat = filterCategory ? filterCategory.value : '';
+    if (cat) params.append('category', cat);
+    const price = filterPrice ? filterPrice.value : '';
+    if (price) params.append('price', price);
+    const sort = filterSort ? filterSort.value : '';
+    if (sort) params.append('sort', sort);
+    params.append('page', page);
+    params.append('limit', 20);
+    
+    const url = `${API_URL}/presets?${params.toString()}`;
+    const res = await fetch(url);
+    
+    if (res.ok) {
+      const data = await res.json();
+      let userMap = {};
+      try {
+        const usersRes = await fetch(`${API_URL}/users?limit=100`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (usersRes.ok) {
+          const users = await usersRes.json();
+          users.forEach(u => {
+            userMap[u.id] = { followers: u.followers?.length || 0, name: u.name };
+          });
+        }
+      } catch (e) { console.warn('Could not load follower counts', e); }
+      data.presets.forEach(p => {
+        p.authorFollowers = userMap[p.authorId]?.followers || 0;
+      });
+      allPresets = data.presets || [];
+      totalPages = data.totalPages || 1;
+      currentPage = data.page || 1;
+      
+      if (append) {
+        const existing = presetGrid ? presetGrid.innerHTML : '';
+        const tempDiv = document.createElement('div');
+        renderPresetsToContainer(allPresets, tempDiv);
+        if (presetGrid) presetGrid.innerHTML = existing + tempDiv.innerHTML;
+      } else {
+        renderPresetsToContainer(allPresets, presetGrid);
+      }
+      
+      if (loadMoreBtn) {
+        if (currentPage < totalPages) {
+          loadMoreBtn.style.display = 'inline-flex';
+          loadMoreBtn.innerHTML = `<i class="fas fa-plus"></i> और लोड करें (${currentPage}/${totalPages})`;
+        } else {
+          loadMoreBtn.style.display = 'none';
         }
       }
-      await download(id);
-    } catch (err) { toast(err.message); }
+      isProcessing = false;
+      return;
+    }
+    
+    throw new Error('Network or server error');
+    
+  } catch (err) {
+    console.warn('⚠️ Load presets failed, trying cache:', err);
+    try {
+      const params = new URLSearchParams();
+      const q = searchInput ? searchInput.value.trim() : '';
+      if (q) params.append('q', q);
+      const cat = filterCategory ? filterCategory.value : '';
+      if (cat) params.append('category', cat);
+      const price = filterPrice ? filterPrice.value : '';
+      if (price) params.append('price', price);
+      const sort = filterSort ? filterSort.value : '';
+      if (sort) params.append('sort', sort);
+      params.append('page', page);
+      params.append('limit', 20);
+      const url = `${API_URL}/presets?${params.toString()}`;
+      
+      const cache = await caches.open('presethub-api-v2');
+      const cachedResponse = await cache.match(url);
+      if (cachedResponse) {
+        const data = await cachedResponse.json();
+        allPresets = data.presets || [];
+        totalPages = data.totalPages || 1;
+        currentPage = data.page || 1;
+        renderPresetsToContainer(allPresets, presetGrid);
+        showToast('📦 Showing cached presets (offline)', 'info');
+        isProcessing = false;
+        return;
+      }
+      showToast('😕 No cached presets available offline.', 'error');
+      if (presetGrid && !append) {
+        presetGrid.innerHTML = `<div style="padding:30px;color:#7a7a7a;font-size:0.9rem;text-align:center;grid-column:1/-1;">
+          <i class="fas fa-triangle-exclamation" style="color:#f39c12;font-size:1.5rem;display:block;margin-bottom:10px;"></i>
+          प्रीसेट लोड नहीं हो पाए। कृपया कनेक्शन जांचें।
+          <br><button class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="loadPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+        </div>`;
+      }
+    } catch (cacheErr) {
+      console.error('Cache error:', cacheErr);
+      showToast('❌ Unable to load presets. Please check your connection.', 'error');
+      if (presetGrid && !append) {
+        presetGrid.innerHTML = `<div style="padding:30px;color:#7a7a7a;font-size:0.9rem;text-align:center;grid-column:1/-1;">
+          <i class="fas fa-triangle-exclamation" style="color:#f39c12;font-size:1.5rem;display:block;margin-bottom:10px;"></i>
+          प्रीसेट लोड नहीं हो पाए। कृपया कनेक्शन जांचें।
+          <br><button class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="loadPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+        </div>`;
+      }
+    }
+    isProcessing = false;
+  }
+}
+
+// ============================================================
+// ===== LOAD LATEST PRESETS =====
+// ============================================================
+async function loadLatestPresets() {
+  try {
+    const res = await fetch(`${API_URL}/presets?sort=newest&limit=6`);
+    const data = await res.json();
+    const presets = data.presets || [];
+    let userMap = {};
+    try {
+      const usersRes = await fetch(`${API_URL}/users?limit=100`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      if (usersRes.ok) {
+        const users = await usersRes.json();
+        users.forEach(u => {
+          userMap[u.id] = { followers: u.followers?.length || 0, name: u.name };
+        });
+      }
+    } catch (e) { console.warn('Could not load follower counts', e); }
+    presets.forEach(p => {
+      p.authorFollowers = userMap[p.authorId]?.followers || 0;
+    });
+    renderPresetsToContainer(presets, latestGrid);
+  } catch (err) {
+    console.warn('⚠️ Load latest failed, trying cache');
+    try {
+      const cache = await caches.open('presethub-api-v2');
+      const cachedResponse = await cache.match(`${API_URL}/presets?sort=newest&limit=6`);
+      if (cachedResponse) {
+        const data = await cachedResponse.json();
+        renderPresetsToContainer(data.presets || [], latestGrid);
+        return;
+      }
+    } catch (cacheErr) {
+      console.error('Latest cache error:', cacheErr);
+    }
+    if (latestGrid) {
+      latestGrid.innerHTML = `<div style="padding:20px;color:#7a7a7a;font-size:0.85rem;text-align:center;width:100%;">
+        <i class="fas fa-triangle-exclamation" style="color:#f39c12;"></i> प्रीसेट लोड नहीं हो पाए।
+        <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="loadLatestPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+      </div>`;
+    }
+  }
+}
+
+// ============================================================
+// ===== PRESET MODAL - FIXED XSS =====
+// ============================================================
+async function openPresetModal(presetId) {
+  try {
+    const res = await fetch(`${API_URL}/presets/${presetId}`);
+    if (!res.ok) throw new Error('Preset not found');
+    const preset = await res.json();
+    const isLiked = wishlist.includes(preset.id);
+    const isFree = preset.price === 0;
+
+    updatePresetMetaTags(preset);
+
+    if (!viewedPresets.has(presetId) && currentUser && preset.authorId !== currentUser.id) {
+      viewedPresets.add(presetId);
+      try {
+        await fetch(`${API_URL}/presets/${presetId}/view`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      } catch (e) { console.warn('View tracking failed:', e); }
+      try {
+        await fetch(`${API_URL}/presets/${presetId}/ad-impression`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
+      } catch (e) { console.warn('Ad impression tracking failed:', e); }
+    }
+
+    const reviews = preset.reviews || [];
+    const sortedReviews = [...reviews].sort((a, b) => (b.helpful || 0) - (a.helpful || 0) || new Date(b.createdAt) - new Date(a.createdAt));
+    const topReviews = sortedReviews.slice(0, 5);
+
+    const previewImageSrc = preset.previewImage ? 
+      (preset.previewImage.startsWith('http') ? preset.previewImage : window.location.origin + preset.previewImage) : 
+      null;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal">
+        <button class="close">&times;</button>
+        <div class="modal-grid">
+          <div class="modal-preview">
+            ${previewImageSrc ? `<img src="${previewImageSrc}" alt="${escapeHTML(preset.name)}" style="width:100%;height:auto;border-radius:12px;" onerror="this.style.display='none'">` :
+              `<svg viewBox="0 0 300 200" style="width:100%;height:auto;background:#d9d0c4;border-radius:12px;">
+                <rect x="20" y="20" width="100" height="80" rx="8" fill="#b8aa98" />
+                <rect x="140" y="20" width="100" height="80" rx="8" fill="#c4b5a2" />
+                <rect x="20" y="120" width="100" height="60" rx="8" fill="#a89682" />
+                <rect x="140" y="120" width="100" height="60" rx="8" fill="#d4c5b2" />
+                <text x="80" y="185" font-family="Inter" font-weight="600" font-size="14" fill="#4a3f35"><i class="fas fa-camera"></i> ${escapeHTML(preset.name)}</text>
+              </svg>`
+            }
+          </div>
+          <div class="modal-details">
+            <h2>${escapeHTML(preset.name)}</h2>
+            <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.9rem;" onclick="window.openProfile('${preset.authorId}')">by <strong>${escapeHTML(preset.author)}</strong></div>
+            <div class="desc" style="font-size:0.9rem;color:var(--text, #3a3a3a);margin:8px 0 14px;">${escapeHTML(preset.description || 'कोई विवरण नहीं')}</div>
+            <div class="price-lg ${isFree ? 'free' : ''}" style="font-size:1.4rem;">${isFree ? 'मुफ्त' : '₹' + preset.price}</div>
+            <div class="actions" style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
+              <button class="btn btn-primary download-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 20px;">
+                <i class="fas fa-download"></i> ${isFree ? 'डाउनलोड करें' : 'खरीदें'}
+              </button>
+              <button class="btn btn-outline wishlist-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 18px;">
+                <i class="fa${isLiked ? 's' : 'r'} fa-heart"></i> ${isLiked ? 'पसंद में' : 'पसंद करें'}
+              </button>
+              <button class="btn btn-outline like-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 16px;">
+                <i class="fa${preset.likes && preset.likes.includes(currentUser?.id) ? 's' : 'r'} fa-heart"></i>
+                <span class="like-count">${preset.likes?.length || 0}</span>
+              </button>
+              <button class="btn btn-outline share-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 16px;">
+                <i class="fas fa-share-alt"></i> <span class="share-count">${preset.shares || 0}</span>
+              </button>
+            </div>
+            <div class="meta-list" style="display:flex;flex-wrap:wrap;gap:12px;font-size:0.8rem;color:#5a5a5a;margin-top:14px;">
+              <span><i class="fas fa-eye"></i> ${preset.views || 0} views</span>
+              <span><i class="fas fa-download"></i> ${preset.downloads || 0} downloads</span>
+              <span><i class="fas fa-star" style="color:#f4a261;"></i> ${preset.avgRating ? preset.avgRating.toFixed(1) : '0'} (${preset.reviews?.length || 0})</span>
+              <span><i class="fas fa-tag"></i> ${preset.tags?.map(t => escapeHTML(t)).join(', ') || '—'}</span>
+            </div>
+            <div style="margin-top:16px;border-top:1px solid var(--border, #eee);padding-top:14px;">
+              <h4 style="font-size:1rem;"><i class="fas fa-star" style="color:#f4a261;"></i> समीक्षाएँ (${preset.reviews?.length || 0})</h4>
+              <div id="reviewList" style="max-height:200px;overflow-y:auto;">
+                ${topReviews.length > 0 ? topReviews.map(r => `
+                  <div style="padding:8px 0;border-bottom:1px solid var(--border, #f0ebe3);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
+                      <div>
+                        <strong style="font-size:0.85rem;">${escapeHTML(r.userName)}</strong> 
+                        <span style="color:#f4a261;font-size:0.8rem;">${'★'.repeat(r.rating)}</span>
+                        <span style="color:#888;font-size:0.7rem;">${new Date(r.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <span style="font-size:0.75rem;color:#888;">
+                        <i class="fas fa-thumbs-up" style="color:#d4a373;"></i> ${r.helpful || 0}
+                      </span>
+                    </div>
+                    <p style="margin:3px 0 0;font-size:0.85rem;color:var(--text, #3a3a3a);">${escapeHTML(r.comment)}</p>
+                  </div>
+                `).join('') : '<p style="color:#888;font-size:0.85rem;">अभी कोई समीक्षा नहीं</p>'}
+                ${preset.reviews && preset.reviews.length > 5 ? `<p style="color:#888;font-size:0.75rem;margin-top:4px;">... और ${preset.reviews.length - 5} समीक्षाएँ</p>` : ''}
+              </div>
+              ${currentUser ? `
+                <form id="reviewForm" style="margin-top:10px;">
+                  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:80px;">
+                      <label style="font-size:0.8rem;font-weight:600;">रेटिंग</label>
+                      <input type="number" id="reviewRating" min="1" max="5" style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--border,#ddd);font-size:0.9rem;" required />
+                    </div>
+                    <div style="flex:3;min-width:150px;">
+                      <label style="font-size:0.8rem;font-weight:600;">समीक्षा</label>
+                      <textarea id="reviewComment" placeholder="अपनी समीक्षा लिखें..." style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--border,#ddd);font-size:0.9rem;resize:vertical;min-height:50px;" required></textarea>
+                    </div>
+                  </div>
+                  <button type="submit" class="btn btn-sm btn-primary" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;"><i class="fas fa-paper-plane"></i> समीक्षा भेजें</button>
+                </form>
+              ` : `<p style="color:#888;font-size:0.85rem;margin-top:8px;">समीक्षा देने के लिए <a href="#" onclick="openAuthModal('login');return false;" style="color:#d4a373;">लॉग इन</a> करें</p>`}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+
+    modal.querySelector('.download-btn').addEventListener('click', async () => {
+      if (!currentUser) {
+        showToast('कृपया लॉग इन करें', 'warning');
+        return;
+      }
+      if (preset.price > 0) {
+        await buyPreset(preset.id);
+      } else {
+        await downloadPreset(preset.id);
+      }
+    });
+
+    modal.querySelector('.wishlist-btn').addEventListener('click', async () => {
+      await toggleWishlist(preset.id);
+      modal.remove();
+      openPresetModal(preset.id);
+    });
+
+    modal.querySelector('.like-btn')?.addEventListener('click', async () => {
+      if (!currentUser) { showToast('Please login', 'warning'); return; }
+      const res = await fetch(`${API_URL}/presets/${preset.id}/like`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const likeSpan = modal.querySelector('.like-count');
+        const icon = modal.querySelector('.like-btn i');
+        icon.className = data.liked ? 'fas fa-heart' : 'far fa-heart';
+        likeSpan.textContent = data.likes;
+        await fetchNotifications();
+      }
+    });
+
+    modal.querySelector('.share-btn')?.addEventListener('click', async () => {
+      if (!currentUser) { showToast('Please login', 'warning'); return; }
+      const res = await fetch(`${API_URL}/presets/${preset.id}/share`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        modal.querySelector('.share-count').textContent = data.shares;
+        const shareLink = `${window.location.origin}/preset/${preset.id}`;
+        if (navigator.share) {
+          navigator.share({ title: preset.name, text: 'Check out this preset!', url: shareLink });
+        } else {
+          navigator.clipboard.writeText(shareLink).then(() => showToast('Link copied!', 'success'));
+        }
+      }
+    });
+
+    const reviewForm = modal.querySelector('#reviewForm');
+    if (reviewForm) {
+      reviewForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const rating = document.getElementById('reviewRating').value;
+        const comment = document.getElementById('reviewComment').value;
+        await submitReview(preset.id, rating, comment);
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('प्रीसेट लोड नहीं हुआ', 'error');
+  }
+}
+window.openPresetModal = openPresetModal;
+
+// ============================================================
+// ===== UPDATE PRESET META TAGS FOR SEO =====
+// ============================================================
+function updatePresetMetaTags(preset) {
+  document.title = `${preset.name} – ${preset.category} Preset | PresetHub`;
+  
+  let metaDesc = document.querySelector('meta[name="description"]');
+  if (!metaDesc) {
+    metaDesc = document.createElement('meta');
+    metaDesc.name = 'description';
+    document.head.appendChild(metaDesc);
+  }
+  metaDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset by ${preset.author}. ${preset.description || 'Professional photo editing preset.'} ⭐ ${preset.avgRating || 0} rating.`;
+
+  let ogTitle = document.querySelector('meta[property="og:title"]');
+  if (!ogTitle) {
+    ogTitle = document.createElement('meta');
+    ogTitle.setAttribute('property', 'og:title');
+    document.head.appendChild(ogTitle);
+  }
+  ogTitle.content = `${preset.name} – ${preset.category} Preset | PresetHub`;
+
+  let ogDesc = document.querySelector('meta[property="og:description"]');
+  if (!ogDesc) {
+    ogDesc = document.createElement('meta');
+    ogDesc.setAttribute('property', 'og:description');
+    document.head.appendChild(ogDesc);
+  }
+  ogDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset. ${preset.description || 'Professional preset for photo editing.'}`;
+
+  let ogImage = document.querySelector('meta[property="og:image"]');
+  if (!ogImage) {
+    ogImage = document.createElement('meta');
+    ogImage.setAttribute('property', 'og:image');
+    document.head.appendChild(ogImage);
+  }
+  const imageUrl = preset.previewImage ? 
+    (preset.previewImage.startsWith('http') ? preset.previewImage : window.location.origin + preset.previewImage) : 
+    `${window.location.origin}/assets/images/og-image.jpg`;
+  ogImage.content = imageUrl;
+
+  let twitterTitle = document.querySelector('meta[name="twitter:title"]');
+  if (!twitterTitle) {
+    twitterTitle = document.createElement('meta');
+    twitterTitle.name = 'twitter:title';
+    document.head.appendChild(twitterTitle);
+  }
+  twitterTitle.content = `${preset.name} – ${preset.category} Preset`;
+
+  let jsonLd = document.querySelector('script[type="application/ld+json"]');
+  if (!jsonLd) {
+    jsonLd = document.createElement('script');
+    jsonLd.type = 'application/ld+json';
+    document.head.appendChild(jsonLd);
+  }
+  jsonLd.textContent = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": preset.name,
+    "description": preset.description || `${preset.category} Lightroom preset`,
+    "image": imageUrl,
+    "brand": { "@type": "Brand", "name": "PresetHub" },
+    "offers": {
+      "@type": "Offer",
+      "price": preset.price,
+      "priceCurrency": "INR",
+      "availability": "https://schema.org/InStock"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": preset.avgRating || 0,
+      "ratingCount": preset.reviews?.length || 0
+    },
+    "author": { "@type": "Person", "name": preset.author }
+  });
+}
+
+// ============================================================
+// ===== REVIEW SUBMIT =====
+// ============================================================
+async function submitReview(presetId, rating, comment) {
+  const url = `${API_URL}/reviews/${presetId}`;
+  const options = {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ rating, comment })
+  };
+  try {
+    if (!navigator.onLine) {
+      await addToQueue('review', url, options);
+      showToast('⏳ Review saved offline. Will sync when online.', 'info');
+      return;
+    }
+    const res = await fetch(url, options);
+    if (res.ok) {
+      showToast('✅ समीक्षा सहेजी गई', 'success');
+      const modal = document.querySelector('.modal-overlay.active');
+      if (modal) {
+        const id = modal.querySelector('.download-btn')?.dataset.id;
+        if (id) {
+          modal.remove();
+          openPresetModal(id);
+        }
+      }
+      loadPresets();
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'समीक्षा सबमिट नहीं हो पाई', 'error');
+    }
+  } catch (err) {
+    await addToQueue('review', url, options);
+  }
+}
+
+// ============================================================
+// ===== DOWNLOAD =====
+// ============================================================
+async function downloadPreset(presetId) {
+  if (!currentUser) {
+    showToast('कृपया लॉग इन करें', 'warning');
+    return;
   }
 
-  // ---------- upload ----------
-  function showUpload() {
-    if (!need()) return;
-    openModal(`<h2 style="margin-bottom:16px">Preset अपलोड करें</h2><form id="upForm">
-      <div class="form-group"><label for="uName">नाम</label><input id="uName" name="name" required minlength="3" maxlength="80"></div>
-      <div class="form-group"><label for="uDesc">विवरण</label><textarea id="uDesc" name="description" maxlength="1000"></textarea></div>
-      <div class="form-group"><label for="uCat">Category</label><select id="uCat" name="category">${CATS.map(([n]) => `<option>${esc(n)}</option>`).join('')}</select></div>
-      <div class="form-group"><label for="uTags">Tags (comma से अलग)</label><input id="uTags" name="tags" maxlength="200"></div>
-      <div class="form-group"><label for="uPrice">कीमत ₹ (0 = free)</label><input id="uPrice" name="price" type="number" min="0" max="100000" step="1" value="0"></div>
-      <div class="form-group"><label for="uFile">Preset फ़ाइल (.xmp .dng .lrtemplate, max 10MB)</label><input id="uFile" name="file" type="file" accept=".xmp,.dng,.lrtemplate" required></div>
-      <div class="form-group"><label for="uPrev">Preview फ़ोटो (JPG/PNG/WEBP)</label><input id="uPrev" name="previewImage" type="file" accept="image/jpeg,image/png,image/webp"></div>
-      <div id="formErr" role="alert" style="color:#c0392b;min-height:22px"></div>
-      <button class="btn btn-primary" type="submit">अपलोड करें</button></form>`);
-    $('#upForm').addEventListener('submit', async e => {
-      e.preventDefault(); const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
-      const fd = new FormData(e.target); if (!fd.get('previewImage')?.size) fd.delete('previewImage');
-      try {
-        const p = await api('/presets', { method: 'POST', body: fd });
-        closeModal(); toast(p.status === 'approved' ? 'Preset live है!' : 'Preset admin approval के लिए भेजा गया');
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'ad-overlay';
+    modal.innerHTML = `
+      <div class="ad-modal">
+        <h3><i class="fas fa-ad"></i> Sponsored</h3>
+        <div class="ad-content">
+          <img src="https://via.placeholder.com/400x200/d4a373/ffffff?text=Your+Ad+Here" alt="Ad" style="max-width:100%;border-radius:12px;">
+          <p style="margin-top:8px;color:#888;">Continue in <span class="timer">3</span>s</p>
+        </div>
+        <button class="skip-btn" disabled>Skip Ad</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    let seconds = 3;
+    const timerSpan = modal.querySelector('.timer');
+    const skipBtn = modal.querySelector('.skip-btn');
+
+    const interval = setInterval(() => {
+      seconds--;
+      if (seconds <= 0) {
+        clearInterval(interval);
+        timerSpan.textContent = '0';
+        skipBtn.textContent = 'Download Now';
+        skipBtn.classList.add('enabled');
+        skipBtn.disabled = false;
+        setTimeout(() => { skipBtn.click(); }, 500);
+      } else {
+        timerSpan.textContent = seconds;
+      }
+    }, 1000);
+
+    skipBtn.addEventListener('click', async () => {
+      if (!skipBtn.classList.contains('enabled')) return;
+      modal.remove();
+      await adWatched();
+      await performDownload(presetId);
+      resolve();
+    });
+  });
+}
+
+async function performDownload(presetId) {
+  const url = `${API_URL}/presets/${presetId}/download`;
+  const options = { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } };
+  try {
+    if (!navigator.onLine) {
+      await addToQueue('download', url, options);
+      showToast('⏳ Download queued. Will start when online.', 'warning');
+      return;
+    }
+    const res = await fetch(url, options);
+    if (res.ok) {
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      const disposition = res.headers.get('content-disposition');
+      let filename = 'preset.xmp';
+      if (disposition && disposition.indexOf('filename=') !== -1) {
+        const match = disposition.match(/filename="?(.+)"?/);
+        if (match) filename = match[1];
+      }
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+      showToast('✅ प्रीसेट डाउनलोड हो गया!', 'success');
+      await fetchNotifications();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error || 'डाउनलोड विफल', 'error');
+    }
+  } catch (err) {
+    await addToQueue('download', url, options);
+  }
+}
+window.downloadPreset = downloadPreset;
+
+// ============================================================
+// ===== BUY (Razorpay) =====
+// ============================================================
+async function buyPreset(presetId) {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  if (!navigator.onLine) {
+    const url = `${API_URL}/payments/create-order`;
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ presetId })
+    };
+    await addToQueue('order', url, options);
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/payments/create-order`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ presetId })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Order creation failed');
+    const options = {
+      key: data.key,
+      amount: data.amount,
+      currency: data.currency,
+      name: 'PresetHub',
+      description: 'Preset Purchase',
+      order_id: data.orderId,
+      handler: function (response) {
+        verifyPayment(response, presetId);
+      },
+      prefill: {
+        name: currentUser.name,
+        email: currentUser.email,
+      },
+      theme: { color: '#d4a373' }
+    };
+    const rzp = new Razorpay(options);
+    rzp.open();
+  } catch (err) {
+    showToast('Payment initiation failed: ' + err.message, 'error');
+  }
+}
+window.buyPreset = buyPreset;
+
+async function verifyPayment(response, presetId) {
+  try {
+    const res = await fetch(`${API_URL}/payments/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        razorpay_order_id: response.razorpay_order_id,
+        razorpay_payment_id: response.razorpay_payment_id,
+        razorpay_signature: response.razorpay_signature,
+      })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('✅ भुगतान सफल! प्रीसेट डाउनलोड हो रहा है...', 'success');
+      await downloadPreset(presetId);
+    } else {
+      showToast('Payment verification failed: ' + (data.error || 'unknown error'), 'error');
+    }
+  } catch (err) {
+    showToast('Verification error: ' + err.message, 'error');
+  }
+}
+
+// ============================================================
+// ===== UPLOAD MODAL =====
+// ============================================================
+function openUploadModal() {
+  if (!currentUser) {
+    showToast('कृपया पहले लॉग इन करें', 'warning');
+    return;
+  }
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:500px;padding:28px;">
+      <button class="close">&times;</button>
+      <h2 style="font-size:1.4rem;"><i class="fas fa-cloud-upload-alt"></i> नया प्रीसेट अपलोड करें</h2>
+      <form id="uploadForm" enctype="multipart/form-data">
+        <div class="form-group"><input type="text" id="uploadName" placeholder="प्रीसेट का नाम" required style="padding:8px 12px;font-size:0.9rem;" /></div>
+        <div class="form-group"><textarea id="uploadDesc" placeholder="विवरण" style="padding:8px 12px;font-size:0.9rem;min-height:60px;"></textarea></div>
+        <div class="form-group">
+          <select id="uploadCategory" style="padding:8px 12px;font-size:0.9rem;">
+            <option value="सनसेट">सनसेट</option>
+            <option value="ब्लैक & व्हाइट">ब्लैक & व्हाइट</option>
+            <option value="नैचुरल">नैचुरल</option>
+            <option value="विंटेज">विंटेज</option>
+            <option value="सिटीस्केप">सिटीस्केप</option>
+          </select>
+        </div>
+        <div class="form-group"><input type="text" id="uploadTags" placeholder="टैग्स (कॉमा से अलग)" style="padding:8px 12px;font-size:0.9rem;" /></div>
+        <div class="form-group"><input type="number" id="uploadPrice" placeholder="कीमत (0 = मुफ्त)" min="0" step="1" style="padding:8px 12px;font-size:0.9rem;" /></div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">प्रीसेट फ़ाइल (.xmp, .dng, .lrtemplate)</label>
+          <input type="file" id="uploadFile" accept=".xmp,.dng,.lrtemplate" required style="padding:6px;font-size:0.85rem;" />
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">प्रीव्यू इमेज (वैकल्पिक)</label>
+          <input type="file" id="uploadPreview" accept="image/*" style="padding:6px;font-size:0.85rem;" />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;"><i class="fas fa-upload"></i> अपलोड करें</button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+
+  modal.querySelector('#uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData();
+    formData.append('name', document.getElementById('uploadName').value);
+    formData.append('description', document.getElementById('uploadDesc').value);
+    formData.append('category', document.getElementById('uploadCategory').value);
+    formData.append('tags', document.getElementById('uploadTags').value);
+    formData.append('price', document.getElementById('uploadPrice').value || 0);
+    const fileInput = document.getElementById('uploadFile');
+    if (fileInput.files[0]) formData.append('file', fileInput.files[0]);
+    const previewInput = document.getElementById('uploadPreview');
+    if (previewInput.files[0]) formData.append('previewImage', previewInput.files[0]);
+    
+    const url = `${API_URL}/presets`;
+    const options = {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    };
+
+    try {
+      if (!navigator.onLine) {
+        showToast('⚠️ You are offline. Please connect to the internet to upload.', 'warning');
+        return;
+      }
+      const res = await fetch(url, options);
+      if (res.ok) {
+        showToast('✅ प्रीसेट अपलोड हो गया!', 'success');
+        modal.remove();
         loadPresets();
-      } catch (err) { $('#formErr').textContent = err.message; btn.disabled = false; }
-    });
-  }
-
-  // ---------- account / profile / wishlist / follow ----------
-  const remember = items => { state.list = [...new Map([...state.list, ...items].map(p => [p.id, p])).values()]; };
-  const skel = h => `<div class="skeleton" style="height:${h}px"></div>`;
-
-  function showAccount() {
-    if (!state.me) return;
-    openModal(`<h2>${esc(state.me.name)}</h2><p class="author" style="color:var(--muted)">${esc(state.me.email)}</p>
-      <div style="display:grid;gap:10px;margin-top:18px">
-        <button class="btn btn-outline" data-action="profile">✏️ प्रोफ़ाइल एडिट करें</button>
-        <button class="btn btn-outline" data-action="mine">📦 मेरे Presets</button>
-        <button class="btn btn-outline" data-action="wishlist">❤️ Wishlist</button>
-        <button class="btn btn-outline" data-action="downloads">⬇️ मेरे Downloads</button>
-        <button class="btn btn-outline" data-action="viewme">👤 पब्लिक प्रोफ़ाइल देखें</button>
-        <button class="btn btn-danger" data-action="logout">लॉग आउट</button></div>`);
-  }
-
-  async function showList(title, path, mine) {
-    openModal(`<h2 style="margin-bottom:16px">${title}</h2><div id="listBox">${skel(120)}</div>`);
-    try {
-      const items = await api(path); remember(items);
-      $('#listBox').innerHTML = !items.length ? '<p style="color:var(--muted)">यहाँ अभी कुछ नहीं है।</p>'
-        : `<div class="preset-grid" style="margin:0">${items.map(p => mine
-          ? `<div>${card(p)}<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 4px">
-              <span class="status-badge status-${esc(p.status)}" style="font-size:.75rem;font-weight:700">${esc(p.status)}</span>
-              <button class="btn btn-danger btn-sm" data-action="delpreset" data-id="${esc(p.id)}">हटाएं</button></div></div>`
-          : card(p)).join('')}</div>`;
-    } catch (err) { $('#listBox').textContent = err.message; }
-  }
-
-  async function delPreset(id) {
-    if (!confirm('यह preset हमेशा के लिए हटाएं?')) return;
-    try { await api('/presets/' + encodeURIComponent(id), { method: 'DELETE' }); toast('हटा दिया गया'); showList('📦 मेरे Presets', '/users/me/presets', true); loadPresets(); }
-    catch (err) { toast(err.message); }
-  }
-
-  async function toggleWish(id, el) {
-    if (!need()) return;
-    try {
-      const r = await api('/users/me/wishlist/' + encodeURIComponent(id), { method: 'POST' });
-      state.me.wishlist = r.wishlist; const on = r.wishlist.includes(id);
-      const i = el.querySelector('i'); if (i) i.className = (on ? 'fas' : 'far') + ' fa-heart';
-      toast(on ? 'Wishlist में जोड़ा ❤️' : 'Wishlist से हटाया');
-    } catch (err) { toast(err.message); }
-  }
-
-  function showProfileEdit() {
-    const m = state.me, s = m.socialLinks || {};
-    const f = (id, label, val, extra = '') => `<div class="form-group"><label for="${id}">${label}</label><input id="${id}" value="${esc(val)}" ${extra}></div>`;
-    openModal(`<h2 style="margin-bottom:16px">प्रोफ़ाइल एडिट</h2><form id="profForm">
-      ${f('pName', 'नाम', m.name, 'maxlength="60" required')}
-      ${f('pUser', 'Username (a-z, 0-9, _)', m.username || '', 'maxlength="30" pattern="[A-Za-z0-9_]{3,30}" placeholder="जैसे: rahul_photo"')}
-      <div class="form-group"><label for="pBio">Bio</label><textarea id="pBio" maxlength="300">${esc(m.bio || '')}</textarea></div>
-      ${f('pAvatar', 'Avatar (फोटो का https लिंक)', m.avatar || '', 'type="url" placeholder="https://…"')}
-      ${f('pInsta', 'Instagram लिंक', s.instagram || '', 'type="url"')}${f('pYt', 'YouTube लिंक', s.youtube || '', 'type="url"')}
-      ${f('pTw', 'Twitter/X लिंक', s.twitter || '', 'type="url"')}${f('pWeb', 'Website', s.website || '', 'type="url"')}
-      <div id="formErr" role="alert" style="color:#c0392b;min-height:22px"></div>
-      <button class="btn btn-primary" type="submit">सेव करें</button></form>`);
-    $('#profForm').addEventListener('submit', async e => {
-      e.preventDefault(); const btn = e.target.querySelector('button'); btn.disabled = true;
-      const json = { name: $('#pName').value, bio: $('#pBio').value, avatar: $('#pAvatar').value,
-        socialLinks: { instagram: $('#pInsta').value, youtube: $('#pYt').value, twitter: $('#pTw').value, website: $('#pWeb').value } };
-      if ($('#pUser').value.trim()) json.username = $('#pUser').value.trim();
-      try { state.me = await api('/users/me', { method: 'PUT', json }); renderUser(); toast('प्रोफ़ाइल सेव हो गई ✅'); showAccount(); }
-      catch (err) { $('#formErr').textContent = err.message; btn.disabled = false; }
-    });
-  }
-
-  const ICONS = { instagram: 'fab fa-instagram', youtube: 'fab fa-youtube', twitter: 'fab fa-x-twitter', website: 'fas fa-globe' };
-  async function openCreator(id) {
-    openModal(skel(200));
-    try {
-      const [u, list] = await Promise.all([api('/users/' + encodeURIComponent(id)), api('/users/' + encodeURIComponent(id) + '/presets')]);
-      remember(list);
-      const self = state.me?.id === u.id, fol = state.me?.following?.includes(u.id);
-      const links = Object.entries(u.socialLinks || {}).filter(([k, v]) => v && ICONS[k]).map(([k, v]) =>
-        `<a class="social-icon" href="${esc(v)}" target="_blank" rel="noopener noreferrer nofollow" aria-label="${esc(k)}"><i class="${ICONS[k]}"></i></a>`).join('');
-      openModal(`<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-        ${u.avatar ? `<img src="${esc(u.avatar)}" alt="" style="width:72px;height:72px;border-radius:50%;object-fit:cover">` : `<div class="user-avatar" style="width:72px;height:72px;font-size:1.8rem">${esc((u.name || '?')[0].toUpperCase())}</div>`}
-        <div style="flex:1;min-width:160px"><h2>${esc(u.name)} ${u.verified ? '<i class="fas fa-circle-check" style="color:var(--accent-text)" title="Verified"></i>' : ''}</h2>
-          ${u.username ? `<div style="color:var(--muted)">@${esc(u.username)}</div>` : ''}</div>
-        ${self ? '' : `<button class="btn ${fol ? 'btn-outline' : 'btn-accent'}" id="followBtn" data-action="follow" data-id="${esc(u.id)}">${fol ? 'Following ✓' : '+ Follow'}</button>`}</div>
-        ${u.bio ? `<p class="desc" style="margin:14px 0">${esc(u.bio)}</p>` : ''}<div>${links}</div>
-        <div class="meta-list" style="margin:14px 0"><span><b>${u.totalPresets}</b> presets</span><span><b>${u.totalDownloads}</b> downloads</span><span><b>${u.followers}</b> followers</span><span><b>${u.following}</b> following</span></div>
-        <div class="preset-grid" style="margin:0">${list.map(card).join('') || '<p style="color:var(--muted)">अभी कोई preset नहीं।</p>'}</div>`);
-    } catch (err) { openModal(`<p>${esc(err.message)}</p>`); }
-  }
-
-  async function toggleFollow(id) {
-    if (!need()) return;
-    try {
-      const r = await api('/users/' + encodeURIComponent(id) + '/follow', { method: 'POST' });
-      const set = new Set(state.me.following || []); r.following ? set.add(id) : set.delete(id);
-      state.me.following = [...set]; openCreator(id);
-    } catch (err) { toast(err.message); }
-  }
-
-  // ---------- events (one delegated listener = works with strict CSP) ----------
-  document.addEventListener('click', async e => {
-    const el = e.target.closest('[data-action]'); if (!el) return;
-    const { action, id, cat } = el.dataset;
-    if (el.tagName === 'A') e.preventDefault();
-    if (action === 'open') openPreset(id);
-    else if (action === 'get') get(id);
-    else if (action === 'close') closeModal();
-    else if (action === 'login' || action === 'signup') showAuth(action);
-    else if (action === 'logout') logout();
-    else if (action === 'upload') showUpload();
-    else if (action === 'cat') { state.category = state.category === cat ? '' : cat; loadPresets(); $('#presets').scrollIntoView({ behavior: 'smooth' }); }
-    else if (action === 'wish') toggleWish(id, el);
-    else if (action === 'account') showAccount();
-    else if (action === 'profile') showProfileEdit();
-    else if (action === 'wishlist') showList('❤️ Wishlist', '/users/me/wishlist');
-    else if (action === 'downloads') showList('⬇️ मेरे Downloads', '/users/me/downloads');
-    else if (action === 'mine') showList('📦 मेरे Presets', '/users/me/presets', true);
-    else if (action === 'viewme') openCreator(state.me.id);
-    else if (action === 'creator') openCreator(id);
-    else if (action === 'follow') toggleFollow(id);
-    else if (action === 'delpreset') delPreset(id);
-    else if (action === 'theme') { document.body.classList.toggle('dark'); localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light'); }
+        loadLatestPresets();
+        loadTopCreators();
+      } else {
+        const err = await res.json();
+        showToast(err.error || 'अपलोड विफल', 'error');
+      }
+    } catch (err) {
+      showToast('❌ Upload failed. Please check your connection.', 'error');
+    }
   });
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeModal();
-    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-action="open"],[data-action="cat"],[data-action="creator"]')) { e.preventDefault(); e.target.click(); }
-  });
-  $('#overlay').addEventListener('click', e => { if (e.target.id === 'overlay') closeModal(); });
-  $('#priceFilter').addEventListener('change', loadPresets);
-  $('#sortFilter').addEventListener('change', loadPresets);
+}
+window.openUploadModal = openUploadModal;
 
-  let t;
-  const box = $('#searchSuggestions');
-  $('#searchInput').addEventListener('input', e => {
-    clearTimeout(t); const q = e.target.value.trim();
-    if (q.length < 2) { box.hidden = true; return; }
-    t = setTimeout(async () => {
+// ============================================================
+// ===== TOP CREATORS =====
+// ============================================================
+async function loadTopCreators() {
+  const grid = document.getElementById('topCreatorsGrid');
+  try {
+    const res = await fetch(`${API_URL}/users/top`);
+    if (res.ok) {
+      const creators = await res.json();
+      if (!grid) return;
+      if (!creators || creators.length === 0) {
+        grid.innerHTML = '<p style="color:var(--text);font-size:0.9rem;">कोई क्रिएटर नहीं</p>';
+        return;
+      }
+      grid.innerHTML = creators.map(c => `
+        <div class="creator-card" style="cursor:pointer;padding:14px;" onclick="window.openProfile('${c.id}')">
+          <div class="avatar" style="width:50px;height:50px;font-size:1.2rem;margin:0 auto 6px;background-image:url(${c.avatar || ''});background-size:cover;">
+            ${!c.avatar ? c.name.charAt(0).toUpperCase() : ''}
+          </div>
+          <div class="name" style="font-size:0.85rem;">${escapeHTML(c.name)}</div>
+          <div class="stats" style="font-size:0.7rem;color:#6b6b6b;">${c.presetCount || 0} प्रीसेट</div>
+          <div class="followers" style="font-size:0.7rem;color:#d4a373;"><i class="fas fa-users"></i> ${c.followers || 0}</div>
+        </div>
+      `).join('');
+    } else {
+      throw new Error('Server error ' + res.status);
+    }
+  } catch (err) {
+    console.error('Top creators error:', err);
+    if (grid) {
+      grid.innerHTML = `<div style="padding:20px;color:#7a7a7a;font-size:0.85rem;text-align:center;width:100%;">
+        <i class="fas fa-triangle-exclamation" style="color:#f39c12;"></i> क्रिएटर्स लोड नहीं हो पाए।
+        <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="loadTopCreators()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
+      </div>`;
+    }
+  }
+}
+
+// ============================================================
+// ===== PROFILE MODAL =====
+// ============================================================
+window.openProfile = async function(userId) {
+  try {
+    window._currentProfileId = userId;
+    
+    const res = await fetch(`${API_URL}/users/${userId}`);
+    if (!res.ok) throw new Error('User not found');
+    const user = await res.json();
+
+    const presetsRes = await fetch(`${API_URL}/users/${userId}/presets`);
+    const userPresets = presetsRes.ok ? await presetsRes.json() : [];
+
+    const isFollowing = currentUser ? (user.followers || []).includes(currentUser.id) : false;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:650px;padding:28px;">
+        <button class="close">&times;</button>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+          <div style="width:64px;height:64px;border-radius:50%;background:#d4a373;display:flex;align-items:center;justify-content:center;font-size:1.6rem;color:#fff;${user.avatar ? `background-image:url(${user.avatar});background-size:cover;` : ''}">
+            ${!user.avatar ? user.name.charAt(0).toUpperCase() : ''}
+          </div>
+          <div>
+            <h2 style="font-size:1.2rem;color:var(--text, #1e1e1e);">${escapeHTML(user.name)}</h2>
+            <div style="color:#6b6b6b;font-size:0.85rem;">@${escapeHTML(user.username || user.email?.split('@')[0] || '')}</div>
+            <div style="margin-top:2px;font-size:0.85rem;color:var(--text, #1e1e1e);">${escapeHTML(user.bio || 'कोई बायो नहीं')}</div>
+            <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap;font-size:0.8rem;">
+              <span><strong>${user.totalPresets || 0}</strong> प्रीसेट</span>
+              <span><strong>${user.totalDownloads || 0}</strong> डाउनलोड</span>
+              <span><strong><i class="fas fa-users"></i> ${user.followers || 0}</strong></span>
+              <span><strong><i class="fas fa-user-plus"></i> ${user.following || 0}</strong></span>
+            </div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
+            ${currentUser && currentUser.id !== userId ? `
+              <button class="btn ${isFollowing ? 'btn-outline' : 'btn-primary'}" id="followBtn" style="font-size:0.8rem;padding:6px 14px;">
+                ${isFollowing ? '<i class="fas fa-user-minus"></i> अनफॉलो' : '<i class="fas fa-user-plus"></i> फॉलो'}
+              </button>
+            ` : ''}
+            ${currentUser && currentUser.id === userId ? `
+              <button class="btn btn-outline" onclick="window.openEditProfile()" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-edit"></i> एडिट</button>
+              <button class="btn btn-outline" onclick="window.openChangePassword()" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-key"></i> पासवर्ड</button>
+            ` : ''}
+          </div>
+        </div>
+        ${user.socialLinks && Object.values(user.socialLinks).some(v => v) ? `
+          <div style="margin-bottom:12px;display:flex;gap:10px;">
+            ${user.socialLinks.instagram ? `<a href="${escapeHTML(user.socialLinks.instagram)}" target="_blank" style="color:#d4a373;"><i class="fab fa-instagram fa-lg"></i></a>` : ''}
+            ${user.socialLinks.youtube ? `<a href="${escapeHTML(user.socialLinks.youtube)}" target="_blank" style="color:#d4a373;"><i class="fab fa-youtube fa-lg"></i></a>` : ''}
+            ${user.socialLinks.twitter ? `<a href="${escapeHTML(user.socialLinks.twitter)}" target="_blank" style="color:#d4a373;"><i class="fab fa-twitter fa-lg"></i></a>` : ''}
+            ${user.socialLinks.website ? `<a href="${escapeHTML(user.socialLinks.website)}" target="_blank" style="color:#d4a373;"><i class="fas fa-globe fa-lg"></i></a>` : ''}
+          </div>
+        ` : ''}
+        <h3 style="font-size:1rem;color:var(--text, #1e1e1e);"><i class="fas fa-cubes"></i> प्रीसेट</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:8px;">
+          ${userPresets.length === 0 ? '<p style="grid-column:1/-1;color:#888;font-size:0.9rem;">अभी कोई प्रीसेट नहीं</p>' : 
+            userPresets.map(p => `
+              <div style="background:var(--bg, #f8f6f2);padding:12px;border-radius:10px;cursor:pointer;" onclick="window.openPresetModal('${p.id}')">
+                <strong style="font-size:0.85rem;color:var(--text, #1e1e1e);">${escapeHTML(p.name)}</strong>
+                <div style="font-size:0.75rem;color:#6b6b6b;">${escapeHTML(p.category)} • ${p.downloads || 0} डाउनलोड</div>
+              </div>
+            `).join('')
+          }
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+
+    const followBtn = modal.querySelector('#followBtn');
+    if (followBtn) {
+      followBtn.addEventListener('click', async () => {
+        if (!currentUser) {
+          showToast('कृपया लॉग इन करें', 'warning');
+          return;
+        }
+        await toggleFollow(userId);
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
+  }
+};
+
+// ============================================================
+// ===== FOLLOW / UNFOLLOW =====
+// ============================================================
+async function toggleFollow(userId) {
+  const url = `${API_URL}/users/${userId}/follow`;
+  const options = {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }
+  };
+  try {
+    if (!navigator.onLine) {
+      await addToQueue('follow', url, options);
+      showToast('⏳ Follow action queued.', 'info');
+      return;
+    }
+    const res = await fetch(url, options);
+    if (res.ok) {
+      const data = await res.json();
+      showToast(data.following ? '✅ फॉलो कर लिया!' : '❌ अनफॉलो कर दिया', 'info');
+      const modal = document.querySelector('.modal-overlay.active');
+      if (modal) {
+        const currentProfileId = window._currentProfileId;
+        if (currentProfileId) {
+          modal.remove();
+          window.openProfile(currentProfileId);
+        }
+      }
+      await fetchNotifications();
+    } else {
+      showToast('कृपया बाद में प्रयास करें', 'error');
+    }
+  } catch (err) {
+    await addToQueue('follow', url, options);
+  }
+}
+
+// ============================================================
+// ===== CHANGE PASSWORD =====
+// ============================================================
+window.openChangePassword = async function() {
+  if (!currentUser) {
+    showToast('कृपया लॉग इन करें', 'warning');
+    return;
+  }
+  
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:450px;padding:28px;">
+      <button class="close">&times;</button>
+      <h2 style="font-size:1.2rem;"><i class="fas fa-key"></i> पासवर्ड बदलें</h2>
+      <form id="changePasswordForm">
+        <div class="form-group">
+          <label style="font-size:0.85rem;">मौजूदा पासवर्ड</label>
+          <input type="password" id="currentPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">नया पासवर्ड (6+ अक्षर, एक नंबर, एक बड़ा अक्षर)</label>
+          <input type="password" id="newPassword" required minlength="6" style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.85rem;">नया पासवर्ड दोबारा</label>
+          <input type="password" id="confirmPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;margin-top:8px;">
+          <i class="fas fa-save"></i> पासवर्ड बदलें
+        </button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  
+  modal.querySelector('#changePasswordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (newPassword !== confirmPassword) {
+      showToast('नए पासवर्ड मेल नहीं खाते', 'error');
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      showToast('पासवर्ड कम से कम 6 अक्षर का होना चाहिए', 'error');
+      return;
+    }
+    
+    try {
+      const res = await fetch(`${API_URL}/auth/change-password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        showToast('✅ पासवर्ड बदल गया!', 'success');
+        modal.remove();
+      } else {
+        showToast(data.error || 'पासवर्ड बदलने में विफल', 'error');
+      }
+    } catch (err) {
+      showToast('❌ सर्वर से कनेक्ट नहीं हो पाया', 'error');
+    }
+  });
+};
+
+// ============================================================
+// ===== EDIT PROFILE =====
+// ============================================================
+window.openEditProfile = async function() {
+  if (!currentUser) {
+    showToast('कृपया लॉग इन करें', 'warning');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/users/me`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Profile not found');
+    const user = await res.json();
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:500px;padding:28px;">
+        <button class="close">&times;</button>
+        <h2 style="font-size:1.3rem;"><i class="fas fa-edit"></i> प्रोफ़ाइल एडिट करें</h2>
+        <form id="editProfileForm" enctype="multipart/form-data">
+          <div class="form-group">
+            <label style="font-size:0.85rem;">अवतार</label>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <img id="avatarPreview" src="${user.avatar || ''}" alt="Avatar" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #d4a373;${user.avatar ? '' : 'display:none;'}">
+              <div>
+                <input type="file" id="avatarFile" accept="image/*" style="padding:6px;border:1px solid var(--border,#ddd);border-radius:8px;font-size:0.85rem;width:100%;" />
+                <div style="font-size:0.7rem;color:#888;margin-top:2px;">Max 5MB, JPG/PNG/GIF/WEBP</div>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label style="font-size:0.85rem;">नाम</label>
+            <input type="text" id="editName" value="${escapeHTML(user.name || '')}" required style="padding:8px 12px;font-size:0.9rem;" />
+          </div>
+          <div class="form-group">
+            <label style="font-size:0.85rem;">यूज़रनेम</label>
+            <input type="text" id="editUsername" value="${escapeHTML(user.username || '')}" style="padding:8px 12px;font-size:0.9rem;" />
+          </div>
+          <div class="form-group">
+            <label style="font-size:0.85rem;">बायो</label>
+            <textarea id="editBio" rows="3" style="padding:8px 12px;font-size:0.9rem;min-height:60px;">${escapeHTML(user.bio || '')}</textarea>
+          </div>
+          <div style="border-top:1px solid var(--border, #eee);padding-top:10px;margin-top:10px;">
+            <h4 style="font-size:0.95rem;"><i class="fas fa-share-alt"></i> सोशल लिंक्स</h4>
+            <div class="form-group">
+              <label style="font-size:0.8rem;"><i class="fab fa-instagram"></i> Instagram</label>
+              <input type="text" id="editInstagram" value="${escapeHTML(user.socialLinks?.instagram || '')}" style="padding:8px 12px;font-size:0.9rem;" />
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.8rem;"><i class="fab fa-youtube"></i> YouTube</label>
+              <input type="text" id="editYoutube" value="${escapeHTML(user.socialLinks?.youtube || '')}" style="padding:8px 12px;font-size:0.9rem;" />
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.8rem;"><i class="fab fa-twitter"></i> Twitter</label>
+              <input type="text" id="editTwitter" value="${escapeHTML(user.socialLinks?.twitter || '')}" style="padding:8px 12px;font-size:0.9rem;" />
+            </div>
+            <div class="form-group">
+              <label style="font-size:0.8rem;"><i class="fas fa-globe"></i> Website</label>
+              <input type="text" id="editWebsite" value="${escapeHTML(user.socialLinks?.website || '')}" style="padding:8px 12px;font-size:0.9rem;" />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;"><i class="fas fa-save"></i> सहेजें</button>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+
+    const avatarFileInput = modal.querySelector('#avatarFile');
+    const avatarPreview = modal.querySelector('#avatarPreview');
+    avatarFileInput.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+          avatarPreview.src = event.target.result;
+          avatarPreview.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    modal.querySelector('#editProfileForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const avatarFile = modal.querySelector('#avatarFile').files[0];
+      if (avatarFile) {
+        const formData = new FormData();
+        formData.append('avatar', avatarFile);
+        try {
+          const avatarRes = await fetch(`${API_URL}/auth/me/avatar`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+          });
+          if (!avatarRes.ok) {
+            const err = await avatarRes.json();
+            showToast('Avatar upload failed: ' + (err.error || 'unknown'), 'error');
+            return;
+          }
+          const avatarData = await avatarRes.json();
+          currentUser.avatar = avatarData.avatar;
+          showLoggedInUI(currentUser);
+        } catch (err) {
+          showToast('Avatar upload error', 'error');
+          return;
+        }
+      }
+      
+      const payload = {
+        name: document.getElementById('editName').value,
+        username: document.getElementById('editUsername').value,
+        bio: document.getElementById('editBio').value,
+        socialLinks: {
+          instagram: document.getElementById('editInstagram').value,
+          youtube: document.getElementById('editYoutube').value,
+          twitter: document.getElementById('editTwitter').value,
+          website: document.getElementById('editWebsite').value,
+        }
+      };
       try {
-        const r = await api('/presets/search?q=' + encodeURIComponent(q));
-        state.list = [...new Map([...state.list, ...r].map(p => [p.id, p])).values()];
-        box.innerHTML = r.map(p => `<div class="suggestion-item" data-action="open" data-id="${esc(p.id)}"><strong>${esc(p.name)}</strong> <small>by ${esc(p.author)}</small></div>`).join('');
-        box.hidden = !r.length;
-      } catch { box.hidden = true; }
-    }, 250);
-  });
-  document.addEventListener('click', e => { if (!e.target.closest('.nav-search')) box.hidden = true; });
-  $('#searchForm').addEventListener('submit', e => { e.preventDefault(); state.q = $('#searchInput').value.trim(); box.hidden = true; loadPresets(); });
+        const res = await fetch(`${API_URL}/users/me`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          const updatedUser = await res.json();
+          currentUser = updatedUser;
+          showLoggedInUI(updatedUser);
+          showToast('✅ प्रोफ़ाइल अपडेट हो गई', 'success');
+          modal.remove();
+          loadTopCreators();
+        } else {
+          const err = await res.json();
+          showToast(err.error || 'अपडेट विफल', 'error');
+        }
+      } catch (err) {
+        showToast('❌ Update failed. Please check your connection.', 'error');
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
+  }
+};
 
-  // ---------- init ----------
-  (async function init() {
-    if (localStorage.getItem('theme') === 'dark') document.body.classList.add('dark');
-    renderCategories(); renderUser();
-    if (state.token) { try { state.me = await api('/users/me'); } catch { /* logout() already ran on 401 */ } renderUser(); }
-    loadPresets(); loadCreators();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-  })();
-})();
+// ============================================================
+// ===== SUBSCRIPTION & REFERRAL =====
+// ============================================================
+async function fetchSubscription() {
+  if (!token) return;
+  try {
+    const res = await fetch(`${API_URL}/users/me/subscription`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      subscriptionData = await res.json();
+      updateSubscriptionUI();
+    }
+  } catch (err) { console.error(err); }
+}
+
+function updateSubscriptionUI() {
+  const badge = document.getElementById('premiumBadge');
+  if (badge) {
+    badge.textContent = subscriptionData.isPremium ? '✅ Premium' : 'Free';
+    badge.style.color = subscriptionData.isPremium ? '#2ecc71' : '#e74c3c';
+  }
+}
+
+async function adWatched() {
+  try {
+    const res = await fetch(`${API_URL}/ads/watched`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(`✅ Ad watched! (${data.adWatchCount} total, ${data.daysEarned} days earned)`, 'success');
+      await fetchSubscription();
+    }
+  } catch (err) {
+    showToast('Failed to register ad watch', 'error');
+  }
+}
+
+async function generateReferral() {
+  try {
+    const res = await fetch(`${API_URL}/referrals/generate`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(`Your referral code: ${data.referralCode}`, 'info');
+      await fetchSubscription();
+    }
+  } catch (err) {
+    showToast('Failed to generate code', 'error');
+  }
+}
+
+function showReferral() {
+  const code = subscriptionData.referralCode || 'Generate';
+  const link = `${window.location.origin}/?ref=${code}`;
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:380px;padding:24px;">
+      <button class="close">&times;</button>
+      <h2 style="font-size:1.2rem;"><i class="fas fa-link"></i> Referral Program</h2>
+      <p style="font-size:0.9rem;">Share your code: <strong>${escapeHTML(code)}</strong></p>
+      <p style="font-size:0.85rem;">Link: <a href="${escapeHTML(link)}" target="_blank" style="color:#d4a373;word-break:break-all;">${escapeHTML(link)}</a></p>
+      <p style="font-size:0.85rem;">You have referred ${subscriptionData.referralCount || 0} users.</p>
+      <p style="font-size:0.85rem;">Earn 28 days free for every 10 referrals!</p>
+      <button class="btn btn-primary" onclick="generateReferral()" style="font-size:0.85rem;padding:8px 16px;"><i class="fas fa-sync"></i> Generate Code</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+}
+window.showReferral = showReferral;
+
+// ============================================================
+// ===== NOTIFICATIONS =====
+// ============================================================
+async function fetchNotifications() {
+  if (!token) return;
+  try {
+    const res = await fetch(`${API_URL}/users/me/notifications`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      notifications = await res.json();
+      updateNotificationUI();
+    } else {
+      notifications = [];
+      updateNotificationUI();
+    }
+  } catch (err) { 
+    console.error('Notification fetch error:', err);
+    notifications = [];
+    updateNotificationUI();
+  }
+}
+
+function updateNotificationUI() {
+  const badge = document.getElementById('notifBadge');
+  const unread = notifications.filter(n => !n.read).length;
+  if (badge) {
+    if (unread > 0) {
+      badge.style.display = 'inline';
+      badge.textContent = unread;
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+}
+
+function openNotifications() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:500px;padding:24px;">
+      <button class="close">&times;</button>
+      <h2 style="font-size:1.2rem;"><i class="fas fa-bell"></i> Inbox</h2>
+      <div id="notifList" style="max-height:300px;overflow-y:auto;">
+        ${notifications.length === 0 ? '<p style="color:#888;font-size:0.9rem;">No notifications</p>' : 
+          notifications.map(n => `
+            <div class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" style="padding:10px 12px;border-bottom:1px solid var(--border,#eee);cursor:pointer;${n.read ? '' : 'background:#fef9e7;'}">
+              <div style="font-size:0.9rem;">${escapeHTML(n.message)}</div>
+              <div style="font-size:0.7rem;color:#888;">${new Date(n.createdAt).toLocaleString()}</div>
+              ${n.link ? `<a href="${escapeHTML(n.link)}" target="_blank" style="font-size:0.8rem;color:#d4a373;">View</a>` : ''}
+            </div>
+          `).join('')
+        }
+      </div>
+      ${notifications.length > 0 ? `
+        <button class="btn btn-sm btn-primary" id="markAllRead" style="margin-top:10px;font-size:0.8rem;padding:6px 14px;">
+          <i class="fas fa-check-double"></i> Mark all as read
+        </button>
+      ` : ''}
+    </div>
+  `;
+  document.body.appendChild(modal);
+  
+  modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  
+  const markBtn = modal.querySelector('#markAllRead');
+  if (markBtn) {
+    markBtn.addEventListener('click', async () => {
+      try {
+        await fetch(`${API_URL}/notifications/read-all`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        await fetchNotifications();
+        modal.remove();
+        openNotifications();
+      } catch (err) {
+        showToast('Failed to mark all as read', 'error');
+      }
+    });
+  }
+  
+  modal.querySelectorAll('.notif-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const id = item.dataset.id;
+      try {
+        await fetch(`${API_URL}/notifications/read/${id}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        await fetchNotifications();
+      } catch (err) {
+        console.error('Failed to mark notification as read:', err);
+      }
+    });
+  });
+}
+
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+// ============================================================
+// ===== EARNINGS =====
+// ============================================================
+window.showEarnings = async function() {
+  if (!currentUser) { showToast('Please login', 'warning'); return; }
+  try {
+    const res = await fetch(`${API_URL}/users/${currentUser.id}/earnings`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to fetch earnings');
+    const data = await res.json();
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:600px;padding:28px;">
+        <button class="close">&times;</button>
+        <h2 style="font-size:1.2rem;"><i class="fas fa-rupee-sign"></i> My Earnings</h2>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0;">
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
+            <div class="num" style="font-size:1.4rem;font-weight:700;color:#d4a373;">${data.totalImpressions}</div>
+            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Impressions</div>
+          </div>
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
+            <div class="num" style="font-size:1.4rem;font-weight:700;color:#2a9d8f;">₹${data.totalRevenue.toFixed(2)}</div>
+            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Earnings</div>
+          </div>
+          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
+            <div class="num" style="font-size:1.4rem;font-weight:700;color:#3498db;">${data.totalDownloads}</div>
+            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Downloads</div>
+          </div>
+        </div>
+        <h3 style="font-size:0.95rem;margin:10px 0 6px;"><i class="fas fa-chart-bar"></i> Preset Performance</h3>
+        <div style="max-height:250px;overflow-y:auto;font-size:0.85rem;">
+          ${data.presets.length === 0 ? '<p style="color:#888;">No presets uploaded yet.</p>' :
+            data.presets.map(p => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border,#eee);flex-wrap:wrap;gap:4px;">
+                <div>
+                  <strong>${escapeHTML(p.name)}</strong>
+                  <span style="font-size:0.75rem;color:#888;">(${escapeHTML(p.category)})</span>
+                </div>
+                <div style="display:flex;gap:12px;font-size:0.75rem;">
+                  <span><i class="fas fa-eye"></i> ${p.impressions}</span>
+                  <span><i class="fas fa-download"></i> ${p.downloads}</span>
+                  <span style="color:#2a9d8f;font-weight:600;">₹${p.revenue.toFixed(2)}</span>
+                </div>
+              </div>
+            `).join('')
+          }
+        </div>
+        ${data.canWithdraw ? `
+          <div style="margin-top:12px;padding:10px;background:#d4edda;border-radius:10px;color:#155724;font-size:0.85rem;">
+            ✅ You are eligible for withdrawal! (Min. ₹100)
+            <button class="btn btn-sm btn-primary" onclick="requestWithdrawal()" style="margin-left:10px;font-size:0.8rem;padding:5px 12px;"><i class="fas fa-hand-holding-usd"></i> Withdraw</button>
+          </div>
+        ` : `
+          <div style="margin-top:12px;padding:10px;background:#fff3cd;border-radius:10px;color:#856404;font-size:0.85rem;">
+            💡 Need ₹100+ to withdraw. Current: ₹${data.totalRevenue.toFixed(2)}
+          </div>
+        `}
+        ${data.withdrawalStatus ? `<div style="margin-top:6px;font-size:0.8rem;">📝 Status: ${escapeHTML(data.withdrawalStatus)}</div>` : ''}
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to load earnings', 'error');
+  }
+};
+
+window.requestWithdrawal = function() {
+  showToast('Please contact support@presethub.site for withdrawal requests.', 'info');
+};
+
+// ============================================================
+// ===== EXIT BUTTON =====
+// ============================================================
+function exitSite() {
+  if (confirm('Are you sure you want to leave PresetHub?')) {
+    window.close();
+    window.location.href = 'about:blank';
+  }
+}
+
+// ============================================================
+// ===== REFRESH ADS =====
+// ============================================================
+window.refreshAds = function() {
+    if (typeof adsbygoogle !== 'undefined') {
+        try {
+            var adUnits = document.querySelectorAll('ins.adsbygoogle');
+            for (var i = 0; i < adUnits.length; i++) {
+                if (adUnits[i].children.length === 0) {
+                    (adsbygoogle = window.adsbygoogle || []).push({});
+                }
+            }
+            console.log('🔄 Ads refreshed.');
+        } catch (e) {
+            console.warn('Ad refresh error:', e);
+        }
+    }
+};
+
+// ============================================================
+// ===== HANDLE URL ACTIONS =====
+// ============================================================
+function handleUrlAction() {
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get('action');
+  const presetId = params.get('preset');
+  if (!action && !presetId) return;
+
+  setTimeout(() => {
+    if (presetId) {
+      openPresetModal(presetId);
+    }
+    switch (action) {
+      case 'search':
+        const si = document.getElementById('searchInput');
+        if (si) { si.focus(); si.scrollIntoView({ behavior: 'smooth' }); }
+        break;
+      case 'wishlist':
+        showWishlist();
+        break;
+      case 'upload':
+        if (currentUser) openUploadModal();
+        else showToast('Please login', 'warning');
+        break;
+      case 'inbox':
+        if (currentUser) openNotifications();
+        else showToast('Please login', 'warning');
+        break;
+      case 'profile':
+        if (currentUser) openEditProfile();
+        else showToast('Please login', 'warning');
+        break;
+      default:
+        break;
+    }
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, '/');
+    }
+  }, 500);
+}
+
+// ============================================================
+// ===== INIT =====
+// ============================================================
+function init() {
+  initDOM();
+
+  loadPresets();
+  loadLatestPresets();
+  loadTopCreators();
+  handleUrlAction();
+
+  if (currentTheme === 'dark') {
+    if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+  }
+
+  if (!navigator.onLine && offlineIndicator) {
+    offlineIndicator.style.display = 'inline-block';
+  }
+
+  if (navigator.onLine) {
+    syncOfflineQueue();
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log('✅ SW registered with offline support'))
+      .catch(err => console.error('❌ SW failed', err));
+  }
+
+  console.log('🚀 PresetHub frontend loaded with all features');
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
