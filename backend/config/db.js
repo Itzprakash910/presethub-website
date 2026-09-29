@@ -1,148 +1,86 @@
-const fs = require('fs');
-const path = require('path');
+const fs=require('fs');
+const path=require('path');
+const bcrypt=require('bcryptjs');
 
-const DB_PATH = path.join(__dirname, '../../db.json');
-let dbData = null;
-let dbPromise = null;
+const DB_PATH=path.join(__dirname,'../../db.json');
+let dbData=null;
+let dbPromise=null;
 
-function migrateData(data) {
-  let changed = false;
-
-  if (!data.users) { data.users = []; changed = true; }
-  if (!data.presets) { data.presets = []; changed = true; }
-  if (!data.downloads) { data.downloads = []; changed = true; }
-  if (!data.orders) { data.orders = []; changed = true; }
-  if (!data.categories) {
-    data.categories = ['सनसेट', 'ब्लैक & व्हाइट', 'नैचुरल', 'विंटेज', 'सिटीस्केप'];
-    changed = true;
+function baseData(){
+  return {users:[],presets:[],downloads:[],orders:[],categories:['Sunset','Black & White','Natural','Vintage','Cityscape']};
+}
+function migrateData(data){
+  let changed=false;
+  const base=baseData();
+  for(const k of Object.keys(base)) if(data[k]===undefined){data[k]=base[k];changed=true;}
+  for(const u of data.users){
+    if(!u.subscription){u.subscription={tier:'free',expiry:null,adWatchCount:0,adRewardDays:0,lastAdWatch:null};changed=true;}
+    if(!u.referral){u.referral={code:null,referredBy:null,referralCount:0,referralRewardDays:0};changed=true;}
+    for(const k of ['notifications','followers','following','wishlist']) if(!u[k]){u[k]=[];changed=true;}
+    if(!u.socialLinks){u.socialLinks={instagram:'',youtube:'',twitter:'',website:''};changed=true;}
+    if(u.verified===undefined){u.verified=true;changed=true;}
   }
-
-  data.users.forEach(user => {
-    if (!user.subscription) {
-      user.subscription = { tier: 'free', expiry: null, adWatchCount: 0, adRewardDays: 0, lastAdWatch: null };
-      changed = true;
-    }
-    if (!user.referral) {
-      user.referral = { code: null, referredBy: null, referralCount: 0, referralRewardDays: 0 };
-      changed = true;
-    }
-    if (!user.notifications) { user.notifications = []; changed = true; }
-    if (!user.followers) { user.followers = []; changed = true; }
-    if (!user.following) { user.following = []; changed = true; }
-    if (!user.wishlist) { user.wishlist = []; changed = true; }
-    if (!user.socialLinks) {
-      user.socialLinks = { instagram: '', youtube: '', twitter: '', website: '' };
-      changed = true;
-    }
-    if (user.verified === undefined) { user.verified = true; changed = true; }
-  });
-
-  data.presets.forEach(preset => {
-    if (preset.views === undefined) { preset.views = 0; changed = true; }
-    if (!preset.likes) { preset.likes = []; changed = true; }
-    if (preset.shares === undefined) { preset.shares = 0; changed = true; }
-    if (preset.adImpressions === undefined) { preset.adImpressions = 0; changed = true; }
-    if (preset.totalRevenue === undefined) { preset.totalRevenue = 0; changed = true; }
-    if (!preset.status) { preset.status = 'pending'; changed = true; }
-    if (!preset.reviews) { preset.reviews = []; changed = true; }
-    if (!preset.tags) { preset.tags = []; changed = true; }
-  });
-
-  data.orders.forEach(order => {
-    if (!order.status) { order.status = 'created'; changed = true; }
-    if (!order.createdAt) { order.createdAt = new Date().toISOString(); changed = true; }
-  });
-
-  data.downloads.forEach(download => {
-    if (!download.downloadedAt) { download.downloadedAt = new Date().toISOString(); changed = true; }
-  });
-
-  if (changed) {
-    try {
-      fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-      console.log('✅ Database migrated successfully');
-    } catch (err) {
-      console.error('❌ Failed to save migrated data:', err);
-    }
+  for(const p of data.presets){
+    if(p.views===undefined){p.views=0;changed=true;}
+    if(!p.likes){p.likes=[];changed=true;}
+    if(p.shares===undefined){p.shares=0;changed=true;}
+    if(p.adImpressions===undefined){p.adImpressions=0;changed=true;}
+    if(p.totalRevenue===undefined){p.totalRevenue=0;changed=true;}
+    if(!p.status){p.status='pending';changed=true;}
+    if(!p.reviews){p.reviews=[];changed=true;}
+    if(!p.tags){p.tags=[];changed=true;}
+  }
+  if(changed) saveData(data);
+  return data;
+}
+function loadData(){
+  if(!fs.existsSync(DB_PATH)){
+    dbData=baseData(); saveData(dbData); return;
+  }
+  try{
+    dbData=migrateData(JSON.parse(fs.readFileSync(DB_PATH,'utf8')));
+  }catch(err){
+    console.error('Database read failed:',err.message);
+    dbData=baseData();
   }
 }
-
-function loadData() {
-  try {
-    if (!fs.existsSync(DB_PATH)) {
-      dbData = {
-        users: [],
-        presets: [],
-        downloads: [],
-        orders: [],
-        categories: ['सनसेट', 'ब्लैक & व्हाइट', 'नैचुरल', 'विंटेज', 'सिटीस्केप']
-      };
-      fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2));
-      console.log('✅ New database created');
-    } else {
-      const content = fs.readFileSync(DB_PATH, 'utf8');
-      dbData = JSON.parse(content);
-      migrateData(dbData);
-    }
-  } catch (err) {
-    console.error('❌ Error loading database:', err);
-    dbData = {
-      users: [],
-      presets: [],
-      downloads: [],
-      orders: [],
-      categories: ['सनसेट', 'ब्लैक & व्हाइट', 'नैचुरल', 'विंटेज', 'सिटीस्केप']
-    };
-  }
+function saveData(data=dbData){
+  const tmp=`${DB_PATH}.tmp`;
+  fs.writeFileSync(tmp,JSON.stringify(data,null,2),'utf8');
+  fs.renameSync(tmp,DB_PATH);
 }
-
-function saveData() {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(dbData, null, 2));
-  } catch (err) {
-    console.error('❌ Error saving database:', err);
-    throw err;
-  }
-}
-
-async function provisionAdminFromEnv() {
-  const email = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-  const password = process.env.ADMIN_PASSWORD || '';
-  if (!email || password.length < 12) return;
-  const db = await getDB();
-  const existing = db.data.users.find(u => u.email === email);
-  if (existing) return;
-  const bcrypt = require('bcryptjs');
-  const adminUser = {
-    id: 'admin_' + Date.now(),
-    email, password: await bcrypt.hash(password, 12), name: 'Admin',
-    username: 'admin', role: 'admin', createdAt: new Date().toISOString(),
-    verified: true, bio: 'Platform administrator', avatar: '',
-    socialLinks: { instagram:'', youtube:'', twitter:'', website:'' },
-    followers: [], following: [], wishlist: [],
-    subscription: { tier:'free', expiry:null, adWatchCount:0, adRewardDays:0, lastAdWatch:null },
-    referral: { code:null, referredBy:null, referralCount:0, referralRewardDays:0 },
-    notifications: []
-  };
-  db.data.users.push(adminUser);
-  await db.write();
-  console.log(`Admin provisioned from environment: ${email}`);
-}
-
-async function getDB() {
-  if (!dbPromise) {
-    dbPromise = (async () => {
-      loadData();
-      return {
-        data: dbData,
-        write: async () => { saveData(); },
-        read: () => { loadData(); }
-      };
-    })();
+async function getDB(){
+  if(!dbPromise){
+    loadData();
+    dbPromise=Promise.resolve({
+      data:dbData,
+      write:async()=>saveData(dbData),
+      read:()=>{loadData();}
+    });
   }
   return dbPromise;
 }
-
-provisionAdminFromEnv().catch(err => console.error('Admin provisioning failed:', err));
-
-// Admin accounts must be created securely through a deployment-specific provisioning process; no default credentials are shipped.\n\nmodule.exports = { getDB };
+async function initAdmin(){
+  const email=String(process.env.ADMIN_EMAIL||'').trim().toLowerCase();
+  const password=String(process.env.ADMIN_PASSWORD||'');
+  if(!email || !password) return;
+  if(password.length<12){console.warn('ADMIN_PASSWORD should be at least 12 characters.');return;}
+  const db=await getDB();
+  let user=db.data.users.find(u=>u.email===email);
+  if(!user){
+    user={
+      id:`admin_${Date.now()}`,email,password:await bcrypt.hash(password,12),
+      name:'Admin',username:'admin',role:'admin',createdAt:new Date().toISOString(),
+      verified:true,bio:'',avatar:'',socialLinks:{instagram:'',youtube:'',twitter:'',website:''},
+      followers:[],following:[],wishlist:[],notifications:[],
+      subscription:{tier:'free',expiry:null,adWatchCount:0,adRewardDays:0,lastAdWatch:null},
+      referral:{code:null,referredBy:null,referralCount:0,referralRewardDays:0}
+    };
+    db.data.users.push(user); await db.write();
+    console.log(`Admin account initialized for ${email}`);
+  }else if(user.role!=='admin'){
+    user.role='admin'; await db.write();
+  }
+}
+initAdmin().catch(err=>console.error('Admin bootstrap failed:',err.message));
+module.exports={getDB};
