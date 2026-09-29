@@ -9,9 +9,10 @@ const fs = require('fs');
 // ============================================================
 // ===== BOT TOKEN FROM ENV =====
 // ============================================================
-const BOT_TOKEN = process.env.BOT_TOKEN || '8353956596:AAGHaNvtaOAGKKgonQUlySiE5Z8SZIeNq5o';
+const BOT_TOKEN = process.env.BOT_TOKEN;
+if (!BOT_TOKEN) { console.error('BOT_TOKEN is not configured; bot will not start.'); process.exit(1); }
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || '6221923358';
-const API_BASE = process.env.API_BASE || 'https://presethub.site/api''https://presethub-website.onrender.com/api';
+const API_BASE = process.env.API_BASE || 'https://presethub.site/api';
 
 if (!BOT_TOKEN) {
   console.error('❌ BOT_TOKEN not set in .env');
