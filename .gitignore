@@ -1,5 +1,10 @@
 node_modules/
 .env
+backend/.env
 *.log
+uploads/
+backups/
 .DS_Store
-backend/data/
+Thumbs.db
+.vscode/
+.idea/
