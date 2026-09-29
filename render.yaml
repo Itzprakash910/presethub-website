@@ -5,14 +5,19 @@ services:
     rootDir: backend
     buildCommand: npm ci --omit=dev
     startCommand: npm start
-    healthCheckPath: /api/presets
+    healthCheckPath: /api/presets?limit=1
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
       - key: CLIENT_URL
         value: https://presethub.site
       - key: JWT_SECRET
-        generateValue: true
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: RAZORPAY_KEY_ID
         sync: false
       - key: RAZORPAY_KEY_SECRET
@@ -20,10 +25,6 @@ services:
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_CHAT_ID
-        sync: false
-      - key: ADMIN_EMAIL
-        sync: false
-      - key: ADMIN_PASSWORD
         sync: false
       - key: API_BASE
         value: https://presethub.site/api

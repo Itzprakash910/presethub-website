@@ -1,0 +1,108 @@
+{
+  "users": [
+    {
+      "id": "demo-creator",
+      "email": "",
+      "password": "",
+      "name": "PresetHub Creator",
+      "username": "presethub",
+      "role": "user",
+      "createdAt": "2026-09-29T00:00:00.000Z",
+      "verified": true,
+      "bio": "Official PresetHub demo creator.",
+      "avatar": "/assets/icons/icon-192.png",
+      "socialLinks": {
+        "instagram": "",
+        "youtube": "",
+        "twitter": "",
+        "website": ""
+      },
+      "followers": [],
+      "following": [],
+      "wishlist": [],
+      "notifications": [],
+      "subscription": {
+        "tier": "free",
+        "expiry": null,
+        "adWatchCount": 0,
+        "adRewardDays": 0,
+        "lastAdWatch": null
+      },
+      "referral": {
+        "code": null,
+        "referredBy": null,
+        "referralCount": 0,
+        "referralRewardDays": 0
+      }
+    }
+  ],
+  "presets": [
+    {
+      "id": "demo-warm",
+      "name": "Warm Portrait Demo",
+      "description": "A warm, soft Lightroom preset for portrait photography.",
+      "category": "Portrait",
+      "tags": [
+        "portrait",
+        "warm",
+        "skin"
+      ],
+      "price": 0,
+      "author": "PresetHub Creator",
+      "authorId": "demo-creator",
+      "createdAt": "2026-09-29T00:00:00.000Z",
+      "updatedAt": "2026-09-29T00:00:00.000Z",
+      "downloads": 0,
+      "avgRating": 5,
+      "reviews": [],
+      "fileUrl": "/uploads/demo-warm.xmp",
+      "previewImage": "/uploads/previews/demo-warm.jpg",
+      "status": "approved",
+      "size": 464,
+      "originalName": "PresetHub-Warm-Portrait.xmp",
+      "views": 0,
+      "likes": [],
+      "shares": 0,
+      "adImpressions": 0,
+      "totalRevenue": 0
+    },
+    {
+      "id": "demo-natural",
+      "name": "Natural Light Demo",
+      "description": "A clean natural-light preset for everyday photography.",
+      "category": "Natural",
+      "tags": [
+        "natural",
+        "clean",
+        "mobile"
+      ],
+      "price": 0,
+      "author": "PresetHub Creator",
+      "authorId": "demo-creator",
+      "createdAt": "2026-09-28T00:00:00.000Z",
+      "updatedAt": "2026-09-28T00:00:00.000Z",
+      "downloads": 0,
+      "avgRating": 5,
+      "reviews": [],
+      "fileUrl": "/uploads/demo-natural.xmp",
+      "previewImage": "/uploads/previews/demo-natural.jpg",
+      "status": "approved",
+      "size": 466,
+      "originalName": "PresetHub-Natural-Light.xmp",
+      "views": 0,
+      "likes": [],
+      "shares": 0,
+      "adImpressions": 0,
+      "totalRevenue": 0
+    }
+  ],
+  "downloads": [],
+  "orders": [],
+  "categories": [
+    "Portrait",
+    "Natural",
+    "Vintage",
+    "Black & White",
+    "Cityscape"
+  ]
+}

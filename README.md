@@ -1,40 +1,75 @@
-# PresetHub — production-ready Lightroom preset marketplace
+# PresetHub
 
-PresetHub is a Node.js + Express + vanilla-JS marketplace for Lightroom presets.
+PresetHub is a mobile-first Lightroom preset marketplace with search, SEO-friendly preset pages, creator profiles, follow, wishlist, reviews, downloads, Razorpay payments, admin moderation and PWA installation.
 
-## Included
-- Responsive mobile-first frontend and PWA
-- Search, autocomplete, filters, sorting, wishlist, auth, uploads, reviews, creator/admin tools
-- SEO-friendly individual preset URLs: `/preset/<id>/<slug>/`
-- Server-rendered preset landing pages for crawlers
-- Dynamic + static sitemap and robots.txt
-- Product structured data, canonical URLs, Open Graph and Twitter metadata
-- Google search fallback from site search
-- Google AdSense publisher code + root `ads.txt` served from `frontend/ads.txt`
-- Helmet, CORS allowlist, rate limits and validation
-- No secrets or default admin credentials shipped
+## Production structure
 
-## Important deployment steps
-1. Set `JWT_SECRET` to a strong secret (Render can generate it).
-2. Set `CLIENT_URL` to the real canonical domain.
-3. Add the domain to Google AdSense and wait for approval before expecting ads to serve.
-4. Keep `frontend/ads.txt` at the public root (`https://your-domain/ads.txt`).
-5. If an admin is required, set `ADMIN_EMAIL` and a strong `ADMIN_PASSWORD` (12+ chars) as server environment variables. Never put these in source code.
-6. Submit `/sitemap.xml` in Google Search Console and use URL Inspection for important new preset URLs.
+- `frontend/` — website/PWA
+- `backend/` — Express API
+- `uploads/` — runtime user uploads (ignored by Git)
+- `db.seed.json` — safe demo seed data; runtime `db.json` is created automatically and ignored by Git
+- `render.yaml` — Render deployment
+- `.env.example` — environment template
 
-## Preset files
-The original ZIP did not contain the `uploads/` binary directory. Existing database records therefore contain metadata but their original downloadable files are not bundled. Re-upload/restore those binaries on the deployed server or persistent storage.
+## Render
 
-## Local run
-```bash
-cd backend
-npm install
-cp .env.example .env
-# edit .env
-npm start
+Recommended settings:
+
+```text
+Root Directory: backend
+Build Command: npm ci --omit=dev
+Pre-Deploy Command: (empty)
+Start Command: npm start
+Auto-Deploy: On Commit
 ```
 
-The server serves the frontend from `../frontend`.
+Add the variables from `backend/.env.example` in Render Environment Variables.
 
-## AdSense / SEO note
-AdSense approval and Google Search ranking/indexing are controlled by Google and cannot be guaranteed by code. The project is configured for crawlability, unique preset pages, structured data, sitemap submission and clear navigation.
+Required in production:
+- `JWT_SECRET` — random secret, 64+ characters
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD` — strong password, 12+ characters
+
+Optional:
+- Razorpay keys
+- Telegram bot token/admin chat ID
+- `API_BASE`
+
+## SEO
+
+Approved presets receive crawlable canonical pages:
+
+`/preset/<id>/<slug>/`
+
+The server generates:
+- unique title and description
+- canonical URL
+- Open Graph metadata
+- Product structured data
+- creator profile links
+- dynamic `/sitemap.xml`
+- `/robots.txt`
+- internal search suggestions
+- Google site-search fallback for unmatched queries
+
+Google indexing and ranking are not guaranteed. Submit the sitemap in Google Search Console and use URL Inspection for important pages.
+
+## AdSense
+
+Replace the `ads.txt` publisher ID only with the publisher ID shown in your own AdSense account. Do not publish someone else's seller ID.
+
+Keep `ads.txt` available at:
+
+`https://your-domain.example/ads.txt`
+
+AdSense approval depends on Google's current policies, original/valuable content and site quality; code cannot guarantee approval or a top Search position.
+
+## Security
+
+Never commit `.env`, real credentials, database backups, private uploads or bot tokens.
+
+Admin creation is environment-driven; there is no default admin password in source code.
+
+## PWA
+
+PresetHub is installable as a PWA. Open `/download-app.html` for install instructions. A real signed native APK is not included as a fake placeholder; build/sign an Android wrapper separately if a native APK is required.
