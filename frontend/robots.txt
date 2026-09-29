@@ -1,6 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /admin
-Disallow: /api/
-Disallow: /uploads/
-Sitemap: https://presethub.site/sitemap.xml
