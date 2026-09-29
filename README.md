@@ -1,39 +1,34 @@
 # PresetHub – Lightroom Preset Marketplace
 
-A full‑stack web application where users can browse, download, upload, and review Lightroom presets. Built with Node.js, Express, LowDB, and vanilla JavaScript.
+Node.js + Express + JSON file DB, vanilla JS frontend, PWA.
 
-## ✨ Features
-
-- **User Authentication** – Signup/Login with JWT
-- **Preset CRUD** – Upload, view, update, delete presets
-- **File Upload** – Supports `.xmp`, `.dng`, `.lrtemplate` files
-- **Advanced Search** – Smart search with relevance scoring
-- **Filters & Sorting** – Category, price, rating, popularity
-- **Reviews & Ratings** – User reviews with helpful votes
-- **Wishlist** – Save favorite presets
-- **Creator Dashboard** – Profile management, follow system
-- **Admin Panel** – User management, preset approval, analytics
-- **Payment Integration** – Razorpay for paid presets
-- **PWA Support** – Offline capable, installable on mobile
-- **Dark Mode** – Theme toggle
-
-## 🛠️ Tech Stack
-
-- **Backend**: Node.js + Express + LowDB
-- **Frontend**: Vanilla JS + CSS3 + HTML5
-- **Payment**: Razorpay
-- **PWA**: Service Worker + Manifest
-- **Security**: Helmet, Rate Limiting, Input Validation
-
-## 📦 Installation
-
-### Prerequisites
-- Node.js (v16+)
-- npm or yarn
-
-### Setup
-
-1. **Clone the repository**
+## Setup
 ```bash
-git clone <your-repo-url>
-cd presethub
+cd backend
+npm install
+cp .env.example .env
+# put a strong secret in .env:
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+# add ADMIN_EMAIL / ADMIN_PASSWORD (12+ chars) to .env, then:
+npm run create-admin      # afterwards delete ADMIN_PASSWORD from .env
+npm run dev               # http://localhost:4000
+```
+
+## Deploy
+See **DEPLOY.md** (GitHub → Railway, Volume at `/data`, env variables).
+
+## Security model
+- Preset files are stored in `DATA_DIR/private_uploads/` (default `backend/data/`) and only delivered by `POST /api/presets/:id/download` (login + purchase check).
+- Only `DATA_DIR/previews/` (images) is public.
+- New uploads are `pending` until an admin approves them.
+- Helmet CSP, strict CORS allow-list, rate limits (login/signup/payments), 50kb body limit.
+- Prices are always read from the server DB; Razorpay signature checked with timing-safe compare.
+
+## Production checklist
+1. `NODE_ENV=production`, serve over HTTPS, `TRUST_PROXY=1` behind a proxy.
+2. Rotate any key that was ever committed/shared (JWT secret, Razorpay).
+3. Back up `backend/db/db.json` (or move to a real DB like Postgres/Mongo before real traffic).
+4. Run `npm audit`.
+
+## License
+MIT
