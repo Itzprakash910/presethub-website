@@ -9,9 +9,8 @@ const fs = require('fs');
 // ============================================================
 // ===== BOT TOKEN FROM ENV =====
 // ============================================================
-const BOT_TOKEN = process.env.BOT_TOKEN;
-if (!BOT_TOKEN) { console.error('BOT_TOKEN is not configured; bot will not start.'); process.exit(1); }
-const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || '6221923358';
+const BOT_TOKEN = process.env.BOT_TOKEN || '';
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || '';
 const API_BASE = process.env.API_BASE || 'https://presethub.site/api';
 
 if (!BOT_TOKEN) {
@@ -20,8 +19,8 @@ if (!BOT_TOKEN) {
   process.exit(1);
 }
 
-console.log('🤖 Bot Token configured:', BOT_TOKEN.substring(0, 10) + '...');
-console.log('📱 Admin Chat ID:', ADMIN_CHAT_ID);
+console.log('🤖 Bot Token configured:', BOT_TOKEN ? 'yes' : 'no');
+console.log('📱 Admin Chat ID configured:', ADMIN_CHAT_ID ? 'yes' : 'no');
 
 const bot = new Telegraf(BOT_TOKEN);
 const loginStates = new Map();

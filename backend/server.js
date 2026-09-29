@@ -1,27 +1,13 @@
 require('dotenv').config();
 
-const isProduction = process.env.NODE_ENV === 'production';
-if (isProduction && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
-  throw new Error('JWT_SECRET must be set to a strong 32+ character secret in production.');
-}
-if (!process.env.JWT_SECRET) {
-  process.env.JWT_SECRET = require('crypto').randomBytes(48).toString('hex');
-}
-
-const path = require('path');
-
-// ============================================================
-// ===== DEPENDENCIES =====
-// ============================================================
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const fs = require('fs');
 
-// ============================================================
-// ===== ROUTES =====
-// ============================================================
 const authRoutes = require('./routes/auth');
 const presetRoutes = require('./routes/presets');
 const userRoutes = require('./routes/users');
@@ -29,231 +15,159 @@ const reviewRoutes = require('./routes/reviews');
 const paymentRoutes = require('./routes/payments');
 const adminRoutes = require('./routes/admin');
 const errorHandler = require('./utils/errorHandler');
+const { getDB } = require('./config/db');
 
-// ============================================================
-// ===== APP INITIALIZATION =====
-// ============================================================
 const app = express();
-const PORT = process.env.PORT || 4000;
-const projectRoot = path.join(__dirname, '..');
+const PORT = Number(process.env.PORT || 4000);
 
-// ============================================================
-// ===== AUTO-CREATE MISSING FOLDERS & FILES =====
-// ============================================================
-function ensureDirectoriesAndFiles() {
-  console.log('🔧 Checking project structure...');
-  
-  // 1. Create directories
+// Dynamic path detection for Render
+let projectRoot = path.join(__dirname, '..');
+let frontendRoot = path.join(projectRoot, 'frontend');
+
+// Fallback if frontend is not a sibling of backend
+if (!fs.existsSync(frontendRoot)) {
+  projectRoot = __dirname;
+  frontendRoot = path.join(projectRoot, 'frontend');
+}
+
+const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
+
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('JWT_SECRET is required and must be at least 32 characters in production.');
+    process.exit(1);
+  }
+  console.warn('JWT_SECRET is missing/short; development only.');
+}
+
+function ensureStructure() {
   const dirs = [
     path.join(projectRoot, 'uploads'),
     path.join(projectRoot, 'uploads/previews'),
     path.join(projectRoot, 'uploads/avatars'),
     path.join(projectRoot, 'backups'),
-    path.join(projectRoot, 'frontend/assets'),
-    path.join(projectRoot, 'frontend/assets/icons'),
-    path.join(projectRoot, 'frontend/assets/screenshots'),
-    path.join(projectRoot, 'frontend/assets/images')
+    path.join(frontendRoot, 'assets'),
+    path.join(frontendRoot, 'assets/icons'),
+    path.join(frontendRoot, 'assets/images'),
+    path.join(frontendRoot, 'assets/screenshots')
   ];
-  
-  dirs.forEach(dir => {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-      console.log(`📁 Created: ${dir}`);
+  for (const dir of dirs) {
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      console.warn(`[Warning] Could not create directory ${dir}:`, err.message);
     }
-  });
-  
-  // Secrets are never generated into the source tree. Configure them via the host environment.
-  // 3. Ensure an environment template exists (never a secret file).
-  const envExamplePath = path.join(__dirname, '.env.example');
-  if (!fs.existsSync(envExamplePath)) {
-    fs.writeFileSync(envExamplePath, `PORT=4000
-NODE_ENV=production
-CLIENT_URL=https://presethub.site
-JWT_SECRET=replace-with-a-random-64-character-secret
-RAZORPAY_KEY_ID=
-RAZORPAY_KEY_SECRET=
-BOT_TOKEN=
-ADMIN_CHAT_ID=
-ADMIN_EMAIL=
-ADMIN_PASSWORD=
-API_BASE=https://presethub.site/api`.trim());
-    console.log('✅ .env.example created');
   }
-  
-  // 4. Create og-image.jpg placeholder
-  const ogImagePath = path.join(projectRoot, 'frontend/assets/images/og-image.svg');
-  if (!fs.existsSync(ogImagePath)) {
-    const svg = `<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
-      <rect width="1200" height="630" fill="#f8f6f2"/>
-      <rect x="100" y="150" width="1000" height="330" rx="20" fill="#d4a373"/>
-      <text x="600" y="300" font-family="Inter" font-size="64" font-weight="800" text-anchor="middle" fill="#1e1e1e">PresetHub</text>
-      <text x="600" y="370" font-family="Inter" font-size="32" text-anchor="middle" fill="#1e1e1e">Lightroom Presets Marketplace</text>
-      <text x="600" y="420" font-family="Inter" font-size="20" text-anchor="middle" fill="#555">Download Free &amp; Premium Presets</text>
-    </svg>`;
-    fs.writeFileSync(ogImagePath, svg);
-    console.log('✅ og-image.svg created');
-  }
-  
-  // 5. Create robots.txt
-  const robotsPath = path.join(projectRoot, 'frontend/robots.txt');
-  if (!fs.existsSync(robotsPath)) {
-    fs.writeFileSync(robotsPath, `User-agent: *
-Allow: /
-Disallow: /admin
-Disallow: /api
-Sitemap: https://presethub.site/sitemap.xml`);
-    console.log('✅ robots.txt created');
-  }
-  
-  // 6. Create sitemap.xml
-  const sitemapPath = path.join(projectRoot, 'frontend/sitemap.xml');
-  if (!fs.existsSync(sitemapPath)) {
-    fs.writeFileSync(sitemapPath, `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://presethub.site/</loc><priority>1.0</priority></url>
-  <url><loc>https://presethub.site/about.html</loc><priority>0.8</priority></url>
-  <url><loc>https://presethub.site/blog.html</loc><priority>0.8</priority></url>
-  <url><loc>https://presethub.site/contact.html</loc><priority>0.8</priority></url>
-  <url><loc>https://presethub.site/faq.html</loc><priority>0.7</priority></url>
-  <url><loc>https://presethub.site/terms.html</loc><priority>0.7</priority></url>
-  <url><loc>https://presethub.site/privacy.html</loc><priority>0.7</priority></url>
-  <url><loc>https://presethub.site/creator-program.html</loc><priority>0.8</priority></url>
-  <url><loc>https://presethub.site/download-guide.html</loc><priority>0.7</priority></url>
-  <url><loc>https://presethub.site/lightroom-guide.html</loc><priority>0.7</priority></url>
-</urlset>`);
-    console.log('✅ sitemap.xml created');
-  }
-  
-  // 7. Create .gitignore
-  const gitignorePath = path.join(projectRoot, '.gitignore');
-  if (!fs.existsSync(gitignorePath)) {
-    fs.writeFileSync(gitignorePath, `
-node_modules/
-npm-debug.log
-.env
-*.log
-db.json
-db-backup.json
-uploads/
-!uploads/.gitkeep
-backups/
-!backups/.gitkeep
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-    `.trim());
-    console.log('✅ .gitignore created');
-  }
-  
-  // 8. Create .gitkeep files
-  const gitkeepDirs = [
-    path.join(projectRoot, 'uploads'),
-    path.join(projectRoot, 'uploads/previews'),
-    path.join(projectRoot, 'uploads/avatars'),
-    path.join(projectRoot, 'backups')
-  ];
-  gitkeepDirs.forEach(dir => {
-    const gitkeepPath = path.join(dir, '.gitkeep');
-    if (!fs.existsSync(gitkeepPath)) {
-      fs.writeFileSync(gitkeepPath, '');
+
+  const dbPath = path.join(projectRoot, 'db.json');
+  if (!fs.existsSync(dbPath)) {
+    const seedPath = path.join(projectRoot, 'db.seed.json');
+    try {
+      if (fs.existsSync(seedPath)) {
+        fs.copyFileSync(seedPath, dbPath);
+      } else {
+        fs.writeFileSync(dbPath, JSON.stringify({
+          users: [], presets: [], downloads: [], orders: [], reviews: [],
+          categories: ['Sunset', 'Black & White', 'Natural', 'Vintage', 'Cityscape']
+        }, null, 2));
+      }
+    } catch (err) {
+      console.warn(`[Warning] Could not initialize DB at ${dbPath}:`, err.message);
+      // Fallback to local directory
+      const fallbackDbPath = path.join(__dirname, 'db.json');
+      if (!fs.existsSync(fallbackDbPath)) {
+        fs.writeFileSync(fallbackDbPath, JSON.stringify({
+          users: [], presets: [], downloads: [], orders: [], reviews: [],
+          categories: ['Sunset', 'Black & White', 'Natural', 'Vintage', 'Cityscape']
+        }, null, 2));
+      }
     }
-  });
-  
-  console.log('✅ All directories and files ready!');
+  }
+
+  const required = {
+    'robots.txt': `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nSitemap: ${SITE_URL}/sitemap.xml\n`,
+    'ads.txt': `google.com, pub-3554311294133493, DIRECT, f08c47fec0942fa0\n`
+  };
+  for (const [name, content] of Object.entries(required)) {
+    const file = path.join(frontendRoot, name);
+    try {
+      if (!fs.existsSync(file)) fs.writeFileSync(file, content);
+    } catch (err) {
+      console.warn(`[Warning] Could not write ${file}:`, err.message);
+    }
+  }
 }
 
-// Run auto-create
-ensureDirectoriesAndFiles();
+try {
+  ensureStructure();
+} catch (err) {
+  console.error('Critical error in ensureStructure:', err);
+}
 
-// ============================================================
-// ===== SECURITY MIDDLEWARE =====
-// ============================================================
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
+const allowedOrigins = new Set(
+  [process.env.CLIENT_URL, SITE_URL, 'https://www.presethub.site']
+    .filter(Boolean).map(x => x.replace(/\/+$/, ''))
+);
+
 app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false,
-  crossOriginOpenerPolicy: false,
-  crossOriginResourcePolicy: false
-}));
-
-// ============================================================
-// ===== CORS CONFIGURATION =====
-// ============================================================
-const allowedOrigins = [
-  process.env.CLIENT_URL,
-  'https://presethub.site',
-  'https://www.presethub.site',
-  'http://presethub.site',
-  'http://www.presethub.site',
-'https://presethub-website.onrender.com/',
-  'https://preset.site',
-  'https://www.preset.site',
-  'http://localhost:4000',
-  'http://localhost:3000',
-  'http://localhost:5500',
-  'http://127.0.0.1:5500',
-  'http://192.168.1.100:5500',
-  'http://192.168.1.101:5500'
-].filter(Boolean);
-
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
-      callback(null, true);
-    } else {
-      console.warn('❌ CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://pagead2.googlesyndication.com", "https://checkout.razorpay.com", "https://googleads.g.doubleclick.net"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      connectSrc: ["'self'", "https://api.razorpay.com", "https://pagead2.googlesyndication.com", "https://*.google.com", "https://*.googlesyndication.com", "https://*.doubleclick.net"],
+      frameSrc: ["'self'", "https://api.razorpay.com", "https://checkout.razorpay.com", "https://googleads.g.doubleclick.net", "https://*.google.com"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: []
     }
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }
 }));
 
-// ============================================================
-// ===== LOGGING =====
-// ============================================================
-if (process.env.NODE_ENV !== 'test') {
-  app.use(morgan('dev'));
-}
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || process.env.NODE_ENV !== 'production') return cb(null, true);
+    cb(null, allowedOrigins.has(origin.replace(/\/+$/, '')));
+  },
+  credentials: false,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
-// ============================================================
-// ===== RATE LIMITING =====
-// ============================================================
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  message: { error: 'Too many requests, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 300,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' }
 });
-app.use('/api/', limiter);
-
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 15,
-  message: { error: 'Too many authentication attempts, please try again later' }
+  windowMs: 15 * 60 * 1000, max: 20,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Please try again later.' }
 });
+app.use('/api/', apiLimiter);
 app.use('/api/auth/', authLimiter);
 
-// ============================================================
-// ===== BODY PARSING =====
-// ============================================================
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// ============================================================
-// ===== STATIC FILES =====
-// ============================================================
-app.use('/uploads', express.static(path.join(projectRoot, 'uploads')));
-app.use('/uploads/previews', express.static(path.join(projectRoot, 'uploads/previews')));
-app.use('/uploads/avatars', express.static(path.join(projectRoot, 'uploads/avatars')));
-app.use(express.static(path.join(projectRoot, 'frontend')));
+app.use('/uploads/previews', express.static(path.join(projectRoot, 'uploads/previews'), {
+  index: false, dotfiles: 'deny', maxAge: '1h'
+}));
+app.use('/uploads/avatars', express.static(path.join(projectRoot, 'uploads/avatars'), {
+  index: false, dotfiles: 'deny', maxAge: '1h'
+}));
+app.use(express.static(frontendRoot, { index: 'index.html', dotfiles: 'deny' }));
 
-// ============================================================
-// ===== API ROUTES =====
-// ============================================================
 app.use('/api/auth', authRoutes);
 app.use('/api/presets', presetRoutes);
 app.use('/api/users', userRoutes);
@@ -261,175 +175,123 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 
-// ============================================================
-// ===== SEO: robots, sitemap & indexable preset landing pages =====
-// ============================================================
+const staticPages = ['terms.html', 'privacy.html', 'about.html', 'blog.html', 'creator-program.html', 'faq.html', 'contact.html', 'download-guide.html', 'lightroom-guide.html', 'download-app.html'];
+for (const page of staticPages) {
+  const p = path.join(frontendRoot, page);
+  app.get('/' + page, (req, res) => fs.existsSync(p) ? res.sendFile(p) : res.status(404).send('Page not found'));
+}
+app.get('/admin', (req, res) => res.sendFile(path.join(frontendRoot, 'admin.html')));
+
 function slugify(value) {
-  return String(value || 'preset')
-    .toLowerCase().trim()
-    .replace(/[^a-z0-9\u0900-\u097f]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'preset';
+  return String(value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'preset';
 }
-function esc(value) {
-  return String(value ?? '').replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
+function escHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-function presetUrl(p) { return `/preset/${encodeURIComponent(p.id)}/${encodeURIComponent(slugify(p.name))}`; }
+function safeJson(obj) { return JSON.stringify(obj).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026'); }
 
-app.get('/robots.txt', (req,res) => {
-  res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /uploads/\nSitemap: ${process.env.CLIENT_URL || 'https://presethub.site'}/sitemap.xml\n`);
-});
-
-app.get('/sitemap.xml', async (req,res) => {
+app.get('/preset/:id/:slug?/', async (req, res, next) => {
   try {
     const db = await getDB();
-    const base = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/$/, '');
-    const pages = [
-      '/', '/about.html', '/blog.html', '/contact.html', '/faq.html',
-      '/terms.html', '/privacy.html', '/creator-program.html',
-      '/download-guide.html', '/lightroom-guide.html'
-    ];
-    const urls = pages.map(u => `<url><loc>${esc(base + u)}</loc></url>`);
-    (db.data.presets || []).filter(p => p.status === 'approved').forEach(p => {
-      urls.push(`<url><loc>${esc(base + presetUrl(p))}</loc><lastmod>${new Date(p.updatedAt || p.createdAt || Date.now()).toISOString()}</lastmod></url>`);
-    });
-    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`);
-  } catch (e) { res.status(500).type('text/plain').send('Sitemap unavailable'); }
-});
-
-app.get(/^\/preset\/([^/]+)(?:\/[^/]+)?\/?$/, async (req,res,next) => {
-  try {
-    const db = await getDB();
-    const preset = db.data.presets.find(p => p.id === req.params[0] && p.status === 'approved');
-    if (!preset) return next();
-    const base = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/$/, '');
-    const canonical = base + presetUrl(preset);
-    const image = preset.previewImage ? (String(preset.previewImage).startsWith('http') ? preset.previewImage : base + preset.previewImage) : `${base}/android-icon-192x192.png`;
-    const description = `${preset.description || `Download ${preset.name} Lightroom preset.`} Category: ${preset.category || 'Lightroom presets'}. Created by ${preset.author || 'PresetHub creator'}.`;
+    const p = db.data.presets.find(x => x.id === req.params.id && x.status === 'approved');
+    if (!p) return res.status(404).sendFile(path.join(frontendRoot, 'index.html'));
+    const canonical = `${SITE_URL}/preset/${encodeURIComponent(p.id)}/${slugify(p.name)}/`;
+    const description = (p.description || `Download ${p.name} Lightroom preset on PresetHub.`).slice(0, 155);
+    const preview = p.previewImage ? `${SITE_URL}${p.previewImage}` : `${SITE_URL}/assets/images/og-image.png`;
     const html = `<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(preset.name)} – ${esc(preset.category || 'Lightroom')} Preset | PresetHub</title>
-<meta name="description" content="${esc(description.slice(0,160))}">
-<link rel="canonical" href="${esc(canonical)}">
-<meta property="og:type" content="website"><meta property="og:title" content="${esc(preset.name)} – PresetHub">
-<meta property="og:description" content="${esc(description.slice(0,200))}"><meta property="og:url" content="${esc(canonical)}"><meta property="og:image" content="${esc(image)}">
-<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(preset.name)} – PresetHub"><meta name="twitter:description" content="${esc(description.slice(0,200))}"><meta name="twitter:image" content="${esc(image)}">
-<link rel="stylesheet" href="/style.css">
-<script type="application/ld+json">${JSON.stringify({
-  "@context":"https://schema.org","@type":"Product","name":preset.name,"description":description,
-  "image":[image],"url":canonical,"category":preset.category || "Lightroom Preset",
-  "brand":{"@type":"Brand","name":"PresetHub"},
-  "offers":{"@type":"Offer","price":String(Number(preset.price||0)),"priceCurrency":"INR","availability":"https://schema.org/InStock","url":canonical},
-  ...(preset.avgRating ? {"aggregateRating":{"@type":"AggregateRating","ratingValue":Number(preset.avgRating),"reviewCount":Math.max(1,(preset.reviews||[]).length)}} : {})
-})}</script></head><body>
-<main class="container" style="max-width:980px;padding:40px 18px">
-<nav aria-label="Breadcrumb"><a href="/">PresetHub</a> / <a href="/?q=${encodeURIComponent(preset.category || '')}">${esc(preset.category || 'Presets')}</a> / <span>${esc(preset.name)}</span></nav>
-<article style="margin-top:24px"><img src="${esc(image)}" alt="${esc(preset.name)} Lightroom preset preview" loading="eager" style="max-width:100%;border-radius:16px;display:block;margin-bottom:24px">
-<h1>${esc(preset.name)}</h1><p>${esc(description)}</p>
-<p><strong>Category:</strong> ${esc(preset.category || 'General')} · <strong>Creator:</strong> ${esc(preset.author || 'PresetHub creator')} · <strong>Rating:</strong> ${Number(preset.avgRating||0).toFixed(1)}/5</p>
-<p><strong>Price:</strong> ${Number(preset.price||0) === 0 ? 'Free' : '₹'+Number(preset.price).toFixed(2)}</p>
-<div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn btn-primary" href="/?preset=${encodeURIComponent(preset.id)}">View & Download</a><a class="btn btn-outline" href="https://www.google.com/search?q=${encodeURIComponent('site:presethub.site '+preset.name)}" target="_blank" rel="noopener">Search on Google</a></div>
-</article></main></body></html>`;
+<title>${escHtml(p.name)} Lightroom Preset | PresetHub</title>
+<meta name="description" content="${escHtml(description)}">
+<link rel="canonical" href="${canonical}">
+<meta property="og:type" content="product"><meta property="og:title" content="${escHtml(p.name)} Lightroom Preset"><meta property="og:description" content="${escHtml(description)}"><meta property="og:url" content="${canonical}"><meta property="og:image" content="${escHtml(preview)}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escHtml(p.name)} Lightroom Preset"><meta name="twitter:description" content="${escHtml(description)}"><meta name="twitter:image" content="${escHtml(preview)}">
+<link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3554311294133493" crossorigin="anonymous"></script>
+<script type="application/ld+json">${safeJson({
+      "@context": "https://schema.org", "@type": "Product", "name": p.name, "description": description,
+      "image": [preview], "brand": { "@type": "Brand", "name": "PresetHub" },
+      "category": "Lightroom Preset", "url": canonical,
+      "offers": { "@type": "Offer", "priceCurrency": "INR", "price": String(Number(p.price || 0).toFixed(2)), "availability": "https://schema.org/InStock", "url": canonical },
+      ...(Number(p.avgRating || 0) > 0 ? { "aggregateRating": { "@type": "AggregateRating", "ratingValue": Number(p.avgRating).toFixed(1), "ratingCount": Math.max((p.reviews || []).length, 1) } } : {})
+    })}</script>
+</head><body><main class="container" style="padding-top:40px;padding-bottom:60px">
+<a class="logo" href="/">Preset<span>Hub</span></a>
+<nav style="margin:24px 0"><a href="/">Home</a> · <a href="/?q=${encodeURIComponent(p.name)}">More presets</a></nav>
+<article class="admin-card"><div class="modal-grid">
+<div class="modal-preview">${p.previewImage ? `<img src="${escHtml(p.previewImage)}" alt="${escHtml(p.name)} preview" style="width:100%">` : `<div class="preview-fallback large"><i class="fas fa-sliders"></i><span>Preset Preview</span></div>`}</div>
+<div class="modal-details"><span class="tag">${escHtml(p.category || 'General')}</span><h1>${escHtml(p.name)}</h1>
+<p>Created by <a href="/profile/${encodeURIComponent(p.authorId || '')}/${slugify(p.author)}/">${escHtml(p.author || 'Creator')}</a></p>
+<p class="desc">${escHtml(description)}</p><p class="price-lg ${Number(p.price || 0) === 0 ? 'free' : ''}">${Number(p.price || 0) === 0 ? 'Free' : `₹${Number(p.price).toFixed(2)}`}</p>
+<p>${Number(p.avgRating || 0).toFixed(1)}★ · ${p.downloads || 0} downloads · ${p.views || 0} views</p>
+<div class="actions"><a class="btn btn-primary" href="/">Open PresetHub</a></div>
+</div></div></article></main></body></html>`;
     res.type('html').send(html);
   } catch (e) { next(e); }
 });
 
-// ============================================================
-// ===== ADMIN PAGE =====
-// ============================================================
-const adminPath = path.join(projectRoot, 'frontend/admin.html');
-if (fs.existsSync(adminPath)) {
-  app.get('/admin', (req, res) => res.sendFile(adminPath));
-} else {
-  app.get('/admin', (req, res) => {
-    res.send(`<!DOCTYPE html><html><head><title>Admin Panel</title></head><body><h1>Admin Panel</h1><p>admin.html not found.</p></body></html>`);
-  });
-}
-
-// ============================================================
-// ===== STATIC LEGAL & INFO PAGES =====
-// ============================================================
-const staticPages = [
-  'terms.html', 'privacy.html', 'about.html', 'blog.html',
-  'creator-program.html', 'faq.html', 'contact.html',
-  'download-guide.html', 'lightroom-guide.html'
-];
-
-staticPages.forEach(page => {
-  const pagePath = path.join(projectRoot, `frontend/${page}`);
-  if (fs.existsSync(pagePath)) {
-    app.get(`/${page}`, (req, res) => res.sendFile(pagePath));
-  } else {
-    app.get(`/${page}`, (req, res) => {
-      res.send(`<!DOCTYPE html><html><head><title>${page}</title></head><body><h1>📄 ${page}</h1><p>Coming soon.</p><a href="/">← Back</a></body></html>`);
-    });
-  }
+app.get('/profile/:id/:slug?/', async (req, res, next) => {
+  try {
+    const db = await getDB();
+    const u = db.data.users.find(x => x.id === req.params.id);
+    if (!u) return res.status(404).sendFile(path.join(frontendRoot, 'index.html'));
+    const presets = db.data.presets.filter(p => p.authorId === u.id && p.status === 'approved');
+    const canonical = `${SITE_URL}/profile/${encodeURIComponent(u.id)}/${slugify(u.username || u.name)}/`;
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(u.name || u.username || 'Creator')} Presets | PresetHub</title>
+<meta name="description" content="${escHtml((u.bio || `Discover Lightroom presets by ${u.name || u.username || 'this creator'}.`).slice(0, 155))}">
+<link rel="canonical" href="${canonical}"><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script type="application/ld+json">${safeJson({ "@context": "https://schema.org", "@type": "ProfilePage", "name": u.name || u.username, "url": canonical, "mainEntity": { "@type": "Person", "name": u.name || u.username } })}</script>
+</head><body><main class="container" style="padding:40px 0 60px"><a class="logo" href="/">Preset<span>Hub</span></a>
+<section class="admin-card" style="margin-top:25px"><div class="profile-head"><div class="profile-avatar">${u.avatar ? `<img src="${escHtml(u.avatar)}" alt="">` : escHtml((u.name || 'U').charAt(0).toUpperCase())}</div><div><h1>${escHtml(u.name || u.username)}</h1><p>@${escHtml(u.username || 'creator')}</p><p>${escHtml(u.bio || '')}</p></div></div>
+<div class="profile-stats"><b>${presets.length}<span>Presets</span></b><b>${presets.reduce((s, p) => s + (p.downloads || 0), 0)}<span>Downloads</span></b><b>${u.followers?.length || 0}<span>Followers</span></b></div>
+<h2>Published presets</h2><div class="mini-preset-grid">${presets.map(p => `<a class="preset-card" href="/preset/${encodeURIComponent(p.id)}/${slugify(p.name)}/"><div class="thumb">${p.previewImage ? `<img src="${escHtml(p.previewImage)}" alt="${escHtml(p.name)}" style="width:100%;height:100%;object-fit:cover">` : '<div class="preview-fallback"><i class="fas fa-sliders"></i></div>'}</div><div class="info"><h3>${escHtml(p.name)}</h3><div class="price">${Number(p.price || 0) === 0 ? 'Free' : '₹' + Number(p.price).toFixed(2)}</div></div></a>`).join('') || '<p>No published presets yet.</p>'}</div>
+</section></main></body></html>`;
+    res.type('html').send(html);
+  } catch (e) { next(e); }
 });
 
-// ============================================================
-// ===== SPA CATCH-ALL =====
-// ============================================================
-app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  if (req.accepts('html')) {
-    const indexPath = path.join(projectRoot, 'frontend/index.html');
-    if (fs.existsSync(indexPath)) {
-      res.sendFile(indexPath);
-    } else {
-      res.status(404).send(`<h1>🚀 PresetHub</h1><p>Frontend not found at: ${indexPath}</p>`);
+app.get('/sitemap.xml', async (req, res, next) => {
+  try {
+    const db = await getDB();
+    const urls = [
+      '/', '/about.html', '/blog.html', '/contact.html', '/faq.html', '/privacy.html', '/terms.html',
+      '/creator-program.html', '/download-guide.html', '/lightroom-guide.html', '/download-app.html'
+    ];
+    for (const p of db.data.presets || []) if (p.status === 'approved') urls.push(`/preset/${encodeURIComponent(p.id)}/${slugify(p.name)}/`);
+    const creators = new Set((db.data.presets || []).filter(p => p.status === 'approved').map(p => p.authorId).filter(Boolean));
+    for (const id of creators) {
+      const u = db.data.users.find(x => x.id === id); if (u) urls.push(`/profile/${encodeURIComponent(id)}/${slugify(u.username || u.name)}/`);
     }
-  } else {
-    res.status(404).json({ error: 'Not found' });
-  }
+    const body = urls.map(u => `<url><loc>${escHtml(SITE_URL + u)}</loc></url>`).join('');
+    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${body}</urlset>`);
+  } catch (e) { next(e); }
 });
 
-// ============================================================
-// ===== ERROR HANDLER =====
-// ============================================================
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'API endpoint not found' });
+  if (req.path.startsWith('/uploads/')) return res.status(404).end();
+  if (req.accepts('html')) return res.sendFile(path.join(frontendRoot, 'index.html'));
+  return res.status(404).json({ error: 'Not found' });
+});
+
 app.use(errorHandler);
 
-// ============================================================
-// ===== START SERVER =====
-// ============================================================
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('═══════════════════════════════════════════════');
-  console.log('🚀 PresetHub Server Started');
-  console.log('═══════════════════════════════════════════════');
-  console.log(`📡 Server: http://localhost:${PORT}`);
-  console.log(`📱 Frontend: ${process.env.CLIENT_URL || 'http://localhost:' + PORT}`);
-  console.log(`🔧 Admin: ${process.env.CLIENT_URL || 'http://localhost:' + PORT}/admin`);
-  console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🤖 Bot Token: ${process.env.BOT_TOKEN ? '✅ Configured' : '❌ Missing'}`);
-  console.log(`📱 Admin Chat ID: ${process.env.ADMIN_CHAT_ID || '❌ Missing'}`);
-  console.log('═══════════════════════════════════════════════');
-  console.log('\n📋 API Endpoints:');
-  console.log('  POST   /api/auth/signup     - Register user');
-  console.log('  POST   /api/auth/login      - Login user');
-  console.log('  GET    /api/auth/me         - Get profile');
-  console.log('  PUT    /api/auth/me/avatar  - Upload avatar');
-  console.log('  PUT    /api/auth/change-password - Change password');
-  console.log('  GET    /api/presets         - List presets');
-  console.log('  POST   /api/presets         - Upload preset');
-  console.log('  GET    /api/presets/:id     - Get preset');
-  console.log('  POST   /api/presets/:id/download - Download');
-  console.log('  POST   /api/presets/:id/like - Like preset');
-  console.log('  POST   /api/presets/:id/share - Share preset');
-  console.log('  GET    /api/users/top       - Top creators');
-  console.log('  GET    /api/users/:id       - Get user profile');
-  console.log('  POST   /api/users/:id/follow - Follow user');
-  console.log('  POST   /api/payments/create-order - Razorpay');
-  console.log('  POST   /api/payments/verify - Verify payment');
-  console.log('  GET    /api/admin/analytics - Admin analytics');
-  console.log('═══════════════════════════════════════════════\n');
-  console.log('🤖 Telegram Bot is ready!');
-  console.log('📱 Start bot with: npm run bot');
-  console.log('📱 Or visit: https://t.me/presethub_bot');
-});
+(async () => {
+  try {
+    await getDB();
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`PresetHub listening on ${PORT}`);
+      console.log(`Site: ${SITE_URL}`);
+      console.log(`Admin: ${SITE_URL}/admin`);
+      console.log(`Telegram bot: ${process.env.BOT_TOKEN ? 'configured' : 'not configured'}`);
+    });
+  } catch (err) {
+    console.error('Startup failed:', err);
+    process.exit(1);
+  }
+})();
 
-process.on('SIGTERM', () => { console.log('🛑 SIGTERM received'); process.exit(0); });
-process.on('SIGINT', () => { console.log('🛑 SIGINT received'); process.exit(0); });
-process.on('uncaughtException', (err) => console.error('❌ Uncaught Exception:', err));
-process.on('unhandledRejection', (reason) => console.error('❌ Unhandled Rejection:', reason));
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
 
 module.exports = app;
