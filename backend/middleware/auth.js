@@ -7,64 +7,162 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
-    if (!authHeader) return res.status(401).json({ error: 'Access denied. No token provided.' });
 
-    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+    if (!authHeader) {
+      return res.status(401).json({
+        error: 'Access denied. No token provided.'
+      });
+    }
+
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : authHeader;
+
     if (!token || token === 'null' || token === 'undefined' || token.length < 10) {
-      return res.status(401).json({ error: 'Access denied. Invalid token format.' });
+      return res.status(401).json({
+        error: 'Access denied. Invalid token format.'
+      });
     }
 
     let decoded;
+
     try {
       decoded = jwt.verify(token, JWT_SECRET);
     } catch (err) {
       if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({ error: 'Token expired.', code: 'TOKEN_EXPIRED' });
+        return res.status(401).json({
+          error: 'Token expired.',
+          code: 'TOKEN_EXPIRED'
+        });
       }
+
       if (err.name === 'JsonWebTokenError') {
-        return res.status(401).json({ error: 'Invalid token.', code: 'INVALID_TOKEN' });
+        return res.status(401).json({
+          error: 'Invalid token.',
+          code: 'INVALID_TOKEN'
+        });
       }
+
       throw err;
     }
 
     if (!mongoose.Types.ObjectId.isValid(decoded.id)) {
-      return res.status(401).json({ error: 'Invalid user ID.' });
+      return res.status(401).json({
+        error: 'Invalid user ID.'
+      });
     }
 
-    const user = await User.findById(decoded.id).select('role status').lean();
-    if (!user) return res.status(401).json({ error: 'User no longer exists.' });
+    const user = await User.findById(decoded.id)
+      .select('role status')
+      .lean();
+
+    if (!user) {
+      return res.status(401).json({
+        error: 'User no longer exists.'
+      });
+    }
+
     if (user.status === 'blocked' || user.status === 'deactivated') {
-      return res.status(403).json({ error: 'Account is blocked or deactivated.' });
+      return res.status(403).json({
+        error: 'Account is blocked or deactivated.'
+      });
     }
 
-    req.user = { id: decoded.id, email: decoded.email, role: user.role };
+    // Update activity without waiting for DB write.
+    User.updateOne(
+      { _id: decoded.id },
+      {
+        $set: {
+          lastActive: new Date()
+        },
+        $inc: {
+          commandsCount: 1
+        }
+      }
+    ).catch(err => {
+      console.warn('Activity update failed:', err.message);
+    });
+
+    req.user = {
+      id: decoded.id,
+      email: decoded.email,
+      role: user.role
+    };
+
     req.token = token;
+
     next();
+
   } catch (error) {
     console.error('Auth middleware error:', error);
-    return res.status(500).json({ error: 'Authentication error.' });
+
+    return res.status(500).json({
+      error: 'Authentication error.'
+    });
   }
 };
+
 
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
-    if (!authHeader) return next();
-    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
-    if (!token || token.length < 10) return next();
+
+    if (!authHeader) {
+      return next();
+    }
+
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : authHeader;
+
+    if (!token || token.length < 10) {
+      return next();
+    }
+
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = { id: decoded.id, email: decoded.email, role: decoded.role };
+
+    if (!mongoose.Types.ObjectId.isValid(decoded.id)) {
+      return next();
+    }
+
+    req.user = {
+      id: decoded.id,
+      email: decoded.email,
+      role: decoded.role
+    };
+
+    // Activity update for optional authenticated users.
+    User.updateOne(
+      { _id: decoded.id },
+      { $set: { lastActive: new Date() } }
+    ).catch(() => {});
+
   } catch (_) {}
+
   next();
 };
+
 
 const authorize = (...roles) => (req, res, next) => {
-  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
-  if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'Access denied.' });
+
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Authentication required'
+    });
+  }
+
+  if (!roles.includes(req.user.role)) {
+    return res.status(403).json({
+      error: 'Access denied.'
+    });
+  }
+
   next();
 };
 
+
 const isAdmin = authorize('admin');
+
 
 module.exports = authenticate;
 module.exports.authenticate = authenticate;
