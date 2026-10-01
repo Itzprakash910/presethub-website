@@ -45,6 +45,14 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 }
 
 const R2_CONFIGURED = !!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET_NAME && process.env.R2_PUBLIC_URL);
+async function normalizePresetPublishing() {
+  try {
+    const { Preset } = require('./models');
+    const result = await Preset.updateMany({ status: 'pending' }, { $set: { status: 'approved' } });
+    if (result.modifiedCount) console.log(`✅ Published ${result.modifiedCount} existing pending preset(s) automatically.`);
+  } catch (err) { console.warn('⚠️ Preset publish migration skipped:', err.message); }
+}
+
 async function ensureAdminUser() {
   if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) return;
   if (String(process.env.ADMIN_PASSWORD).length < 12) {
@@ -90,6 +98,7 @@ function ensureStructure() {
   const required = {
     'robots.txt': `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nSitemap: ${SITE_URL}/sitemap.xml\n`,
     'ads.txt': `google.com, ${(process.env.ADSENSE_CLIENT || 'ca-pub-3554311294133493').replace(/^ca-/, '')}, DIRECT, f08c47fec0942fa0\n`,
+    'security.txt': `Contact: ${SITE_URL}/contact.html\nPolicy: ${SITE_URL}/privacy.html\nExpires: 2030-01-01T00:00:00Z\n`,
     'manifest.json': JSON.stringify({name:'PresetHub – Lightroom Presets Marketplace',short_name:'PresetHub',start_url:'/',scope:'/',display:'standalone',theme_color:'#d4a373',background_color:'#f8f6f2',icons:[{src:'/assets/images/presethub-logo-1.jpg',sizes:'1536x1536',type:'image/jpeg',purpose:'any maskable'}]}, null, 2)
   };
   for (const [name, content] of Object.entries(required)) {
@@ -233,6 +242,9 @@ app.use(express.static(frontendRoot, {
   index: 'index.html',
   dotfiles: 'deny'
 }));
+
+// ============ HEALTH ============
+app.get('/healthz', (req, res) => res.json({ ok: true, service: 'presethub', database: require('mongoose').connection.readyState === 1 ? 'connected' : 'disconnected', time: new Date().toISOString() }));
 
 // ============ API ROUTES ============
 app.use('/api/auth', authRoutes);
@@ -468,11 +480,11 @@ app.get('/sitemap.xml', async (req, res, next) => {
     const body = urls.map(u => {
       const item = typeof u === 'string' ? { loc: u } : u;
       const image = item.image ? (String(item.image).startsWith('http') ? item.image : SITE_URL + item.image) : null;
-      return `<url><loc>${escHtml(SITE_URL + item.loc)}</loc>${item.lastmod ? `<lastmod>${new Date(item.lastmod).toISOString()}</lastmod>` : ''}${image ? `<image:image xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"><image:loc>${escHtml(image)}</image:loc></image:image>` : ''}</url>`;
+      return `<url><loc>${escHtml(SITE_URL + item.loc)}</loc>${item.lastmod ? `<lastmod>${new Date(item.lastmod).toISOString()}</lastmod>` : ''}${image ? `<image:image><image:loc>${escHtml(image)}</image:loc></image:image>` : ''}</url>`;
     }).join('');
 
     res.type('application/xml').send(
-      `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${body}</urlset>`
+      `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${body}</urlset>`
     );
   } catch (e) { next(e); }
 });
@@ -497,6 +509,7 @@ app.use(errorHandler);
 (async () => {
   try {
     await connectDB();
+    await normalizePresetPublishing();
     await ensureAdminUser();
     app.listen(PORT, '0.0.0.0', () => {
       console.log('');
