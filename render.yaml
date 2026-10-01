@@ -12,6 +12,8 @@ services:
         value: production
       - key: CLIENT_URL
         value: https://presethub.site
+      - key: ADSENSE_CLIENT
+        value: ca-pub-3554311294133493
       - key: NODE_VERSION
         value: 20.11.0
       - key: JWT_SECRET
@@ -42,5 +44,3 @@ services:
         sync: false
       - key: API_BASE
         value: https://presethub.site/api
-      - key: ADSENSE_CLIENT
-        sync: false

@@ -24,15 +24,3 @@ PresetHub is a mobile-first Lightroom preset marketplace with:
 
 ## Important SEO note
 The project creates a dedicated crawlable URL for each approved preset and includes it in the sitemap. This improves discoverability, but no software can guarantee a #1 Google ranking.
-
-
-## PresetHub final build notes
-
-- User uploads are published immediately; admin approval is not required. Admin remains a separate control/reporting area.
-- Supported preset uploads include XMP, DNG, LRTEMPLATE, CUBE, 3DL, LOOK, COSTYLE, XML, JSON and ZIP preset packs.
-- Each published preset receives a server-rendered SEO URL, canonical URL, Open Graph preview, Twitter metadata, JSON-LD and inclusion in `/sitemap.xml`.
-- Search suggestions include a Google `site:presethub.site` search option. Search ranking cannot be guaranteed by code; indexing and ranking are controlled by Google.
-- MongoDB creates collections/indexes through Mongoose. Configure `MONGODB_URI` and allow the Render service to reach the Atlas cluster.
-- In MongoDB Atlas, add an appropriate Network Access rule for the Render deployment. Render outbound IPs can change; use the provider-recommended secure allowlist for your plan rather than embedding credentials in code.
-- AdSense Auto Ads are loaded from `ADSENSE_CLIENT`; `frontend/ads.txt` is included. AdSense approval and ad serving are controlled by Google.
-- Keep secrets only in Render environment variables; never commit `.env`.
