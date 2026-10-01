@@ -15,6 +15,12 @@
   ],
   "icons": [
     {
+      "src": "/assets/images/presethub-logo-1.jpg",
+      "sizes": "1536x1536",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
       "src": "/assets/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",

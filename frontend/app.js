@@ -1,4 +1,4 @@
-/* PresetHub Frontend — production client */
+/* PresetHub Frontend — production client v2.0 */
 (() => {
   'use strict';
 
@@ -8,6 +8,7 @@
     token: localStorage.getItem('presethub_token') || '',
     presets: [],
     categories: [],
+    category: '',
     creators: [],
     page: 1,
     totalPages: 1,
@@ -17,21 +18,26 @@
     searchTimer: null,
     installPrompt: null,
     currentPreset: null,
+    selected: new Set(),
   };
 
-  const $ = (s, r=document) => r.querySelector(s);
-  const $$ = (s, r=document) => [...r.querySelectorAll(s)];
-  const esc = (v='') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const money = v => Number(v || 0) <= 0 ? 'Free' : `₹${Number(v).toFixed(2)}`;
-  const slug = s => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'preset';
+  const slug = s => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'preset';
   const presetUrl = p => `/preset/${encodeURIComponent(p.id)}/${slug(p.name)}/`;
   const profileUrl = u => `/profile/${encodeURIComponent(u.id)}/${slug(u.username || u.name)}/`;
+  const safeExternal = v => /^(https?:\/\/|mailto:)/i.test(String(v || '')) ? String(v) : '#';
 
-  async function api(path, options={}) {
+  // ============ API HELPER ============
+  async function api(path, options = {}) {
     const headers = new Headers(options.headers || {});
     if (state.token) headers.set('Authorization', `Bearer ${state.token}`);
-    if (!(options.body instanceof FormData) && options.body && !headers.has('Content-Type')) headers.set('Content-Type','application/json');
-    const res = await fetch(`${API}${path}`, {...options, headers});
+    if (!(options.body instanceof FormData) && options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    const res = await fetch(`${API}${path}`, { ...options, headers });
     let data = {};
     try { data = await res.json(); } catch (_) {}
     if (res.status === 401) {
@@ -43,63 +49,67 @@
     return data;
   }
 
-  function toast(message, type='success') {
+  // ============ TOAST ============
+  function toast(message, type = 'success') {
     const box = $('#toastBox') || (() => {
-      const x=document.createElement('div'); x.id='toastBox'; document.body.appendChild(x); return x;
+      const x = document.createElement('div'); x.id = 'toastBox'; document.body.appendChild(x); return x;
     })();
-    const el=document.createElement('div');
-    el.className='toast';
-    el.setAttribute('role','status');
-    el.textContent=String(message);
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    el.textContent = String(message);
     box.appendChild(el);
-    setTimeout(()=>el.remove(),3500);
+    setTimeout(() => el.remove(), 3500);
   }
 
+  // ============ MODAL ============
   function openModal(html) {
     const overlay = $('#overlay'), body = $('#modalBody');
     if (!overlay || !body) return;
     body.innerHTML = html;
     overlay.classList.add('active');
-    document.body.style.overflow='hidden';
+    document.body.style.overflow = 'hidden';
   }
   function closeModal() {
-    const overlay=$('#overlay');
+    const overlay = $('#overlay');
     if (overlay) overlay.classList.remove('active');
-    document.body.style.overflow='';
+    document.body.style.overflow = '';
   }
 
-  function requireAuth(next) {
-    if (!state.user) { openAuth('login', next); return false; }
+  function requireAuth() {
+    if (!state.user) { openAuth('login'); return false; }
     return true;
   }
 
   function updateAuthUI() {
-    const auth=$('#authSection'), user=$('#userSection'), avatar=$('#avatar'), admin=$('#adminLink');
+    const auth = $('#authSection'), user = $('#userSection'), avatar = $('#avatar'), admin = $('#adminLink');
     if (state.user) {
-      if (auth) auth.style.display='none';
-      if (user) user.style.display='flex';
+      if (auth) auth.style.display = 'none';
+      if (user) user.style.display = 'flex';
       if (avatar) {
-        avatar.textContent=(state.user.name || state.user.username || 'U').trim().charAt(0).toUpperCase();
+        avatar.textContent = (state.user.name || state.user.username || 'U').trim().charAt(0).toUpperCase();
         if (state.user.avatar) {
-          avatar.style.backgroundImage=`url("${state.user.avatar}")`;
-          avatar.style.backgroundSize='cover';
-          avatar.textContent='';
+          avatar.style.backgroundImage = `url("${state.user.avatar}")`;
+          avatar.style.backgroundSize = 'cover';
+          avatar.textContent = '';
         }
       }
       if (admin) admin.classList.toggle('hidden', state.user.role !== 'admin');
     } else {
-      if (auth) auth.style.display='flex';
-      if (user) user.style.display='none';
+      if (auth) auth.style.display = 'flex';
+      if (user) user.style.display = 'none';
     }
   }
 
+  // ============ PRESET CARD ============
   function presetCard(p) {
     const image = p.previewImage
       ? `<img src="${esc(p.previewImage)}" alt="${esc(p.name)} preview" loading="lazy">`
       : `<div class="preview-fallback" aria-label="Preset preview"><i class="fas fa-sliders"></i><span>Preset Preview</span></div>`;
     const likes = Number(p.likesCount || (p.likes || []).length);
     return `
-      <article class="preset-card">
+      <article class="preset-card" data-preset-card="${esc(p.id)}">
+        <label class="select-preset"><input type="checkbox" data-action="select-preset" data-id="${esc(p.id)}" ${state.selected.has(String(p.id)) ? 'checked' : ''} aria-label="Select ${esc(p.name)}"><span></span></label>
         <div class="thumb">
           ${image}
           <div class="overlay">
@@ -112,12 +122,13 @@
           <button class="author-link" data-action="profile" data-id="${esc(p.authorId || '')}">${esc(p.author || 'Creator')}</button>
           <div class="preset-description">${esc(p.description || 'Lightroom preset')}</div>
           <div class="meta">
-            <span class="price ${Number(p.price||0)===0?'free':''}">${money(p.price)}</span>
-            <span class="rating">★ ${Number(p.avgRating||0).toFixed(1)} · ${p.downloads||0} downloads</span>
+            <span class="price ${Number(p.price || 0) === 0 ? 'free' : ''}">${money(p.price)}</span>
+            <span class="rating">★ ${Number(p.avgRating || 0).toFixed(1)} · ${p.downloads || 0} downloads</span>
           </div>
           <div class="card-actions">
             <button class="icon-action" data-action="wishlist" data-id="${esc(p.id)}" title="Wishlist"><i class="far fa-heart"></i></button>
             <button class="icon-action" data-action="like" data-id="${esc(p.id)}" title="Like">♥ ${likes}</button>
+            <button class="icon-action" data-action="share" data-id="${esc(p.id)}" title="Share"><i class="fas fa-share-nodes"></i></button>
             <a class="icon-action" href="${presetUrl(p)}" title="Open preset page"><i class="fas fa-link"></i></a>
             <button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}">Open</button>
           </div>
@@ -125,81 +136,90 @@
       </article>`;
   }
 
-  async function loadPresets(reset=true) {
-    if (reset) state.page=1;
-    const params=new URLSearchParams({page:state.page,limit:24,sort:state.sort});
-    if (state.query) params.set('q',state.query);
-    if (state.price) params.set('price',state.price);
-    if (state.category) params.set('category',state.category);
-    const grid=$('#presetGrid');
-    if (grid && reset) grid.innerHTML='<div class="skeleton" style="height:280px"></div>'.repeat(4);
+  // ============ LOAD PRESETS ============
+  async function loadPresets(reset = true) {
+    if (reset) state.page = 1;
+    const params = new URLSearchParams({ page: state.page, limit: 24, sort: state.sort });
+    if (state.query) params.set('q', state.query);
+    if (state.price) params.set('price', state.price);
+    if (state.category) params.set('category', state.category);
+    const grid = $('#presetGrid');
+    if (grid && reset) grid.innerHTML = '<div class="skeleton" style="height:280px"></div>'.repeat(4);
     try {
-      const data=await api(`/presets?${params.toString()}`);
-      state.presets=reset ? data.presets : [...state.presets,...data.presets];
-      state.totalPages=data.totalPages || 1;
-      if (grid) grid.innerHTML=state.presets.length ? state.presets.map(presetCard).join('') :
-        `<div class="empty-state"><i class="fas fa-box-open"></i><h3>No presets found</h3><p>Try another search or upload the first preset.</p></div>`;
-      const title=$('#listTitle');
-      if (title) title.textContent=state.query ? `Search: ${state.query}` : 'सभी Presets';
-      $('#statPresets') && ($('#statPresets').textContent=data.total || 0);
-      $('#statFree') && ($('#statFree').textContent=state.presets.filter(p=>Number(p.price||0)===0).length);
+      const data = await api(`/presets?${params.toString()}`);
+      state.presets = reset ? data.presets : [...state.presets, ...data.presets];
+      state.totalPages = data.totalPages || 1;
+      if (grid) grid.innerHTML = state.presets.length
+        ? state.presets.map(presetCard).join('')
+        : `<div class="empty-state"><i class="fas fa-box-open"></i><h3>No presets found</h3><p>Try another search or upload the first preset.</p></div>`;
+      const title = $('#listTitle');
+      if (title) title.textContent = state.query ? `Search: ${state.query}` : 'सभी Presets';
+      if ($('#statPresets')) $('#statPresets').textContent = data.total || 0;
+      if ($('#statFree')) $('#statFree').textContent = state.presets.filter(p => Number(p.price || 0) === 0).length;
     } catch (e) {
-      if (grid) grid.innerHTML=`<div class="empty-state"><h3>Could not load presets</h3><p>${esc(e.message)}</p><button class="btn btn-primary" data-action="retry">Retry</button></div>`;
+      if (grid) grid.innerHTML = `<div class="empty-state"><h3>Could not load presets</h3><p>${esc(e.message)}</p><button class="btn btn-primary" data-action="retry">Retry</button></div>`;
     }
   }
 
   async function loadCategories() {
     try {
-      const data=await api('/presets?limit=200&sort=newest');
-      const counts={};
-      (data.presets||[]).forEach(p=>counts[p.category||'General']=(counts[p.category||'General']||0)+1);
-      const cats=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-      state.categories=cats;
-      const el=$('#categories');
-      if (el) el.innerHTML=cats.length ? cats.map(([name,count])=>`
-        <button class="category-card" data-action="category" data-category="${esc(name)}">
-          <div class="icon">✦</div><div class="name">${esc(name)}</div><div class="count">${count} presets</div>
-        </button>`).join('') : '<p>No categories yet.</p>';
+      const data = await api('/presets?limit=200&sort=newest');
+      const counts = {};
+      (data.presets || []).forEach(p => counts[p.category || 'General'] = (counts[p.category || 'General'] || 0) + 1);
+      const cats = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      state.categories = cats;
+      const el = $('#categories');
+      if (el) el.innerHTML = cats.length
+        ? cats.map(([name, count]) => `
+            <button class="category-card" data-action="category" data-category="${esc(name)}">
+              <div class="icon">✦</div><div class="name">${esc(name)}</div><div class="count">${count} presets</div>
+            </button>`).join('')
+        : '<p>No categories yet.</p>';
     } catch (_) {}
   }
 
   async function loadCreators() {
     try {
-      const creators=await api('/users/top');
-      state.creators=creators;
-      const el=$('#creators');
-      if (el) el.innerHTML=(creators||[]).map(u=>`
+      const creators = await api('/users/top');
+      state.creators = creators;
+      const el = $('#creators');
+      if (el) el.innerHTML = (creators || []).map(u => `
         <button class="creator-card" data-action="profile" data-id="${esc(u.id)}">
-          <div class="creator-avatar">${u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : esc((u.name||'U').charAt(0).toUpperCase())}</div>
-          <div class="name">${esc(u.name||u.username||'Creator')}</div>
-          <div class="stats">${u.presetCount||0} presets · ${u.totalDownloads||0} downloads</div>
-          <div class="followers">${u.followers||0} followers</div>
+          <div class="creator-avatar">${u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : esc((u.name || 'U').charAt(0).toUpperCase())}</div>
+          <div class="name">${esc(u.name || u.username || 'Creator')}</div>
+          <div class="stats">${u.presetCount || 0} presets · ${u.totalDownloads || 0} downloads</div>
+          <div class="followers">${u.followers || 0} followers</div>
         </button>`).join('');
     } catch (_) {}
   }
 
+  // ============ SHOW PRESET MODAL ============
   async function showPreset(id) {
     try {
-      const p=await api(`/presets/${encodeURIComponent(id)}`);
-      state.currentPreset=p;
-      let reviews=[];
-      try { reviews=await api(`/reviews/${encodeURIComponent(id)}`); } catch (_) {}
-      const image=p.previewImage ? `<img src="${esc(p.previewImage)}" alt="${esc(p.name)} preview">` :
-        `<div class="preview-fallback large"><i class="fas fa-sliders"></i><span>Preset Preview</span></div>`;
+      const p = await api(`/presets/${encodeURIComponent(id)}`);
+      state.currentPreset = p;
+      let reviews = [];
+      let comments = [];
+      try { reviews = await api(`/reviews/${encodeURIComponent(id)}`); } catch (_) {}
+      try { comments = await api(`/comments/${encodeURIComponent(id)}`); } catch (_) {}
+      const image = p.previewImage
+        ? `<img src="${esc(p.previewImage)}" alt="${esc(p.name)} preview">`
+        : `<div class="preview-fallback large"><i class="fas fa-sliders"></i><span>Preset Preview</span></div>`;
       openModal(`
         <div class="modal-grid">
           <div class="modal-preview">${image}</div>
           <div class="modal-details">
-            <span class="tag">${esc(p.category||'General')}</span>
+            <span class="tag">${esc(p.category || 'General')}</span>
             <h2>${esc(p.name)}</h2>
-            <button class="author-link" data-action="profile" data-id="${esc(p.authorId||'')}">by ${esc(p.author||'Creator')}</button>
-            <p class="desc">${esc(p.description||'No description yet.')}</p>
-            <div class="price-lg ${Number(p.price||0)===0?'free':''}">${money(p.price)}</div>
+            <button class="author-link" data-action="profile" data-id="${esc(p.authorId || '')}">by ${esc(p.author || 'Creator')}</button>
+            <p class="desc">${esc(p.description || 'No description yet.')}</p>
+            <div class="price-lg ${Number(p.price || 0) === 0 ? 'free' : ''}">${money(p.price)}</div>
             <div class="meta-list">
-              <span><i class="fas fa-star"></i>${Number(p.avgRating||0).toFixed(1)}</span>
-              <span><i class="fas fa-download"></i>${p.downloads||0}</span>
-              <span><i class="fas fa-eye"></i>${p.views||0}</span>
-              <span><i class="fas fa-heart"></i>${Number(p.likesCount || (p.likes||[]).length)}</span>
+              <span><i class="fas fa-star"></i>${Number(p.avgRating || 0).toFixed(1)}</span>
+              <span><i class="fas fa-download"></i>${p.downloads || 0}</span>
+              <span><i class="fas fa-eye"></i>${p.views || 0}</span>
+              <span><i class="fas fa-heart"></i>${Number(p.likesCount || 0)}</span>
+              <span><i class="fas fa-share-nodes"></i>${p.shares || 0}</span>
             </div>
             <div class="actions">
               <button class="btn btn-primary" data-action="download" data-id="${esc(p.id)}"><i class="fas fa-download"></i> Download</button>
@@ -209,194 +229,391 @@
             </div>
             <div class="review-box">
               <h3>Reviews</h3>
-              ${(reviews||[]).slice(-5).reverse().map(r=>`<div class="review"><b>${esc(r.userName)}</b> · ${'★'.repeat(Number(r.rating)||0)}<p>${esc(r.comment)}</p></div>`).join('') || '<p>No reviews yet.</p>'}
-              ${state.user ? `<form id="reviewForm" data-preset="${esc(p.id)}"><select name="rating" required><option value="">Rating</option>${[1,2,3,4,5].map(n=>`<option>${n}</option>`).join('')}</select><input name="comment" maxlength="500" placeholder="Write a review…" required><button class="btn btn-primary btn-sm">Post review</button></form>` : ''}
+              ${(reviews || []).slice(-5).reverse().map(r => `<div class="review"><b>${esc(r.userName)}</b> · ${'★'.repeat(Number(r.rating) || 0)}<p>${esc(r.comment)}</p></div>`).join('') || '<p>No reviews yet.</p>'}
+              ${state.user ? `<form id="reviewForm" data-preset="${esc(p.id)}"><select name="rating" required><option value="">Rating</option>${[1, 2, 3, 4, 5].map(n => `<option>${n}</option>`).join('')}</select><input name="comment" maxlength="500" placeholder="Write a review…" required><button class="btn btn-primary btn-sm">Post review</button></form>` : ''}
+            </div>
+            <div class="comment-box">
+              <h3>Comments</h3>
+              ${comments.length ? comments.map(c => `<div class="comment"><b>${esc(c.userName)}</b><small>${new Date(c.createdAt).toLocaleString()}</small><p>${esc(c.text)}</p><button class="text-button" data-action="comment-like" data-preset="${esc(p.id)}" data-comment="${esc(c.id)}">♥ ${c.likes || 0}</button></div>`).join('') : '<p>No comments yet.</p>'}
+              ${state.user ? `<form id="commentForm" data-preset="${esc(p.id)}"><textarea name="text" maxlength="500" placeholder="Write a comment…" required></textarea><button class="btn btn-primary btn-sm">Comment</button></form>` : ''}
             </div>
           </div>
         </div>`);
-      try { await api(`/presets/${encodeURIComponent(id)}/view`,{method:'POST'}); } catch (_) {}
-    } catch(e) { toast(e.message,'error'); }
+      try { await api(`/presets/${encodeURIComponent(id)}/view`, { method: 'POST' }); } catch (_) {}
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  // ============ DOWNLOAD (R2 SUPPORT) ============
   async function downloadPreset(id) {
     if (!requireAuth()) return;
     try {
-      const p=state.currentPreset?.id===id ? state.currentPreset : await api(`/presets/${id}`);
-      if (Number(p.price||0)>0 && p.authorId!==state.user.id) {
+      const p = state.currentPreset?.id === id ? state.currentPreset : await api(`/presets/${id}`);
+      if (Number(p.price || 0) > 0 && p.authorId !== state.user.id) {
         return startPayment(p);
       }
-      const res=await fetch(`${API}/presets/${encodeURIComponent(id)}/download`,{method:'POST',headers:{Authorization:`Bearer ${state.token}`}});
-      if (!res.ok) {
-        const d=await res.json().catch(()=>({}));
-        throw new Error(d.error||'Download failed');
+      // Backend returns JSON with R2 downloadUrl
+      const r = await api(`/presets/${encodeURIComponent(id)}/download`, { method: 'POST' });
+      if (r.downloadUrl) {
+        const a = document.createElement('a');
+        a.href = r.downloadUrl;
+        a.download = r.originalName || `${slug(p.name)}.xmp`;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       }
-      const blob=await res.blob();
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement('a'); a.href=url; a.download=p.originalName||`${slug(p.name)}.xmp`; a.click();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
       toast('Download started');
-    } catch(e) { toast(e.message,'error'); }
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  // ============ PAYMENT ============
   async function startPayment(p) {
     if (!requireAuth()) return;
     try {
       if (!window.Razorpay) {
-        await new Promise((resolve,reject)=>{
-          const s=document.createElement('script'); s.src='https://checkout.razorpay.com/v1/checkout.js'; s.onload=resolve; s.onerror=reject; document.head.appendChild(s);
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
         });
       }
-      const order=await api('/payments/create-order',{method:'POST',body:JSON.stringify({presetId:p.id})});
-      const rz=new Razorpay({
-        key:order.key, amount:order.amount, currency:order.currency, order_id:order.orderId,
-        name:'PresetHub', description:p.name,
-        prefill:{name:state.user.name,email:state.user.email},
-        theme:{color:'#d4a373'},
-        handler:async response=>{
+      const order = await api('/payments/create-order', { method: 'POST', body: JSON.stringify({ presetId: p.id }) });
+      const rz = new Razorpay({
+        key: order.key, amount: order.amount, currency: order.currency, order_id: order.orderId,
+        name: 'PresetHub', description: p.name,
+        prefill: { name: state.user.name, email: state.user.email },
+        theme: { color: '#d4a373' },
+        handler: async response => {
           try {
-            await api('/payments/verify',{method:'POST',body:JSON.stringify(response)});
-            toast('Payment verified. You can download now.');
+            await api('/payments/verify', { method: 'POST', body: JSON.stringify(response) });
+            toast('Payment verified. Download now available.');
             downloadPreset(p.id);
-          } catch(e){ toast(e.message,'error'); }
+          } catch (e) { toast(e.message, 'error'); }
         }
       });
       rz.open();
-    } catch(e){ toast(e.message,'error'); }
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  // ============ WISHLIST / LIKE ============
   async function toggleWishlist(id) {
     if (!requireAuth()) return;
     try {
-      const d=await api(`/users/me/wishlist/${id}`,{method:'POST'});
-      toast(d.wishlist?.includes(id)?'Added to wishlist':'Removed from wishlist');
-    } catch(e){toast(e.message,'error');}
+      const d = await api(`/users/me/wishlist/${id}`, { method: 'POST' });
+      toast((d.wishlist || []).includes(id) ? 'Added to wishlist' : 'Removed from wishlist');
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   async function likePreset(id) {
     if (!requireAuth()) return;
     try {
-      const d=await api(`/presets/${id}/like`,{method:'POST'});
-      toast(d.liked?'Liked':'Like removed');
+      const d = await api(`/presets/${id}/like`, { method: 'POST' });
+      toast(d.liked ? 'Liked' : 'Like removed');
       loadPresets(false);
-    } catch(e){toast(e.message,'error');}
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  // ============ SHARE (RICH MODAL) ============
   async function sharePreset(id) {
     try {
-      const p=state.currentPreset?.id===id?state.currentPreset:await api(`/presets/${id}`);
-      const url=new URL(presetUrl(p),location.origin).href;
-      if (navigator.share) await navigator.share({title:p.name,text:`${p.name} on PresetHub`,url});
-      else { await navigator.clipboard.writeText(url); toast('Link copied'); }
-      if (state.user) api(`/presets/${id}/share`,{method:'POST'}).catch(()=>{});
-    } catch(e) { if(e.name!=='AbortError') toast(e.message,'error'); }
+      const p = state.currentPreset?.id === id ? state.currentPreset : await api(`/presets/${id}`);
+      const baseUrl = location.origin;
+      const shareUrl = `${baseUrl}/preset/${encodeURIComponent(p.id)}/${slug(p.name)}/`;
+      const shortUrl = await getOrCreateShortLink(p.id);
+      const finalUrl = shortUrl || shareUrl;
+
+      const shareText = `🎨 Check out "${p.name}" by ${p.author} on PresetHub!\n${p.description ? p.description.slice(0, 100) + '…' : ''}`;
+      const encodedUrl = encodeURIComponent(finalUrl);
+      const encodedText = encodeURIComponent(shareText);
+      const encodedTitle = encodeURIComponent(`${p.name} — PresetHub`);
+      const previewImg = p.previewImage ? (p.previewImage.startsWith('http') ? p.previewImage : baseUrl + p.previewImage) : '';
+
+      openModal(`
+        <div class="share-panel">
+          <h2><i class="fas fa-share-nodes"></i> Share this Preset</h2>
+          <div class="share-preview">
+            ${p.previewImage ? `<img src="${esc(p.previewImage)}" alt="">` : '<div class="preview-fallback"><i class="fas fa-sliders"></i></div>'}
+            <div>
+              <h3>${esc(p.name)}</h3>
+              <p>by ${esc(p.author)} · ${money(p.price)}</p>
+            </div>
+          </div>
+
+          <div class="share-grid">
+            <button class="share-btn whatsapp" data-share-platform="whatsapp" data-url="${encodedUrl}" data-text="${encodedText}">
+              <i class="fab fa-whatsapp"></i><span>WhatsApp</span>
+            </button>
+            <button class="share-btn telegram" data-share-platform="telegram" data-url="${encodedUrl}" data-text="${encodedText}">
+              <i class="fab fa-telegram"></i><span>Telegram</span>
+            </button>
+            <button class="share-btn facebook" data-share-platform="facebook" data-url="${encodedUrl}">
+              <i class="fab fa-facebook"></i><span>Facebook</span>
+            </button>
+            <button class="share-btn twitter" data-share-platform="twitter" data-url="${encodedUrl}" data-text="${encodedText}">
+              <i class="fab fa-x-twitter"></i><span>X</span>
+            </button>
+            <button class="share-btn linkedin" data-share-platform="linkedin" data-url="${encodedUrl}" data-title="${encodedTitle}">
+              <i class="fab fa-linkedin"></i><span>LinkedIn</span>
+            </button>
+            <button class="share-btn reddit" data-share-platform="reddit" data-url="${encodedUrl}" data-title="${encodedTitle}">
+              <i class="fab fa-reddit"></i><span>Reddit</span>
+            </button>
+            <button class="share-btn email" data-share-platform="email" data-url="${encodedUrl}" data-text="${encodedText}" data-title="${encodedTitle}">
+              <i class="fas fa-envelope"></i><span>Email</span>
+            </button>
+            <button class="share-btn native" data-share-platform="native" data-url="${encodedUrl}" data-text="${encodedText}" data-title="${encodedTitle}">
+              <i class="fas fa-share"></i><span>More…</span>
+            </button>
+          </div>
+
+          <div class="share-link-box">
+            <label>Short Link</label>
+            <div class="share-link-input">
+              <input readonly value="${esc(finalUrl)}" onclick="this.select()">
+              <button class="btn btn-primary btn-sm" data-share-copy="${esc(finalUrl)}">Copy</button>
+            </div>
+          </div>
+
+          <div class="share-qr">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodedUrl}" alt="QR Code" loading="lazy">
+            <p>Scan to open on mobile</p>
+          </div>
+
+          <div class="share-footer" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+            ${previewImg ? `<button class="btn btn-outline btn-sm" data-share-copy-image="${esc(previewImg)}" data-share-copy-url="${esc(finalUrl)}"><i class="fas fa-image"></i> Copy Image + Link</button>` : ''}
+          </div>
+        </div>`);
+
+      trackShare(p.id, 'open_menu');
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  async function getOrCreateShortLink(presetId) {
+    if (!state.user) return null;
+    try {
+      const r = await api('/share/create', { method: 'POST', body: JSON.stringify({ presetId, platform: 'menu' }) });
+      return r.shortUrl;
+    } catch (_) { return null; }
+  }
+
+  function trackShare(presetId, platform) {
+    const headers = new Headers({ 'Content-Type': 'application/json' });
+    if (state.token) headers.set('Authorization', `Bearer ${state.token}`);
+    fetch(`${API}/presets/${presetId}/share`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ platform })
+    }).catch(() => {});
+  }
+
+  function openSharePlatform(platform, url, text, title) {
+    let link = '';
+    switch (platform) {
+      case 'whatsapp': link = `https://wa.me/?text=${text}%20${url}`; break;
+      case 'telegram': link = `https://t.me/share/url?url=${url}&text=${text}`; break;
+      case 'facebook': link = `https://www.facebook.com/sharer/sharer.php?u=${url}`; break;
+      case 'twitter':  link = `https://twitter.com/intent/tweet?text=${text}&url=${url}`; break;
+      case 'linkedin': link = `https://www.linkedin.com/sharing/share-offsite/?url=${url}`; break;
+      case 'reddit':   link = `https://www.reddit.com/submit?url=${url}&title=${title}`; break;
+      case 'email':    link = `mailto:?subject=${title}&body=${text}%0A%0A${url}`; break;
+      case 'native':
+        if (navigator.share) {
+          navigator.share({
+            title: decodeURIComponent(title || ''),
+            text: decodeURIComponent(text || ''),
+            url: decodeURIComponent(url || '')
+          }).catch(() => {});
+          return true;
+        }
+        return false;
+      default: return false;
+    }
+    if (link) window.open(link, '_blank', 'noopener,width=600,height=600');
+    return true;
+  }
+
+  // ============ MY SHARE LINKS ============
+  async function showMyShares() {
+    if (!requireAuth()) return;
+    try {
+      const links = await api('/share/me/list');
+      openModal(`
+        <h2><i class="fas fa-link"></i> My Share Links</h2>
+        ${links.length === 0
+          ? '<p>You have not created any share links yet. Open a preset and click Share to create one.</p>'
+          : `<div class="share-links-list">
+              ${links.map(l => `
+                <div class="share-link-item">
+                  <div>
+                    <a href="${esc(l.shortUrl)}" target="_blank" rel="noopener">${esc(l.shortUrl)}</a>
+                    <small>${esc(l.platform)} · ${new Date(l.createdAt).toLocaleDateString()}</small>
+                  </div>
+                  <div class="share-link-stats">
+                    <b>${l.clicks}</b><span>clicks</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>`}
+      `);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ SHARE STATS (For Creator) ============
+  async function showShareStats(presetId) {
+    if (!requireAuth()) return;
+    try {
+      const stats = await api(`/presets/${presetId}/share-stats`);
+      const platforms = stats.platforms || {};
+      openModal(`
+        <h2><i class="fas fa-chart-pie"></i> Share Analytics</h2>
+        <div class="stats-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:16px 0">
+          <div class="stat-item" style="background:var(--input-bg);padding:14px;border-radius:12px;text-align:center">
+            <div style="font-size:2rem;font-weight:700">${stats.totalShares || 0}</div>
+            <div style="font-size:0.8rem;color:var(--muted)">Total Shares</div>
+          </div>
+          <div class="stat-item" style="background:var(--input-bg);padding:14px;border-radius:12px;text-align:center">
+            <div style="font-size:2rem;font-weight:700">${stats.uniqueSharers || 0}</div>
+            <div style="font-size:0.8rem;color:var(--muted)">Unique Sharers</div>
+          </div>
+        </div>
+        <h3 style="margin-top:20px">By Platform</h3>
+        ${Object.keys(platforms).length === 0
+          ? '<p>No shares yet.</p>'
+          : `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+              ${Object.entries(platforms).map(([p, c]) => `
+                <div style="background:var(--input-bg);padding:10px;border-radius:10px;text-align:center">
+                  <div style="font-size:1.3rem;font-weight:700">${c}</div>
+                  <div style="font-size:0.75rem;color:var(--muted);text-transform:capitalize">${esc(p)}</div>
+                </div>
+              `).join('')}
+            </div>`}
+        <h3 style="margin-top:20px">Recent Shares</h3>
+        ${(stats.recent || []).length === 0
+          ? '<p>No recent shares.</p>'
+          : `<div>${stats.recent.map(s => `<div style="padding:8px 0;border-bottom:1px solid var(--border)"><b>${esc(s.userName)}</b> on ${esc(s.platform)}<small style="display:block;color:var(--muted);font-size:0.75rem">${new Date(s.sharedAt).toLocaleString()}</small></div>`).join('')}</div>`}
+      `);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ PROFILE ============
   async function showProfile(id) {
     try {
-      const u=await api(`/users/${encodeURIComponent(id)}`);
-      const presets=await api(`/users/${encodeURIComponent(id)}/presets`);
-      let following=false;
-      if(state.user && state.user.id!==u.id){
-        try { following=(await api(`/users/${encodeURIComponent(id)}/follow-status`)).following; } catch(_){}
+      const u = await api(`/users/${encodeURIComponent(id)}`);
+      const presets = await api(`/users/${encodeURIComponent(id)}/presets`);
+      let following = false;
+      if (state.user && state.user.id !== u.id) {
+        try { following = (await api(`/users/${encodeURIComponent(id)}/follow-status`)).following; } catch (_) {}
       }
       openModal(`
         <div class="profile-view">
           <div class="profile-head">
-            <div class="profile-avatar">${u.avatar?`<img src="${esc(u.avatar)}" alt="">`:esc((u.name||'U').charAt(0).toUpperCase())}</div>
-            <div><h2>${esc(u.name||u.username||'Creator')}</h2><p>@${esc(u.username||'creator')}</p><p>${esc(u.bio||'')}</p></div>
-            ${state.user && state.user.id!==u.id ? `<button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}">${following?'Following':'Follow'}</button>`:''}
+            <div class="profile-avatar">${u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : esc((u.name || 'U').charAt(0).toUpperCase())}</div>
+            <div><h2>${esc(u.name || u.username || 'Creator')}</h2><p>@${esc(u.username || 'creator')}</p><p>${esc(u.bio || '')}</p></div>
+            ${state.user && state.user.id !== u.id ? `<button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}">${following ? 'Following' : 'Follow'}</button>` : ''}
           </div>
-          <div class="profile-stats"><b>${u.totalPresets||0}<span>Presets</span></b><b>${u.totalDownloads||0}<span>Downloads</span></b><b>${u.followers||0}<span>Followers</span></b></div>
-          <div class="social-row">${Object.entries(u.socialLinks||{}).filter(([,v])=>v).map(([k,v])=>`<a class="social-icon" href="${esc(v)}" target="_blank" rel="noopener">${esc(k)}</a>`).join('')}</div>
-          <h3>Presets</h3><div class="mini-preset-grid">${(presets||[]).map(presetCard).join('')||'<p>No presets yet.</p>'}</div>
+          <div class="profile-stats"><b>${u.totalPresets || 0}<span>Presets</span></b><b>${u.totalDownloads || 0}<span>Downloads</span></b><b>${u.followers || 0}<span>Followers</span></b></div>
+          <div class="social-row">${Object.entries(u.socialLinks || {}).filter(([, v]) => v).map(([k, v]) => `<a class="social-icon" href="${esc(safeExternal(v))}" target="_blank" rel="noopener">${esc(k)}</a>`).join('')}</div>
+          <h3>Presets</h3><div class="mini-preset-grid">${(presets || []).map(presetCard).join('') || '<p>No presets yet.</p>'}</div>
         </div>`);
-    } catch(e){toast(e.message,'error');}
+    } catch (e) { toast(e.message, 'error'); }
   }
 
-  function openAuth(mode='login', after=null) {
+  // ============ AUTH ============
+  function openAuth(mode = 'login', after = null) {
     openModal(`
       <div class="auth-box">
-        <h2>${mode==='login'?'Welcome back':'Create your PresetHub account'}</h2>
+        <h2>${mode === 'login' ? 'Welcome back' : 'Create your PresetHub account'}</h2>
         <form id="authForm" data-mode="${mode}">
-          ${mode==='signup'?'<div class="form-group"><label>Name</label><input name="name" maxlength="50" required></div><div class="form-group"><label>Username</label><input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" required></div>':''}
+          ${mode === 'signup' ? '<div class="form-group"><label>Name</label><input name="name" maxlength="50" required></div><div class="form-group"><label>Username</label><input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" required></div>' : ''}
           <div class="form-group"><label>Email</label><input type="email" name="email" required autocomplete="email"></div>
-          <div class="form-group"><label>Password</label><input type="password" name="password" minlength="8" required autocomplete="${mode==='login'?'current-password':'new-password'}"></div>
-          ${mode==='signup'?'<small>Use at least 8 characters with upper/lowercase and a number.</small>':''}
-          <button class="btn btn-primary" type="submit">${mode==='login'?'Log in':'Sign up'}</button>
+          <div class="form-group"><label>Password</label><input type="password" name="password" minlength="8" required autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}"></div>
+          ${mode === 'signup' ? '<small>At least 8 characters with upper/lowercase and a number.</small>' : ''}
+          <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
         </form>
-        <button class="text-button" data-action="switch-auth" data-mode="${mode==='login'?'signup':'login'}">${mode==='login'?'Create account':'Already have an account? Log in'}</button>
+        <button class="text-button" data-action="switch-auth" data-mode="${mode === 'login' ? 'signup' : 'login'}">${mode === 'login' ? 'Create account' : 'Already have an account? Log in'}</button>
       </div>`);
   }
 
   async function submitAuth(form) {
-    const mode=form.dataset.mode, data=Object.fromEntries(new FormData(form).entries());
+    const mode = form.dataset.mode;
+    const data = Object.fromEntries(new FormData(form).entries());
     try {
-      const r=await api(`/auth/${mode}`,{method:'POST',body:JSON.stringify(data)});
-      state.token=r.token; state.user=r.user;
-      localStorage.setItem('presethub_token',state.token);
-      updateAuthUI(); closeModal(); toast(mode==='login'?'Logged in':'Account created');
-      await loadPresets(); 
-    } catch(e){toast(e.message,'error');}
+      const r = await api(`/auth/${mode}`, { method: 'POST', body: JSON.stringify(data) });
+      state.token = r.token; state.user = r.user;
+      localStorage.setItem('presethub_token', state.token);
+      updateAuthUI(); closeModal();
+      toast(mode === 'login' ? 'Logged in' : 'Account created');
+      await loadPresets();
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   async function openAccount() {
     if (!requireAuth()) return;
-    const u=await api('/auth/me');
-    state.user=u.user;
-    openModal(`
-      <div class="account-panel">
-        <h2>My Account</h2>
-        <div class="account-actions">
-          <button class="btn btn-outline" data-action="my-profile">Profile</button>
-          <button class="btn btn-outline" data-action="wishlist-page">Wishlist</button>
-          <button class="btn btn-outline" data-action="downloads">Downloads</button>
-          <button class="btn btn-outline" data-action="notifications">Notifications</button>
-          <button class="btn btn-accent" data-action="upload">Upload Preset</button>
-          <button class="btn btn-danger" data-action="logout">Log out</button>
-        </div>
-        <form id="profileForm">
-          <div class="form-group"><label>Name</label><input name="name" value="${esc(u.user.name||'')}" maxlength="50"></div>
-          <div class="form-group"><label>Username</label><input name="username" value="${esc(u.user.username||'')}" minlength="3" maxlength="30"></div>
-          <div class="form-group"><label>Bio</label><textarea name="bio" maxlength="500">${esc(u.user.bio||'')}</textarea></div>
-          <button class="btn btn-primary">Save profile</button>
-        </form>
-      </div>`);
+    try {
+      const [u, d] = await Promise.all([api('/auth/me'), api('/users/me/dashboard')]);
+      state.user = u.user;
+      const s = d.stats || {};
+      openModal(`
+        <div class="account-panel">
+          <div class="dashboard-head"><div><h2>Professional Dashboard</h2><p>@${esc(d.user.username || d.user.name || 'creator')}</p></div><button class="btn btn-accent" data-action="upload">Upload</button></div>
+          <div class="dashboard-stats">
+            <div><b>${s.views || 0}</b><span>Views</span></div><div><b>${s.downloads || 0}</b><span>Downloads</span></div><div><b>${s.likes || 0}</b><span>Likes</span></div><div><b>${d.followers || 0}</b><span>Followers</span></div><div><b>${d.unreadNotifications || 0}</b><span>Unread</span></div>
+          </div>
+          <div class="account-actions">
+            <button class="btn btn-outline" data-action="my-profile">Profile</button><button class="btn btn-outline" data-action="wishlist-page">Wishlist</button><button class="btn btn-outline" data-action="downloads">Downloads</button><button class="btn btn-outline" data-action="notifications">Notifications</button><button class="btn btn-outline" data-action="my-shares">Share Links</button><button class="btn btn-danger" data-action="logout">Log out</button>
+          </div>
+          <h3>Your presets</h3><div class="dashboard-preset-list">${(d.presets || []).map(p => `<div class="dashboard-row"><div>${p.previewImage ? `<img src="${esc(p.previewImage)}" alt="">` : '<div class="preview-fallback">✦</div>'}</div><div><b>${esc(p.name)}</b><small>${esc(p.status)} · ${p.views || 0} views · ${p.downloads || 0} downloads</small></div><button class="btn btn-outline btn-sm" data-action="view-preset" data-id="${esc(p.id)}">View</button></div>`).join('') || '<p>No uploads yet.</p>'}</div>
+          <hr>
+          <form id="profileForm">
+            <div class="form-group"><label>Name</label><input name="name" value="${esc(u.user.name || '')}" maxlength="50"></div>
+            <div class="form-group"><label>Username</label><input name="username" value="${esc(u.user.username || '')}" minlength="3" maxlength="30"></div>
+            <div class="form-group"><label>Bio</label><textarea name="bio" maxlength="500">${esc(u.user.bio || '')}</textarea></div>
+            <button class="btn btn-primary">Save profile</button>
+          </form>
+        </div>`);
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  // ============ WISHLIST (BATCH) ============
   async function showWishlist() {
     if (!requireAuth()) return;
     try {
-      const u=await api('/auth/me');
-      const ids=u.user.wishlist||[];
-      const list=[];
-      for(const id of ids){ try{ list.push(await api(`/presets/${id}`)); }catch(_){} }
-      openModal(`<h2>My Wishlist</h2><div class="mini-preset-grid">${list.map(presetCard).join('')||'<p>Your wishlist is empty.</p>'}</div>`);
-    } catch(e){toast(e.message,'error');}
+      const list = await api('/users/me/wishlist/presets');
+      openModal(`<h2>My Wishlist</h2><div class="mini-preset-grid">${list.map(presetCard).join('') || '<p>Your wishlist is empty.</p>'}</div>`);
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   async function showDownloads() {
     if (!requireAuth()) return;
     try {
-      const list=await api('/users/me/downloads');
-      openModal(`<h2>My Downloads</h2><div class="mini-preset-grid">${(list||[]).map(presetCard).join('')||'<p>No downloads yet.</p>'}</div>`);
-    } catch(e){toast(e.message,'error');}
+      const list = await api('/users/me/downloads');
+      openModal(`<h2>My Downloads</h2><div class="mini-preset-grid">${(list || []).map(presetCard).join('') || '<p>No downloads yet.</p>'}</div>`);
+    } catch (e) { toast(e.message, 'error'); }
   }
 
   async function showNotifications() {
     if (!requireAuth()) return;
     try {
-      const list=await api('/users/me/notifications');
-      openModal(`<h2>Notifications</h2><div class="notification-list">${(list||[]).map(n=>`<div class="notification ${n.read?'':'unread'}"><b>${esc(n.type)}</b><p>${esc(n.message)}</p><small>${new Date(n.createdAt).toLocaleString()}</small></div>`).join('')||'<p>No notifications.</p>'}<button class="btn btn-outline" data-action="read-notifications">Mark all read</button></div>`);
-    } catch(e){toast(e.message,'error');}
+      const list = await api('/users/me/notifications');
+      openModal(`<h2>Notifications</h2><div class="notification-list">${(list || []).map(n => `<div class="notification ${n.read ? '' : 'unread'}"><b>${esc(n.type)}</b><p>${esc(n.message)}</p><small>${new Date(n.createdAt).toLocaleString()}</small></div>`).join('') || '<p>No notifications.</p>'}<button class="btn btn-outline" data-action="read-notifications">Mark all read</button></div>`);
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  // ============ UPLOAD (SINGLE + BULK TABS) ============
   function openUpload() {
     if (!requireAuth()) return;
     openModal(`
       <div class="upload-panel">
-        <h2>Upload your preset</h2>
-        <p>Accepted: .xmp, .dng, .lrtemplate. Max 50MB.</p>
-        <form id="uploadForm" enctype="multipart/form-data">
+        <h2>Upload Presets</h2>
+        <div class="upload-tabs">
+          <button class="upload-tab active" data-upload-tab="single">📄 Single Upload</button>
+          <button class="upload-tab" data-upload-tab="bulk">📦 Bulk Upload (max 20)</button>
+        </div>
+
+        <form id="uploadForm" enctype="multipart/form-data" data-tab="single">
+          <p style="color:var(--muted);font-size:0.85rem;margin-bottom:14px">Accepted: .xmp, .dng, .lrtemplate. Max 50MB each.</p>
           <div class="form-group"><label>Preset name</label><input name="name" required maxlength="100"></div>
           <div class="form-group"><label>Description</label><textarea name="description" maxlength="500"></textarea></div>
           <div class="form-group"><label>Category</label><input name="category" maxlength="50" placeholder="Natural, Vintage…"></div>
@@ -406,147 +623,338 @@
           <div class="form-group"><label>Preview image</label><input name="previewImage" type="file" accept="image/png,image/jpeg,image/webp"></div>
           <button class="btn btn-accent" type="submit">Submit for review</button>
         </form>
+
+        <form id="bulkUploadForm" enctype="multipart/form-data" data-tab="bulk" hidden>
+          <div class="bulk-hint">
+            <strong>💡 Tip:</strong> Preview images pair by matching filename.<br>
+            Example: <code>Sunset.xmp</code> + <code>Sunset.jpg</code> → 1 preset. If no name match, previews pair by order.
+          </div>
+          <div class="form-group">
+            <label>Preset files (up to 20)</label>
+            <input name="files" type="file" accept=".xmp,.dng,.lrtemplate" multiple required>
+          </div>
+          <div class="form-group">
+            <label>Preview images (optional, pair by name)</label>
+            <input name="previewImages" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+          </div>
+          <div class="form-group"><label>Category (applies to all)</label><input name="category" maxlength="50" placeholder="General" value="General"></div>
+          <div class="form-group"><label>Tags (applies to all, comma-separated)</label><input name="tags" maxlength="300" placeholder="portrait, warm, mobile"></div>
+          <div class="form-group"><label>Price (INR, applies to all)</label><input name="price" type="number" min="0" max="999999.99" step="0.01" value="0"></div>
+          <div class="form-group"><label>Description (applies to all, optional)</label><textarea name="description" maxlength="500" placeholder="Common description (preset name used if empty)"></textarea></div>
+          <button class="btn btn-accent" type="submit">Upload All for Review</button>
+        </form>
       </div>`);
   }
 
   async function submitUpload(form) {
-    const fd=new FormData(form);
-    const tags=String(fd.get('tags')||'').split(',').map(x=>x.trim()).filter(Boolean).slice(0,10);
-    fd.delete('tags'); tags.forEach(t=>fd.append('tags',t));
+    const fd = new FormData(form);
+    const tags = String(fd.get('tags') || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 10);
+    fd.delete('tags');
+    tags.forEach(t => fd.append('tags', t));
     try {
-      const r=await api('/presets',{method:'POST',body:fd});
-      closeModal(); toast('Preset uploaded and sent for admin approval'); 
+      const r = await api('/presets', { method: 'POST', body: fd });
+      closeModal();
+      toast('Preset uploaded and sent for admin approval');
       loadPresets();
-      location.hash=`preset-${r.id}`;
-    } catch(e){toast(e.message,'error');}
+      location.hash = `preset-${r.id}`;
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  async function submitBulkUpload(form) {
+    const fd = new FormData(form);
+    const files = fd.getAll('files');
+    if (!files.length) return toast('Select at least one preset file', 'error');
+    if (files.length > 20) return toast('Max 20 presets per bulk upload', 'error');
+
+    const btn = form.querySelector('button[type="submit"]');
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = `Uploading ${files.length} preset(s)…`;
+
+    try {
+      const r = await api('/presets/bulk', { method: 'POST', body: fd });
+      closeModal();
+      toast(`✅ ${r.created} preset(s) uploaded for review${r.failed ? `, ${r.failed} failed` : ''}`);
+      loadPresets();
+      if (r.failed > 0 && r.errors) {
+        console.warn('Bulk upload errors:', r.errors);
+      }
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  }
+
+  function updateSelectionUI() {
+    const toolbar = $('#bulkToolbar');
+    const count = $('#selectedCount');
+    if (toolbar) toolbar.hidden = state.selected.size === 0;
+    if (count) count.textContent = state.selected.size;
+  }
+
+  async function bulkDownload() {
+    if (!requireAuth()) return;
+    const ids = [...state.selected];
+    if (!ids.length) return toast('Select presets first', 'error');
+    try {
+      const r = await api('/presets/bulk-download', { method: 'POST', body: JSON.stringify({ ids }) });
+      if (r.skipped?.length) toast(`${r.skipped.length} item(s) skipped because purchase/file access is required`, 'info');
+      r.downloads.forEach((d, i) => setTimeout(() => {
+        const a = document.createElement('a'); a.href = d.url; a.download = d.filename; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
+      }, i * 450));
+      state.selected.clear(); updateSelectionUI(); loadPresets(false); toast(`Starting ${r.count} download(s)…`);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ FOLLOW ============
   async function follow(id) {
     if (!requireAuth()) return;
-    try { const r=await api(`/users/${id}/follow`,{method:'POST'}); toast(r.following?'Followed':'Unfollowed'); showProfile(id); }
-    catch(e){toast(e.message,'error');}
+    try {
+      const r = await api(`/users/${id}/follow`, { method: 'POST' });
+      toast(r.following ? 'Followed' : 'Unfollowed');
+      showProfile(id);
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  async function submitComment(form) {
+    try { await api(`/comments/${form.dataset.preset}`, { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) }); toast('Comment added'); showPreset(form.dataset.preset); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function likeComment(presetId, commentId) {
+    if (!requireAuth()) return;
+    try { await api(`/comments/${presetId}/${commentId}/like`, { method: 'POST' }); showPreset(presetId); } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ REVIEW ============
   async function submitReview(form) {
     try {
-      await api(`/reviews/${form.dataset.preset}`,{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form).entries()))});
-      toast('Review added'); showPreset(form.dataset.preset);
-    } catch(e){toast(e.message,'error');}
+      await api(`/reviews/${form.dataset.preset}`, {
+        method: 'POST',
+        body: JSON.stringify(Object.fromEntries(new FormData(form).entries()))
+      });
+      toast('Review added');
+      showPreset(form.dataset.preset);
+    } catch (e) { toast(e.message, 'error'); }
   }
 
+  // ============ SEARCH HELPERS ============
   function googleSearch(q) {
-    q=String(q||'').trim();
+    q = String(q || '').trim();
     if (!q) return;
-    const url=`https://www.google.com/search?q=${encodeURIComponent(`site:presethub.site ${q} Lightroom preset`)}`;
-    window.open(url,'_blank','noopener');
+    const url = `https://www.google.com/search?q=${encodeURIComponent(`site:presethub.site ${q} Lightroom preset`)}`;
+    window.open(url, '_blank', 'noopener');
   }
 
   async function suggestions(q) {
-    const box=$('#searchSuggestions');
-    if(!box) return;
-    if(q.length<2){box.hidden=true;return;}
+    const box = $('#searchSuggestions');
+    if (!box) return;
+    if (q.length < 2) { box.hidden = true; return; }
     try {
-      const r=await api(`/presets/search?q=${encodeURIComponent(q)}`);
-      const rows=(r||[]).slice(0,7).map(p=>`<button class="suggestion-item" data-action="view-preset" data-id="${esc(p.id)}"><strong>${esc(p.name)}</strong><small> ${esc(p.author||'')}</small></button>`);
+      const r = await api(`/presets/search?q=${encodeURIComponent(q)}`);
+      const rows = (r || []).slice(0, 7).map(p => `<button class="suggestion-item" data-action="view-preset" data-id="${esc(p.id)}"><strong>${esc(p.name)}</strong><small> ${esc(p.author || '')}</small></button>`);
       rows.push(`<button class="suggestion-item google-suggestion" data-action="google-search" data-query="${esc(q)}"><strong>🔎 Google पर खोजें</strong><small>site:presethub.site</small></button>`);
-      box.innerHTML=rows.join(''); box.hidden=false;
-    } catch(_){ box.innerHTML=`<button class="suggestion-item" data-action="google-search" data-query="${esc(q)}"><strong>🔎 Google पर खोजें</strong></button>`; box.hidden=false; }
+      box.innerHTML = rows.join('');
+      box.hidden = false;
+    } catch (_) {
+      box.innerHTML = `<button class="suggestion-item" data-action="google-search" data-query="${esc(q)}"><strong>🔎 Google पर खोजें</strong></button>`;
+      box.hidden = false;
+    }
   }
 
+  // ============ PWA ============
   function installPWA() {
     if (state.installPrompt) {
       state.installPrompt.prompt();
-      state.installPrompt.userChoice.finally(()=>{state.installPrompt=null;});
+      state.installPrompt.userChoice.finally(() => { state.installPrompt = null; });
     } else {
       toast('Browser menu → Add to Home screen / Install app', 'info');
     }
   }
 
   function registerSW() {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
-    window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.installPrompt=e;});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); state.installPrompt = e; });
   }
 
+  // ============ BOOTSTRAP ============
   async function bootstrap() {
-    const savedTheme=localStorage.getItem('presethub_theme');
-    if(savedTheme==='dark') document.body.classList.add('dark');
+    const savedTheme = localStorage.getItem('presethub_theme');
+    if (savedTheme === 'dark') document.body.classList.add('dark');
     registerSW();
-    if(state.token){
-      try { const r=await api('/auth/me'); state.user=r.user; } catch(_){}
+
+    if (state.token) {
+      try { const r = await api('/auth/me'); state.user = r.user; } catch (_) {}
     }
     updateAuthUI();
-    await Promise.all([loadPresets(),loadCategories(),loadCreators()]);
-    const params=new URLSearchParams(location.search);
-    if(params.get('q')){
-      state.query=params.get('q').trim();
-      const input=$('#searchInput'); if(input) input.value=state.query;
+
+    await Promise.all([loadPresets(), loadCategories(), loadCreators()]);
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('q')) {
+      state.query = params.get('q').trim();
+      const input = $('#searchInput'); if (input) input.value = state.query;
       await loadPresets();
     }
-    if(params.get('action')==='search') $('#searchInput')?.focus();
-    if(params.get('action')==='wishlist') showWishlist();
-    if(params.get('action')==='upload') openUpload();
-    if(params.get('action')==='profile') openAccount();
+    if (params.get('action') === 'search') $('#searchInput')?.focus();
+    if (params.get('action') === 'wishlist') showWishlist();
+    if (params.get('action') === 'upload') openUpload();
+    if (params.get('action') === 'profile') openAccount();
   }
 
-  document.addEventListener('click', async e=>{
-    const el=e.target.closest('[data-action]');
-    if(!el) return;
-    const action=el.dataset.action;
-    if(action==='close'){closeModal();return;}
-    if(action==='login'){openAuth('login');return;}
-    if(action==='signup'){openAuth('signup');return;}
-    if(action==='account'){openAccount();return;}
-    if(action==='logout'){state.token='';state.user=null;localStorage.removeItem('presethub_token');updateAuthUI();closeModal();toast('Logged out');return;}
-    if(action==='upload'){openUpload();return;}
-    if(action==='wishlist'||action==='wishlist-page'){action==='wishlist'?toggleWishlist(el.dataset.id):showWishlist();return;}
-    if(action==='downloads'){showDownloads();return;}
-    if(action==='notifications'){showNotifications();return;}
-    if(action==='read-notifications'){if(requireAuth()){await api('/users/notifications/read-all',{method:'POST'});showNotifications();}return;}
-    if(action==='my-profile'){showProfile(state.user.id);return;}
-    if(action==='view-preset'){showPreset(el.dataset.id);return;}
-    if(action==='download'){downloadPreset(el.dataset.id);return;}
-    if(action==='like'){likePreset(el.dataset.id);return;}
-    if(action==='share'){sharePreset(el.dataset.id);return;}
-    if(action==='profile'){showProfile(el.dataset.id);return;}
-    if(action==='follow'){follow(el.dataset.id);return;}
-    if(action==='switch-auth'){openAuth(el.dataset.mode);return;}
-    if(action==='google-search'){googleSearch(el.dataset.query);return;}
-    if(action==='retry'){loadPresets();return;}
-    if(action==='category'){state.query='';state.category=el.dataset.category;loadPresets();return;}
-    if(action==='install'){installPWA();return;}
-    if(action==='theme'){
+  // ============ GLOBAL CLICK HANDLER ============
+  document.addEventListener('click', async e => {
+    // Upload tab switching
+    if (e.target.dataset.uploadTab) {
+      const tab = e.target.dataset.uploadTab;
+      document.querySelectorAll('.upload-tab').forEach(t => t.classList.toggle('active', t.dataset.uploadTab === tab));
+      document.querySelectorAll('form[data-tab]').forEach(f => { f.hidden = f.dataset.tab !== tab; });
+      return;
+    }
+
+    // Share platform click
+    if (e.target.closest('[data-share-platform]')) {
+      const btn = e.target.closest('[data-share-platform]');
+      const platform = btn.dataset.sharePlatform;
+      const ok = openSharePlatform(platform, btn.dataset.url, btn.dataset.text, btn.dataset.title);
+      if (ok && state.currentPreset) trackShare(state.currentPreset.id, platform);
+      return;
+    }
+
+    // Share copy
+    if (e.target.closest('[data-share-copy]')) {
+      const btn = e.target.closest('[data-share-copy]');
+      navigator.clipboard.writeText(btn.dataset.shareCopy)
+        .then(() => toast('Link copied!'))
+        .catch(() => toast('Copy failed', 'error'));
+      return;
+    }
+
+    // Share copy image + link
+    if (e.target.closest('[data-share-copy-image]')) {
+      const btn = e.target.closest('[data-share-copy-image]');
+      const text = `${btn.dataset.shareCopyUrl}\n${btn.dataset.shareCopyImage}`;
+      navigator.clipboard.writeText(text)
+        .then(() => toast('Link + image URL copied!'))
+        .catch(() => toast('Copy failed', 'error'));
+      return;
+    }
+
+    // data-action buttons
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+
+    if (action === 'close') { closeModal(); return; }
+    if (action === 'login') { openAuth('login'); return; }
+    if (action === 'signup') { openAuth('signup'); return; }
+    if (action === 'account') { openAccount(); return; }
+    if (action === 'logout') {
+      state.token = ''; state.user = null;
+      localStorage.removeItem('presethub_token');
+      updateAuthUI(); closeModal(); toast('Logged out');
+      return;
+    }
+    if (action === 'upload') { openUpload(); return; }
+    if (action === 'wishlist' || action === 'wishlist-page') {
+      action === 'wishlist' ? toggleWishlist(el.dataset.id) : showWishlist();
+      return;
+    }
+    if (action === 'downloads') { showDownloads(); return; }
+    if (action === 'notifications') { showNotifications(); return; }
+    if (action === 'read-notifications') {
+      if (requireAuth()) {
+        await api('/users/notifications/read-all', { method: 'POST' });
+        showNotifications();
+      }
+      return;
+    }
+    if (action === 'my-profile') { showProfile(state.user.id); return; }
+    if (action === 'my-shares') { showMyShares(); return; }
+    if (action === 'select-preset') {
+      const id = String(el.dataset.id);
+      if (el.checked) state.selected.add(id); else state.selected.delete(id);
+      updateSelectionUI(); return;
+    }
+    if (action === 'bulk-download') { bulkDownload(); return; }
+    if (action === 'clear-selection') { state.selected.clear(); $$('#presetGrid input[data-action=\"select-preset\"]').forEach(x => x.checked = false); updateSelectionUI(); return; }
+    if (action === 'comment-like') { likeComment(el.dataset.preset, el.dataset.comment); return; }
+    if (action === 'view-preset') { showPreset(el.dataset.id); return; }
+    if (action === 'download') { downloadPreset(el.dataset.id); return; }
+    if (action === 'like') { likePreset(el.dataset.id); return; }
+    if (action === 'share') { sharePreset(el.dataset.id); return; }
+    if (action === 'share-stats') { showShareStats(el.dataset.id); return; }
+    if (action === 'profile') { showProfile(el.dataset.id); return; }
+    if (action === 'follow') { follow(el.dataset.id); return; }
+    if (action === 'switch-auth') { openAuth(el.dataset.mode); return; }
+    if (action === 'google-search') { googleSearch(el.dataset.query); return; }
+    if (action === 'retry') { loadPresets(); return; }
+    if (action === 'category') {
+      state.query = ''; state.category = el.dataset.category;
+      loadPresets();
+      return;
+    }
+    if (action === 'install') { installPWA(); return; }
+    if (action === 'theme') {
       document.body.classList.toggle('dark');
-      localStorage.setItem('presethub_theme',document.body.classList.contains('dark')?'dark':'light');
-      const icon=el.querySelector('i'); if(icon) icon.className=document.body.classList.contains('dark')?'fas fa-sun':'fas fa-moon';
+      localStorage.setItem('presethub_theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+      const icon = el.querySelector('i');
+      if (icon) icon.className = document.body.classList.contains('dark') ? 'fas fa-sun' : 'fas fa-moon';
       return;
     }
   });
 
-  document.addEventListener('submit', async e=>{
-    if(e.target.id==='searchForm'){
-      e.preventDefault(); state.query=$('#searchInput')?.value.trim()||''; $('#searchSuggestions')?.setAttribute('hidden',''); loadPresets(); return;
-    }
-    if(e.target.id==='authForm'){e.preventDefault();submitAuth(e.target);return;}
-    if(e.target.id==='uploadForm'){e.preventDefault();submitUpload(e.target);return;}
-    if(e.target.id==='profileForm'){
-      e.preventDefault(); if(!requireAuth()) return;
-      try { const r=await api('/auth/profile',{method:'PUT',body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))}); state.user=r.user;updateAuthUI();toast('Profile updated'); }
-      catch(err){toast(err.message,'error');}
+  // ============ GLOBAL SUBMIT HANDLER ============
+  document.addEventListener('submit', async e => {
+    if (e.target.id === 'searchForm') {
+      e.preventDefault();
+      state.query = $('#searchInput')?.value.trim() || '';
+      state.category = '';
+      $('#searchSuggestions')?.setAttribute('hidden', '');
+      loadPresets();
       return;
     }
-    if(e.target.id==='reviewForm'){e.preventDefault();submitReview(e.target);return;}
+    if (e.target.id === 'authForm') { e.preventDefault(); submitAuth(e.target); return; }
+    if (e.target.id === 'uploadForm') { e.preventDefault(); submitUpload(e.target); return; }
+    if (e.target.id === 'bulkUploadForm') { e.preventDefault(); submitBulkUpload(e.target); return; }
+    if (e.target.id === 'profileForm') {
+      e.preventDefault();
+      if (!requireAuth()) return;
+      try {
+        const r = await api('/auth/profile', {
+          method: 'PUT',
+          body: JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))
+        });
+        state.user = r.user;
+        updateAuthUI();
+        toast('Profile updated');
+      } catch (err) { toast(err.message, 'error'); }
+      return;
+    }
+    if (e.target.id === 'reviewForm') { e.preventDefault(); submitReview(e.target); return; }
+    if (e.target.id === 'commentForm') { e.preventDefault(); submitComment(e.target); return; }
   });
 
-  $('#searchInput')?.addEventListener('input', e=>{
+  // ============ SEARCH INPUT ============
+  $('#searchInput')?.addEventListener('input', e => {
     clearTimeout(state.searchTimer);
-    state.searchTimer=setTimeout(()=>suggestions(e.target.value.trim()),220);
+    state.searchTimer = setTimeout(() => suggestions(e.target.value.trim()), 220);
   });
-  document.addEventListener('click',e=>{if(!e.target.closest('.nav-search')){$('#searchSuggestions')?.setAttribute('hidden','');}});
-  $('#priceFilter')?.addEventListener('change',e=>{state.price=e.target.value;loadPresets();});
-  $('#sortFilter')?.addEventListener('change',e=>{state.sort=e.target.value;loadPresets();});
-  $('#overlay')?.addEventListener('click',e=>{if(e.target.id==='overlay')closeModal();});
-  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.nav-search')) $('#searchSuggestions')?.setAttribute('hidden', '');
+  });
 
-  window.PresetHub={showPreset,showProfile,openUpload,openAuth,installPWA};
-  window.addEventListener('DOMContentLoaded',bootstrap);
+  // ============ FILTERS ============
+  $('#priceFilter')?.addEventListener('change', e => { state.price = e.target.value; loadPresets(); });
+  $('#sortFilter')?.addEventListener('change', e => { state.sort = e.target.value; loadPresets(); });
+
+  // ============ MODAL CLOSE ============
+  $('#overlay')?.addEventListener('click', e => { if (e.target.id === 'overlay') closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  // ============ EXPORTS ============
+  window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats };
+  window.addEventListener('DOMContentLoaded', bootstrap);
 })();
