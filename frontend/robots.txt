@@ -2,4 +2,6 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /admin
+Disallow: /admin.html
+Disallow: /uploads/
 Sitemap: https://presethub.site/sitemap.xml

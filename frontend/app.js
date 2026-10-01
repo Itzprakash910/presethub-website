@@ -117,7 +117,7 @@
           </div>
         </div>
         <div class="info">
-          <span class="tag">${esc(p.category || 'General')}</span>
+          <span class="tag">${esc(p.category || 'General')}</span>${p.format ? `<span class="tag">.${esc(p.format)}</span>` : ''}
           <h3>${esc(p.name)}</h3>
           <button class="author-link" data-action="profile" data-id="${esc(p.authorId || '')}">${esc(p.author || 'Creator')}</button>
           <div class="preset-description">${esc(p.description || 'Lightroom preset')}</div>
@@ -613,15 +613,15 @@
         </div>
 
         <form id="uploadForm" enctype="multipart/form-data" data-tab="single">
-          <p style="color:var(--muted);font-size:0.85rem;margin-bottom:14px">Accepted: .xmp, .dng, .lrtemplate. Max 50MB each.</p>
+          <p style="color:var(--muted);font-size:0.85rem;margin-bottom:14px">Accepted: XMP, DNG, LRTEMPLATE, CUBE, 3DL, LOOK, COSTYLE, XML, JSON and ZIP preset packs. Max 75MB each.</p>
           <div class="form-group"><label>Preset name</label><input name="name" required maxlength="100"></div>
           <div class="form-group"><label>Description</label><textarea name="description" maxlength="500"></textarea></div>
           <div class="form-group"><label>Category</label><input name="category" maxlength="50" placeholder="Natural, Vintage…"></div>
           <div class="form-group"><label>Tags</label><input name="tags" maxlength="300" placeholder="portrait, warm, mobile"></div>
           <div class="form-group"><label>Price (INR)</label><input name="price" type="number" min="0" max="999999.99" step="0.01" value="0"></div>
-          <div class="form-group"><label>Preset file</label><input name="file" type="file" accept=".xmp,.dng,.lrtemplate" required></div>
+          <div class="form-group"><label>Preset file</label><input name="file" type="file" accept=".xmp,.dng,.lrtemplate,.cube,.3dl,.look,.costyle,.xml,.json,.zip" required></div>
           <div class="form-group"><label>Preview image</label><input name="previewImage" type="file" accept="image/png,image/jpeg,image/webp"></div>
-          <button class="btn btn-accent" type="submit">Submit for review</button>
+          <button class="btn btn-accent" type="submit">Publish preset</button>
         </form>
 
         <form id="bulkUploadForm" enctype="multipart/form-data" data-tab="bulk" hidden>
@@ -631,7 +631,7 @@
           </div>
           <div class="form-group">
             <label>Preset files (up to 20)</label>
-            <input name="files" type="file" accept=".xmp,.dng,.lrtemplate" multiple required>
+            <input name="files" type="file" accept=".xmp,.dng,.lrtemplate,.cube,.3dl,.look,.costyle,.xml,.json,.zip" multiple required>
           </div>
           <div class="form-group">
             <label>Preview images (optional, pair by name)</label>
@@ -641,7 +641,7 @@
           <div class="form-group"><label>Tags (applies to all, comma-separated)</label><input name="tags" maxlength="300" placeholder="portrait, warm, mobile"></div>
           <div class="form-group"><label>Price (INR, applies to all)</label><input name="price" type="number" min="0" max="999999.99" step="0.01" value="0"></div>
           <div class="form-group"><label>Description (applies to all, optional)</label><textarea name="description" maxlength="500" placeholder="Common description (preset name used if empty)"></textarea></div>
-          <button class="btn btn-accent" type="submit">Upload All for Review</button>
+          <button class="btn btn-accent" type="submit">Publish All Presets</button>
         </form>
       </div>`);
   }
@@ -654,7 +654,7 @@
     try {
       const r = await api('/presets', { method: 'POST', body: fd });
       closeModal();
-      toast('Preset uploaded and sent for admin approval');
+      toast('Preset published successfully');
       loadPresets();
       location.hash = `preset-${r.id}`;
     } catch (e) { toast(e.message, 'error'); }
@@ -674,7 +674,7 @@
     try {
       const r = await api('/presets/bulk', { method: 'POST', body: fd });
       closeModal();
-      toast(`✅ ${r.created} preset(s) uploaded for review${r.failed ? `, ${r.failed} failed` : ''}`);
+      toast(`✅ ${r.created} preset(s) published${r.failed ? `, ${r.failed} failed` : ''}`);
       loadPresets();
       if (r.failed > 0 && r.errors) {
         console.warn('Bulk upload errors:', r.errors);
