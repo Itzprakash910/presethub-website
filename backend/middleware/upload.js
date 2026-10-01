@@ -2,7 +2,7 @@ const multer = require('multer');
 const path = require('path');
 
 const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
-const PRESET_EXTS = ['.xmp', '.dng', '.lrtemplate'];
+const PRESET_EXTS = ['.xmp', '.dng', '.lrtemplate', '.cube', '.3dl', '.look', '.costyle', '.xml', '.json', '.zip'];
 
 const fileFilter = (req, file, cb) => {
   const isImage = ['previewImage', 'previewImages', 'avatar'].includes(file.fieldname);
@@ -12,13 +12,13 @@ const fileFilter = (req, file, cb) => {
     return cb(new Error('Only JPG, JPEG, PNG or WEBP images are allowed'), false);
   }
   if (PRESET_EXTS.includes(ext)) return cb(null, true);
-  return cb(new Error('Only .xmp, .dng and .lrtemplate files are allowed'), false);
+  return cb(new Error('Unsupported preset format. Allowed: XMP, DNG, LRTEMPLATE, CUBE, 3DL, LOOK, COSTYLE, XML, JSON or ZIP preset packs.'), false);
 };
 
 const uploadFields = multer({
   storage: multer.memoryStorage(),
   fileFilter,
-  limits: { fileSize: 50 * 1024 * 1024, files: 2, fields: 20, parts: 25 }
+  limits: { fileSize: 75 * 1024 * 1024, files: 2, fields: 20, parts: 25 }
 }).fields([
   { name: 'file', maxCount: 1 },
   { name: 'previewImage', maxCount: 1 }
@@ -29,7 +29,7 @@ const uploadFields = multer({
 const bulkUploadFields = multer({
   storage: multer.memoryStorage(),
   fileFilter,
-  limits: { fileSize: 25 * 1024 * 1024, files: 40, fields: 30, parts: 80 }
+  limits: { fileSize: 50 * 1024 * 1024, files: 40, fields: 30, parts: 80 }
 }).fields([
   { name: 'files', maxCount: 20 },
   { name: 'previewImages', maxCount: 20 }
