@@ -72,8 +72,13 @@ const PresetSchema = new Schema({
   price: { type: Number, default: 0, min: 0, max: 999999.99 },
   author: { type: String, required: true },
   authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
-  fileUrl: { type: String, default: '' },
+  status: {
+  type: String,
+  enum: ['pending', 'approved', 'rejected'],
+  default: 'approved',
+  index: true
+},
+fileUrl: { type: String, default: '' },
   previewImage: { type: String, default: '' },
   size: { type: Number, default: 0 },
   originalName: { type: String, default: '' },
@@ -112,8 +117,13 @@ const OrderSchema = new Schema({
   presetId: { type: Schema.Types.ObjectId, ref: 'Preset', required: true, index: true },
   amount: { type: Number, required: true },
   currency: { type: String, default: 'INR' },
-  status: { type: String, enum: ['created', 'paid', 'refunded', 'cancelled'], default: 'created', index: true },
-  paymentId: { type: String },
+  status: {
+  type: String,
+  enum: ['pending', 'approved', 'rejected'],
+  default: 'approved',
+  index: true
+},
+paymentId: { type: String },
   paidAt: { type: Date },
 }, { timestamps: true, _id: false });
 
