@@ -165,4 +165,8 @@ const ShortLink = mongoose.model('ShortLink', ShortLinkSchema);
 const ShareClick = mongoose.model('ShareClick', ShareClickSchema);
 const Comment = mongoose.model('Comment', CommentSchema);
 
+module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment }; = mongoose.model('ShortLink', ShortLinkSchema);
+const ShareClick = mongoose.model('ShareClick', ShareClickSchema);
+const Comment = mongoose.model('Comment', CommentSchema);
+
 module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment };
