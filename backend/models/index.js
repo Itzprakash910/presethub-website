@@ -29,7 +29,7 @@ const UserSchema = new Schema({
   followers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   following: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   wishlist: [{ type: Schema.Types.ObjectId, ref: 'Preset' }],
-  notifications: [NotificationSchema],
+  notifications: { type: [NotificationSchema], default: [], validate: v => Array.isArray(v) && v.length <= 200 },
   subscription: {
     tier: { type: String, default: 'free' },
     expiry: { type: Date, default: null },
@@ -72,13 +72,7 @@ const PresetSchema = new Schema({
   price: { type: Number, default: 0, min: 0, max: 999999.99 },
   author: { type: String, required: true },
   authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved', index: true },
-  slug: { type: String, default: '' },
-  presetType: { type: String, default: 'lightroom', index: true },
-  format: { type: String, default: '', index: true },
-  seoTitle: { type: String, default: '' },
-  seoDescription: { type: String, default: '' },
-  seoKeywords: [{ type: String }],
+  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
   fileUrl: { type: String, default: '' },
   previewImage: { type: String, default: '' },
   size: { type: Number, default: 0 },
@@ -98,9 +92,8 @@ const PresetSchema = new Schema({
 PresetSchema.index({ name: 'text', description: 'text', tags: 'text', author: 'text' });
 PresetSchema.index({ createdAt: -1 });
 PresetSchema.index({ downloads: -1 });
-PresetSchema.index({ category: 1, createdAt: -1 });
-PresetSchema.index({ status: 1, updatedAt: -1 });
-PresetSchema.index({ authorId: 1, status: 1, createdAt: -1 });
+PresetSchema.index({ status: 1, createdAt: -1 });
+PresetSchema.index({ status: 1, category: 1, downloads: -1 });
 
 
 // ========== COMMENT ==========
