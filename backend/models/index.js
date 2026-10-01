@@ -20,6 +20,7 @@ const UserSchema = new Schema({
   verified: { type: Boolean, default: true },
   bio: { type: String, default: '', maxlength: 500 },
   avatar: { type: String, default: '' },
+  coverImage: { type: String, default: '' },
   socialLinks: {
     instagram: { type: String, default: '' },
     youtube: { type: String, default: '' },
@@ -74,7 +75,9 @@ const PresetSchema = new Schema({
   authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
   fileUrl: { type: String, default: '' },
+  fileKey: { type: String, default: '' },
   previewImage: { type: String, default: '' },
+  previewKey: { type: String, default: '' },
   size: { type: Number, default: 0 },
   originalName: { type: String, default: '' },
   downloads: { type: Number, default: 0 },
@@ -97,6 +100,16 @@ PresetSchema.index({ status: 1, category: 1, downloads: -1 });
 
 
 // ========== COMMENT ==========
+// ========== DIRECT MESSAGE ==========
+const MessageSchema = new Schema({
+  senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  recipientId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  text: { type: String, required: true, trim: true, maxlength: 2000 },
+  readAt: { type: Date, default: null },
+}, { timestamps: true });
+MessageSchema.index({ senderId: 1, recipientId: 1, createdAt: -1 });
+MessageSchema.index({ recipientId: 1, readAt: 1, createdAt: -1 });
+
 const CommentSchema = new Schema({
   presetId: { type: Schema.Types.ObjectId, ref: 'Preset', required: true, index: true },
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -164,9 +177,6 @@ const Share = mongoose.model('Share', ShareSchema);
 const ShortLink = mongoose.model('ShortLink', ShortLinkSchema);
 const ShareClick = mongoose.model('ShareClick', ShareClickSchema);
 const Comment = mongoose.model('Comment', CommentSchema);
+const Message = mongoose.model('Message', MessageSchema);
 
-module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment }; = mongoose.model('ShortLink', ShortLinkSchema);
-const ShareClick = mongoose.model('ShareClick', ShareClickSchema);
-const Comment = mongoose.model('Comment', CommentSchema);
-
-module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment };
+module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message };
