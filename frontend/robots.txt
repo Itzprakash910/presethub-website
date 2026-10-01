@@ -4,3 +4,4 @@ Disallow: /api/
 Disallow: /admin.html
 Disallow: /uploads/
 Sitemap: https://presethub.site/sitemap.xml
+site/sitemap.xml
