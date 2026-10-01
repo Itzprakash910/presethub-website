@@ -12,13 +12,13 @@ const fileFilter = (req, file, cb) => {
     return cb(new Error('Only JPG, JPEG, PNG or WEBP images are allowed'), false);
   }
   if (PRESET_EXTS.includes(ext)) return cb(null, true);
-  return cb(new Error('Unsupported preset format. Allowed: XMP, DNG, LRTEMPLATE, CUBE, 3DL, LOOK, COSTYLE, XML, JSON or ZIP preset packs.'), false);
+  return cb(new Error('Unsupported preset format. Allowed: XMP, DNG, LRTEMPLATE, CUBE, 3DL, LOOK, COSTYLE, XML, JSON, ZIP.'), false);
 };
 
 const uploadFields = multer({
   storage: multer.memoryStorage(),
   fileFilter,
-  limits: { fileSize: 75 * 1024 * 1024, files: 2, fields: 20, parts: 25 }
+  limits: { fileSize: 100 * 1024 * 1024, files: 2, fields: 20, parts: 25 }
 }).fields([
   { name: 'file', maxCount: 1 },
   { name: 'previewImage', maxCount: 1 }
@@ -29,7 +29,7 @@ const uploadFields = multer({
 const bulkUploadFields = multer({
   storage: multer.memoryStorage(),
   fileFilter,
-  limits: { fileSize: 50 * 1024 * 1024, files: 40, fields: 30, parts: 80 }
+  limits: { fileSize: 100 * 1024 * 1024, files: 40, fields: 30, parts: 80 }
 }).fields([
   { name: 'files', maxCount: 20 },
   { name: 'previewImages', maxCount: 20 }
