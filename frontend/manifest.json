@@ -1,7 +1,7 @@
 {
-  "name": "PresetHub \u2013 Lightroom Presets Marketplace",
+  "name": "PresetHub – Lightroom Presets Marketplace",
   "short_name": "PresetHub",
-  "description": "Discover, preview and download Lightroom presets.",
+  "description": "Discover, preview, download and sell Lightroom presets by creator, category and tags.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -19,56 +19,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
-    }
-  ]
-}"src": "/assets/icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/assets/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Search Presets",
-      "short_name": "Search",
-      "url": "/?action=search",
-      "icons": [
-        {
-          "src": "/assets/icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Wishlist",
-      "short_name": "Wishlist",
-      "url": "/?action=wishlist",
-      "icons": [
-        {
-          "src": "/assets/icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Upload Preset",
-      "short_name": "Upload",
-      "url": "/?action=upload",
-      "icons": [
-        {
-          "src": "/assets/icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
     }
   ]
 }

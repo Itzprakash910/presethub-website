@@ -30,7 +30,7 @@
   const profileUrl = u => `/profile/${encodeURIComponent(u.id)}/${slug(u.username || u.name)}/`;
   const safeExternal = v => /^(https?:\/\/|mailto:)/i.test(String(v || '')) ? String(v) : '#';
   const fallbackPreview = `${location.origin}/assets/images/og-image.png`;
-  const assetUrl = v => { const x = String(v || '').trim(); if (!x) return fallbackPreview; if (/^https?:\/\//i.test(x)) return x; if (x.startsWith('/')) return `${location.origin}${x}`; if (x.startsWith('uploads/')) return `${location.origin}/${x}`; if (/^(previews|presets|avatars)\//i.test(x)) return `${location.origin}/uploads/${x}`; return fallbackPreview; };
+  const assetUrl = v => { const x = String(v || '').trim(); if (!x) return fallbackPreview; if (/^https?:\/\//i.test(x)) return x; if (x.startsWith('/')) return `${location.origin}${x}`; if (x.startsWith('uploads/')) return `${location.origin}/${x}`; if (/^(previews|presets|avatars|covers)\//i.test(x)) return `${location.origin}/uploads/${x}`; return fallbackPreview; };
   const imgTag = (src, alt, cls='') => `<img class="${cls}" src="${esc(assetUrl(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackPreview}'">`;
 
   // ============ API HELPER ============
@@ -40,7 +40,12 @@
     if (!(options.body instanceof FormData) && options.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
-    const res = await fetch(`${API}${path}`, { ...options, headers });
+    let res;
+    try { res = await fetch(`${API}${path}`, { ...options, headers }); }
+    catch (networkError) {
+      if (!location.pathname.endsWith('/status.html')) location.href = '/status.html?error=network';
+      throw new Error('PresetHub server is temporarily unavailable.');
+    }
     let data = {};
     try { data = await res.json(); } catch (_) {}
     if (res.status === 401) {
@@ -48,9 +53,36 @@
       localStorage.removeItem('presethub_token');
       updateAuthUI();
     }
-    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    if (!res.ok) { if (res.status >= 500 && !location.pathname.endsWith('/status.html')) location.href='/status.html?error='+res.status; throw new Error(data.error || `Request failed (${res.status})`); }
     return data;
   }
+
+  async function uploadApi(path, formData, onProgress) {
+    return await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API}${path}`, true);
+      if (state.token) xhr.setRequestHeader('Authorization', `Bearer ${state.token}`);
+      xhr.responseType = 'json';
+      xhr.upload.onprogress = e => { if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100)); };
+      xhr.onerror = () => reject(new Error('Network error. Please check your connection.'));
+      xhr.onload = () => {
+        const data = xhr.response || {};
+        if (xhr.status === 401) { state.user=null; state.token=''; localStorage.removeItem('presethub_token'); updateAuthUI(); }
+        if (xhr.status < 200 || xhr.status >= 300) return reject(new Error(data.error || `Upload failed (${xhr.status})`));
+        resolve(data);
+      };
+      xhr.send(formData);
+    });
+  }
+
+  function progressCard(title='Uploading…') {
+    let el = $('#uploadProgressCard');
+    if (!el) { el=document.createElement('div'); el.id='uploadProgressCard'; el.className='upload-progress-card'; document.body.appendChild(el); }
+    el.innerHTML=`<div class="progress-head"><div class="progress-icon"><i class="fas fa-cloud-arrow-up"></i></div><div><strong>${esc(title)}</strong><span id="uploadProgressText">Preparing…</span></div></div><div class="progress-track"><i id="uploadProgressBar"></i></div>`;
+    return el;
+  }
+  function updateProgress(percent, text) { const bar=$('#uploadProgressBar'), label=$('#uploadProgressText'); if(bar) bar.style.width=`${percent}%`; if(label) label.textContent=text || `${percent}%`; }
+  function finishProgress(success=true, text='Completed') { updateProgress(100,text); const el=$('#uploadProgressCard'); if(el){ el.classList.toggle('success',success); setTimeout(()=>el.remove(),1400); } }
 
   // ============ TOAST ============
   function toast(message, type = 'success') {
@@ -121,7 +153,7 @@
           <span class="tag">${esc(p.category || 'General')}</span>
           <h3>${esc(p.name)}</h3>
           <button class="author-link" data-action="profile" data-id="${esc(p.authorId || '')}">${esc(p.author || 'Creator')}</button>
-          <div class="preset-description">${esc(p.description || 'Lightroom preset')}</div>
+          <div class="preset-description">${esc(p.description || 'Lightroom preset')}</div><div class="card-tags">${(p.tags||[]).slice(0,3).map(t=>`<span>#${esc(t)}</span>`).join('')}</div>
           <div class="meta">
             <span class="price ${Number(p.price || 0) === 0 ? 'free' : ''}">${money(p.price)}</span>
             <span class="rating">★ ${Number(p.avgRating || 0).toFixed(1)} · ${p.downloads || 0} downloads</span>
@@ -137,6 +169,8 @@
       </article>`;
   }
 
+  function presetSkeleton(){ return `<article class="preset-card skeleton-card"><div class="skeleton-thumb shimmer"></div><div class="skeleton-lines"><i></i><i></i><i></i></div></article>`; }
+
   // ============ LOAD PRESETS ============
   async function loadPresets(reset = true) {
     if (reset) state.page = 1;
@@ -145,7 +179,7 @@
     if (state.price) params.set('price', state.price);
     if (state.category) params.set('category', state.category);
     const grid = $('#presetGrid');
-    if (grid && reset) grid.innerHTML = '<div class="skeleton" style="height:280px"></div>'.repeat(4);
+    if (grid && reset) grid.innerHTML = Array.from({length:6}, presetSkeleton).join('');
     try {
       const data = await api(`/presets?${params.toString()}`);
       state.presets = reset ? data.presets : [...state.presets, ...data.presets];
@@ -221,7 +255,7 @@
               <span><i class="fas fa-share-nodes"></i>${p.shares || 0}</span>
             </div>
             <div class="actions">
-              <button class="btn btn-primary" data-action="download" data-id="${esc(p.id)}"><i class="fas fa-download"></i> Download</button>
+              <button class="btn btn-primary" data-action="download" data-id="${esc(p.id)}"><i class="fas fa-download"></i> ${Number(p.price||0)>0?'Buy & Download':'Download'}</button>
               <button class="btn btn-outline" data-action="wishlist" data-id="${esc(p.id)}"><i class="far fa-heart"></i> Wishlist</button>
               <button class="btn btn-outline" data-action="share" data-id="${esc(p.id)}"><i class="fas fa-share-nodes"></i> Share</button>
               <a class="btn btn-outline" href="${presetUrl(p)}">SEO Page</a>
@@ -259,6 +293,7 @@
     let progress;
     try {
       const p = state.currentPreset?.id === id ? state.currentPreset : await api(`/presets/${id}`);
+      if (!confirm(`${Number(p.price||0)>0 && p.authorId!==state.user.id ? `Purchase and download \u201c${p.name}\u201d for ${money(p.price)}?` : `Start download for \u201c${p.name}\u201d?`}`)) return;
       progress = downloadOverlay(p.name);
       if (Number(p.price || 0) > 0 && p.authorId !== state.user.id) return startPayment(p);
       const r = await api(`/presets/${encodeURIComponent(id)}/download`, { method: 'POST' });
@@ -290,7 +325,7 @@
         handler: async response => {
           try {
             await api('/payments/verify', { method: 'POST', body: JSON.stringify(response) });
-            toast('Payment verified. Download now available.');
+            toast('✅ Payment verified. Your preset is now unlocked.');
             downloadPreset(p.id);
           } catch (e) { toast(e.message, 'error'); }
         }
@@ -511,11 +546,11 @@
       const socialMap = { instagram:'fa-instagram', youtube:'fa-youtube', twitter:'fa-x-twitter', website:'fa-globe' };
       openModal(`
         <div class="profile-view professional-profile">
-          <div class="profile-cover"></div>
+          <div class="profile-cover" style="${u.coverImage ? `background-image:url('${esc(assetUrl(u.coverImage))}')` : ''}"></div>
           <div class="profile-head profile-head-pro">
             <div class="profile-avatar">${u.avatar ? imgTag(u.avatar, `${u.name || 'Creator'} avatar`) : esc((u.name || 'U').charAt(0).toUpperCase())}</div>
             <div class="profile-main"><span class="eyebrow">CREATOR PROFILE</span><h2>${esc(u.name || u.username || 'Creator')}</h2><p class="profile-handle">@${esc(u.username || 'creator')}</p><p class="profile-bio">${esc(u.bio || 'Preset creator on PresetHub.')}</p></div>
-            <div class="profile-actions">${state.user && state.user.id !== u.id ? `<button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}"><i class="fas fa-user-plus"></i> ${following ? 'Following' : 'Follow'}</button>` : `<button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button>`}</div>
+            <div class="profile-actions">${state.user && state.user.id !== u.id ? `<div class="profile-action-stack"><button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}"><i class="fas fa-user-plus"></i> ${following ? 'Following' : 'Follow'}</button>${following ? `<button class="btn btn-outline" data-action="message" data-id="${esc(u.id)}"><i class="fas fa-message"></i> Message</button>` : ''}</div>` : `<button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button>`}</div>
           </div>
           <div class="profile-stats"><b>${u.totalPresets || 0}<span>Presets</span></b><b>${u.totalDownloads || 0}<span>Downloads</span></b><b>${u.followers || 0}<span>Followers</span></b><b>${u.following || 0}<span>Following</span></b></div>
           <div class="social-row">${Object.entries(u.socialLinks || {}).filter(([,v]) => safeExternal(v) !== '#').map(([k,v]) => `<a class="social-icon" href="${esc(safeExternal(v))}" target="_blank" rel="noopener noreferrer" aria-label="${esc(k)}"><i class="fab ${socialMap[k] || 'fa-link'}"></i><span>${esc(k)}</span></a>`).join('') || '<span class="muted">No social links added yet.</span>'}</div>
@@ -530,6 +565,7 @@
     const u = state.user;
     openModal(`<div class="profile-edit-panel"><span class="eyebrow">ACCOUNT SETTINGS</span><h2>Edit profile</h2><form id="profileForm">
       <div class="form-grid"><div class="form-group"><label>Name</label><input name="name" value="${esc(u.name || '')}" maxlength="50"></div><div class="form-group"><label>Username</label><input name="username" value="${esc(u.username || '')}" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+"></div></div>
+      <div class="profile-media-grid"><div><label>Profile photo</label><div class="media-preview avatar-preview">${u.avatar ? imgTag(u.avatar,'Profile photo','') : '<i class="fas fa-user"></i>'}</div><input id="profileAvatarFile" type="file" accept="image/jpeg,image/png,image/webp"></div><div><label>Profile poster</label><div class="media-preview cover-preview">${u.coverImage ? imgTag(u.coverImage,'Profile poster','') : '<i class="fas fa-image"></i>'}</div><input id="profileCoverFile" type="file" accept="image/jpeg,image/png,image/webp"></div></div>
       <div class="form-group"><label>Bio</label><textarea name="bio" maxlength="500">${esc(u.bio || '')}</textarea></div>
       <div class="form-grid"><div class="form-group"><label><i class="fab fa-instagram"></i> Instagram</label><input name="instagram" value="${esc(u.socialLinks?.instagram || '')}" placeholder="https://instagram.com/username"></div><div class="form-group"><label><i class="fab fa-youtube"></i> YouTube</label><input name="youtube" value="${esc(u.socialLinks?.youtube || '')}" placeholder="https://youtube.com/@username"></div><div class="form-group"><label><i class="fab fa-x-twitter"></i> X / Twitter</label><input name="twitter" value="${esc(u.socialLinks?.twitter || '')}" placeholder="https://x.com/username"></div><div class="form-group"><label><i class="fas fa-globe"></i> Website</label><input name="website" value="${esc(u.socialLinks?.website || '')}" placeholder="https://example.com"></div></div>
       <button class="btn btn-primary" type="submit"><i class="fas fa-check"></i> Save profile</button></form></div>`);
@@ -574,7 +610,7 @@
         <div class="account-panel professional-dashboard">
           <div class="dashboard-head"><div><span class="eyebrow">CREATOR STUDIO</span><h2>Professional Dashboard</h2><p>@${esc(d.user.username || d.user.name || 'creator')}</p></div><button class="btn btn-accent" data-action="upload"><i class="fas fa-cloud-arrow-up"></i> Upload</button></div>
           <div class="dashboard-stats"><div><b>${s.views || 0}</b><span>Views</span></div><div><b>${s.downloads || 0}</b><span>Downloads</span></div><div><b>${s.likes || 0}</b><span>Likes</span></div><div><b>${d.followers || 0}</b><span>Followers</span></div><div><b>${d.unreadNotifications || 0}</b><span>Unread</span></div></div>
-          <div class="account-actions"><button class="btn btn-outline" data-action="my-profile"><i class="fas fa-user"></i> Profile</button><button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button><button class="btn btn-outline" data-action="wishlist-page"><i class="fas fa-heart"></i> Wishlist</button><button class="btn btn-outline" data-action="downloads"><i class="fas fa-download"></i> Downloads</button><button class="btn btn-outline" data-action="notifications"><i class="fas fa-bell"></i> Notifications</button><button class="btn btn-outline" data-action="my-shares"><i class="fas fa-link"></i> Share links</button><button class="btn btn-danger" data-action="logout"><i class="fas fa-right-from-bracket"></i> Log out</button></div>
+          <div class="account-actions"><button class="btn btn-outline" data-action="my-profile"><i class="fas fa-user"></i> Profile</button><button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button><button class="btn btn-outline" data-action="wishlist-page"><i class="fas fa-heart"></i> Wishlist</button><button class="btn btn-outline" data-action="downloads"><i class="fas fa-download"></i> Downloads</button><button class="btn btn-outline" data-action="notifications"><i class="fas fa-bell"></i> Notifications</button><button class="btn btn-outline" data-action="messages"><i class="fas fa-message"></i> Messages</button><button class="btn btn-outline" data-action="my-shares"><i class="fas fa-link"></i> Share links</button><button class="btn btn-danger" data-action="logout"><i class="fas fa-right-from-bracket"></i> Log out</button></div>
           <div class="profile-section-head"><h3>Your presets</h3><span>${(d.presets || []).length} uploads</span></div>
           <div class="dashboard-preset-list">${(d.presets || []).map(p => `<div class="dashboard-row"><div class="dashboard-thumb">${imgTag(p.previewImage, p.name, '')}</div><div class="dashboard-row-main"><b>${esc(p.name)}</b><small>${esc(p.status)} · ${p.views || 0} views · ${p.downloads || 0} downloads</small></div><div class="dashboard-row-actions"><button class="icon-action" data-action="view-preset" data-id="${esc(p.id)}" title="View"><i class="fas fa-eye"></i></button><button class="icon-action" data-action="edit-preset" data-id="${esc(p.id)}" title="Edit"><i class="fas fa-pen"></i></button><button class="icon-action danger" data-action="delete-preset" data-id="${esc(p.id)}" title="Delete"><i class="fas fa-trash"></i></button></div></div>`).join('') || '<div class="empty-state"><i class="fas fa-cloud-arrow-up"></i><p>No uploads yet.</p></div>'}</div>
         </div>`);
@@ -602,7 +638,7 @@
     if (!requireAuth()) return;
     try {
       const list = await api('/users/me/notifications');
-      openModal(`<h2>Notifications</h2><div class="notification-list">${(list || []).map(n => `<div class="notification ${n.read ? '' : 'unread'}"><b>${esc(n.type)}</b><p>${esc(n.message)}</p><small>${new Date(n.createdAt).toLocaleString()}</small></div>`).join('') || '<p>No notifications.</p>'}<button class="btn btn-outline" data-action="read-notifications">Mark all read</button></div>`);
+      openModal(`<h2>Notifications</h2><div class="notification-list">${(list || []).map(n => `<a class="notification ${n.read ? '' : 'unread'}" href="${esc(n.link || '#')}" data-notification-id="${esc(n.id || '')}"><div class="notification-icon"><i class="fas ${n.type==='message'?'fa-message':n.type==='follow'?'fa-user-plus':n.type==='like'?'fa-heart':n.type==='comment'?'fa-comment':n.type==='review'?'fa-star':n.type==='sale'?'fa-bag-shopping':'fa-bell'}"></i></div><div><b>${esc(n.type.replace(/-/g,' '))}</b><p>${esc(n.message)}</p><small>${new Date(n.createdAt).toLocaleString()}</small></div></a>`).join('') || '<p>No notifications.</p>'}<button class="btn btn-outline" data-action="read-notifications">Mark all read</button></div>`);
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -625,7 +661,7 @@
           <div class="form-group"><label>Tags</label><input name="tags" maxlength="300" placeholder="portrait, warm, mobile"></div>
           <div class="form-group"><label>Price (INR)</label><input name="price" type="number" min="0" max="999999.99" step="0.01" value="0"></div>
           <div class="form-group"><label>Preset file</label><input name="file" type="file" accept=".xmp,.dng,.lrtemplate,.cube,.3dl,.look,.costyle,.xml,.json,.zip" required></div>
-          <div class="form-group"><label>Preview image</label><input name="previewImage" type="file" accept="image/png,image/jpeg,image/webp"></div>
+          <div class="form-group"><label>Preview poster (JPG / JPEG / PNG / WEBP)</label><input id="singlePreviewImage" name="previewImage" type="file" accept="image/png,image/jpeg,image/webp"></div><div id="singlePreviewBox" class="upload-preview-box" hidden></div>
           <button class="btn btn-accent" type="submit">Publish preset</button>
         </form>
 
@@ -654,15 +690,18 @@
   async function submitUpload(form) {
     const fd = new FormData(form);
     const tags = String(fd.get('tags') || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 10);
-    fd.delete('tags');
-    tags.forEach(t => fd.append('tags', t));
+    fd.delete('tags'); tags.forEach(t => fd.append('tags', t));
+    const presetFile = form.querySelector('[name="file"]')?.files?.[0];
+    if (!presetFile) return toast('Select a preset file first', 'error');
+    if (!confirm('Publish this preset with the selected preview image?')) return;
+    const card=progressCard('Publishing preset…'); closeModal();
     try {
-      const r = await api('/presets', { method: 'POST', body: fd });
-      closeModal();
-      toast('Preset published successfully — SEO page created');
-      loadPresets();
-      location.hash = `preset-${r.id}`;
-    } catch (e) { toast(e.message, 'error'); }
+      const r = await uploadApi('/presets', fd, p => updateProgress(p, `Uploading ${p}%`));
+      finishProgress(true,'Preset published successfully');
+      toast('✅ Preset published. SEO page is ready.');
+      await loadPresets();
+      if (r.id) showPreset(r.id);
+    } catch (e) { card?.remove(); toast(e.message, 'error'); }
   }
 
   async function submitBulkUpload(form) {
@@ -670,22 +709,25 @@
     const files = fd.getAll('files');
     if (!files.length) return toast('Select at least one preset file', 'error');
     if (files.length > 20) return toast('Max 20 presets per bulk upload', 'error');
+    if (!confirm(`Publish ${files.length} preset(s) now?`)) return;
 
     const btn = form.querySelector('button[type="submit"]');
     const origText = btn.textContent;
     btn.disabled = true;
     btn.textContent = `Uploading ${files.length} preset(s)…`;
 
+    const card = progressCard(`Uploading ${files.length} preset(s)…`);
     try {
-      const r = await api('/presets/bulk', { method: 'POST', body: fd });
+      const r = await uploadApi('/presets/bulk', fd, p => { btn.textContent = `Uploading ${p}%…`; updateProgress(p, `Uploading ${p}%`); });
       closeModal();
+      finishProgress(true, `${r.created} preset(s) published`);
       toast(`✅ ${r.created} preset(s) published${r.failed ? `, ${r.failed} failed` : ''}`);
       loadPresets();
       if (r.failed > 0 && r.errors) {
         console.warn('Bulk upload errors:', r.errors);
       }
     } catch (e) {
-      toast(e.message, 'error');
+      card?.remove(); toast(e.message, 'error');
     } finally {
       btn.disabled = false;
       btn.textContent = origText;
@@ -717,13 +759,28 @@
     if (!requireAuth()) return;
     try {
       const p = await api(`/presets/${id}`);
-      openModal(`<div class="edit-preset-panel"><span class="eyebrow">PRESET MANAGEMENT</span><h2>Edit preset</h2><form id="editPresetForm" data-id="${esc(id)}"><div class="form-group"><label>Name</label><input name="name" maxlength="100" value="${esc(p.name)}" required></div><div class="form-group"><label>Description</label><textarea name="description" maxlength="500">${esc(p.description || '')}</textarea></div><div class="form-grid"><div class="form-group"><label>Category</label><input name="category" maxlength="50" value="${esc(p.category || 'General')}"></div><div class="form-group"><label>Price (INR)</label><input name="price" type="number" min="0" step="0.01" value="${Number(p.price||0)}"></div></div><div class="form-group"><label>Tags</label><input name="tags" maxlength="300" value="${esc((p.tags||[]).join(', '))}"></div><button class="btn btn-primary"><i class="fas fa-check"></i> Save changes</button></form></div>`);
+      openModal(`<div class="edit-preset-panel"><span class="eyebrow">PRESET MANAGEMENT</span><h2>Edit preset</h2><form id="editPresetForm" data-id="${esc(id)}"><div class="form-group"><label>Name</label><input name="name" maxlength="100" value="${esc(p.name)}" required></div><div class="form-group"><label>Description</label><textarea name="description" maxlength="500">${esc(p.description || '')}</textarea></div><div class="form-grid"><div class="form-group"><label>Category</label><input name="category" maxlength="50" value="${esc(p.category || 'General')}"></div><div class="form-group"><label>Price (INR)</label><input name="price" type="number" min="0" step="0.01" value="${Number(p.price||0)}"></div></div><div class="form-group"><label>Tags</label><input name="tags" maxlength="300" value="${esc((p.tags||[]).join(', '))}"></div><div class="form-grid"><div class="form-group"><label>Replace preview poster</label><input name="previewImage" type="file" accept="image/jpeg,image/png,image/webp"></div><div class="form-group"><label>Replace preset file (optional)</label><input name="file" type="file" accept=".xmp,.dng,.lrtemplate,.cube,.3dl,.look,.costyle,.xml,.json,.zip"></div></div><button class="btn btn-primary"><i class="fas fa-check"></i> Save changes</button></form></div>`);
     } catch(e){ toast(e.message,'error'); }
   }
   async function deletePreset(id) {
     if (!requireAuth()) return;
     if (!confirm('Delete this preset permanently?')) return;
     try { await api(`/presets/${id}`, {method:'DELETE'}); toast('Preset deleted'); closeModal(); openAccount(); loadPresets(); } catch(e){ toast(e.message,'error'); }
+  }
+
+  // ============ MESSAGES ============
+  async function openMessages(targetId) {
+    if (!requireAuth()) return;
+    try {
+      const thread = await api(`/messages/thread/${encodeURIComponent(targetId)}`);
+      openModal(`<div class="message-panel"><div class="message-head"><div><span class="eyebrow">PRIVATE CHAT</span><h2>${esc(thread.user.name || thread.user.username || 'Creator')}</h2><small>@${esc(thread.user.username || '')}</small></div><button class="btn btn-outline btn-sm" data-action="messages"><i class="fas fa-inbox"></i> Inbox</button></div><div class="message-thread" id="messageThread">${(thread.messages||[]).map(m=>`<div class="message-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleString()}</small></div>`).join('') || '<div class="empty-state"><i class="fas fa-message"></i><p>Start the conversation.</p></div>'}</div><form id="messageForm" data-recipient="${esc(targetId)}"><textarea name="text" maxlength="2000" placeholder="Write a message…" required></textarea><button class="btn btn-primary"><i class="fas fa-paper-plane"></i> Send</button></form></div>`);
+      const box=$('#messageThread'); if(box) box.scrollTop=box.scrollHeight;
+    } catch(e){ toast(e.message,'error'); }
+  }
+  async function showMessages() {
+    if (!requireAuth()) return;
+    try { const rows=await api('/messages/conversations'); openModal(`<div class="message-panel"><div class="message-head"><div><span class="eyebrow">INBOX</span><h2>Messages</h2></div></div><div class="conversation-list">${rows.map(c=>`<button class="conversation-row" data-action="message" data-id="${esc(c.user.id)}"><div class="creator-avatar">${c.user.avatar?imgTag(c.user.avatar,c.user.name,''):esc((c.user.name||'U').charAt(0).toUpperCase())}</div><div><b>${esc(c.user.name||c.user.username)}</b><small>${esc(c.lastMessage?.text||'No messages yet')}</small></div>${c.unread?`<span class="unread-badge">${c.unread}</span>`:''}</button>`).join('') || '<div class="empty-state"><i class="fas fa-inbox"></i><p>No conversations yet.</p><p>Follow a creator to start messaging.</p></div>'}</div></div>`); }
+    catch(e){ toast(e.message,'error'); }
   }
 
   // ============ FOLLOW ============
@@ -771,10 +828,11 @@
     if (!box) return;
     if (q.length < 2) { box.hidden = true; return; }
     try {
-      const r = await api(`/presets/search?q=${encodeURIComponent(q)}`);
-      const seen = new Set();
-      const unique = (r || []).filter(p => { const k = String(p.id); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 6);
-      const rows = unique.map(p => `<button class="suggestion-item" data-action="view-preset" data-id="${esc(p.id)}"><span class="suggestion-thumb">${imgTag(p.previewImage,p.name,'')}</span><span><strong>${esc(p.name)}</strong><small>${esc(p.author || 'Creator')} · ${esc(p.category || 'General')}</small></span><i class="fas fa-arrow-up-right-from-square"></i></button>`);
+      const r = await api(`/search?q=${encodeURIComponent(q)}`);
+      const rows=[];
+      (r.presets||[]).slice(0,5).forEach(p => rows.push(`<button class="suggestion-item" data-action="view-preset" data-id="${esc(p.id)}"><span class="suggestion-thumb">${imgTag(p.previewImage,p.name,'')}</span><span><strong>${esc(p.name)}</strong><small>${esc(p.author || 'Creator')} · ${esc(p.category || 'General')} · ${(p.tags||[]).slice(0,2).map(t=>'#'+esc(t)).join(' ')}</small></span><i class="fas fa-sliders"></i></button>`));
+      (r.users||[]).slice(0,3).forEach(u => rows.push(`<button class="suggestion-item" data-action="profile" data-id="${esc(u.id)}"><span class="suggestion-thumb">${u.avatar?imgTag(u.avatar,u.name,''):`<span>${esc((u.name||'U').charAt(0).toUpperCase())}</span>`}</span><span><strong>${esc(u.name||u.username)}</strong><small>@${esc(u.username||'creator')} · Creator · ${u.presetCount||0} presets</small></span><i class="fas fa-user"></i></button>`));
+      (r.categories||[]).slice(0,3).forEach(c => rows.push(`<button class="suggestion-item" data-action="category" data-category="${esc(c.name)}"><span class="suggestion-thumb"><i class="fas fa-layer-group"></i></span><span><strong>${esc(c.name)}</strong><small>Category · ${c.count||0} presets</small></span><i class="fas fa-arrow-right"></i></button>`));
       rows.push(`<button class="suggestion-item google-suggestion" data-action="google-search" data-query="${esc(q)}"><span class="suggestion-google"><i class="fab fa-google"></i></span><span><strong>Google पर खोजें</strong><small>site:presethub.site ${esc(q)}</small></span><i class="fas fa-arrow-up-right-from-square"></i></button>`);
       box.innerHTML = rows.join('');
       box.hidden = false;
@@ -803,6 +861,7 @@
   async function bootstrap() {
     const savedTheme = localStorage.getItem('presethub_theme');
     if (savedTheme === 'dark') document.body.classList.add('dark');
+    const themeIcon=$('[data-action="theme"] i'); if(themeIcon) themeIcon.className=document.body.classList.contains('dark')?'fas fa-sun':'fas fa-moon';
     registerSW();
 
     if (state.token) {
@@ -862,6 +921,14 @@
       return;
     }
 
+    const notification = e.target.closest('[data-notification-id]');
+    if (notification && notification.dataset.notificationId) {
+      e.preventDefault();
+      try { await api(`/users/notifications/read/${encodeURIComponent(notification.dataset.notificationId)}`, {method:'POST'}); } catch (_) {}
+      const href=notification.getAttribute('href') || '/'; closeModal(); if(href.startsWith('/')) location.href=href; else window.open(href,'_blank','noopener');
+      return;
+    }
+
     // data-action buttons
     const el = e.target.closest('[data-action]');
     if (!el) return;
@@ -911,6 +978,8 @@
     if (action === 'share-stats') { showShareStats(el.dataset.id); return; }
     if (action === 'profile') { showProfile(el.dataset.id); return; }
     if (action === 'follow') { follow(el.dataset.id); return; }
+    if (action === 'message') { openMessages(el.dataset.id); return; }
+    if (action === 'messages') { showMessages(); return; }
     if (action === 'switch-auth') { openAuth(el.dataset.mode); return; }
     if (action === 'google-search') { googleSearch(el.dataset.query); return; }
     if (action === 'retry') { loadPresets(); return; }
@@ -949,19 +1018,23 @@
         const fd = Object.fromEntries(new FormData(e.target).entries());
         const payload = { name: fd.name, username: fd.username, bio: fd.bio, socialLinks: { instagram: fd.instagram || '', youtube: fd.youtube || '', twitter: fd.twitter || '', website: fd.website || '' } };
         const r = await api('/auth/profile', { method: 'PUT', body: JSON.stringify(payload) });
-        state.user = r.user;
-        updateAuthUI();
-        toast('Profile updated');
+        const media = new FormData();
+        const avatarFile = $('#profileAvatarFile')?.files?.[0]; const coverFile = $('#profileCoverFile')?.files?.[0];
+        if (avatarFile) media.append('avatar', avatarFile); if (coverFile) media.append('coverImage', coverFile);
+        let updated = r.user;
+        if (avatarFile || coverFile) { const mr = await uploadApi('/users/me/profile-media', media, p => toast(`Uploading profile images: ${p}%`, 'info')); updated = { ...updated, ...mr }; }
+        state.user = updated; updateAuthUI(); toast('✅ Profile updated successfully'); closeModal();
       } catch (err) { toast(err.message, 'error'); }
       return;
     }
     if (e.target.id === 'editPresetForm') {
       e.preventDefault();
-      try { await api(`/presets/${e.target.dataset.id}`, { method:'PUT', body: JSON.stringify(Object.fromEntries(new FormData(e.target).entries())) }); toast('Preset updated'); closeModal(); openAccount(); loadPresets(); } catch(err){ toast(err.message,'error'); }
+      try { const fd=new FormData(e.target); const r=await api(`/presets/${e.target.dataset.id}`, { method:'PUT', body: fd }); toast('✅ Preset updated successfully'); closeModal(); openAccount(); loadPresets(); } catch(err){ toast(err.message,'error'); }
       return;
     }
     if (e.target.id === 'reviewForm') { e.preventDefault(); submitReview(e.target); return; }
     if (e.target.id === 'commentForm') { e.preventDefault(); submitComment(e.target); return; }
+    if (e.target.id === 'messageForm') { e.preventDefault(); try { const r=await api('/messages/send',{method:'POST',body:JSON.stringify({recipientId:e.target.dataset.recipient,text:new FormData(e.target).get('text')})}); e.target.reset(); toast('✅ Message sent'); openMessages(e.target.dataset.recipient); } catch(err){ toast(err.message,'error'); } return; }
   });
 
   // ============ SEARCH INPUT ============
@@ -971,6 +1044,16 @@
   });
   document.addEventListener('click', e => {
     if (!e.target.closest('.nav-search')) $('#searchSuggestions')?.setAttribute('hidden', '');
+  });
+
+  document.addEventListener('change', e => {
+    if (e.target.id === 'singlePreviewImage') {
+      const file=e.target.files?.[0], box=$('#singlePreviewBox');
+      if (!file || !box) return;
+      const ok=['image/jpeg','image/png','image/webp','image/gif','image/avif'].includes(file.type);
+      if (!ok) { toast('Preview must be JPG, PNG, WEBP, GIF or AVIF', 'error'); e.target.value=''; return; }
+      const url=URL.createObjectURL(file); box.hidden=false; box.innerHTML=`<img src="${url}" alt="Preview poster">`;
+    }
   });
 
   // ============ FILTERS ============

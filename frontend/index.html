@@ -1,31 +1,32 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="hi-IN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PresetHub – Free Lightroom Presets & Premium Lightroom Presets</title>
-  <meta name="description" content="Discover, preview, download and sell Lightroom presets on PresetHub. Find free and premium presets by style, category and creator.">
+  <meta name="description" content="PresetHub is a Lightroom preset marketplace to discover, preview, download and sell free and premium XMP, DNG and mobile Lightroom presets by creator, category and tags.">
   <meta name="keywords" content="Lightroom presets, free Lightroom presets, premium Lightroom presets, XMP presets, DNG presets, Lightroom mobile presets, photo presets, portrait presets, wedding presets, cinematic presets, vintage presets, natural presets, black and white presets, free XMP presets, Lightroom preset marketplace, preset creator, download Lightroom presets">
   <link rel="canonical" href="https://presethub.site/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="PresetHub – Lightroom Presets Marketplace">
   <meta property="og:description" content="Discover, preview, download and sell Lightroom presets.">
   <meta property="og:url" content="https://presethub.site/">
-  <meta property="og:image" content="https://presethub.site/assets/images/og-image.png">
+  <meta property="og:image" content="https://presethub.site/assets/images/presethub-social-preview.jpg">
   <meta property="og:image:alt" content="PresetHub Lightroom Presets Marketplace">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="PresetHub – Lightroom Presets Marketplace">
   <meta name="twitter:description" content="Discover free and premium Lightroom presets.">
-  <meta name="twitter:image" content="https://presethub.site/assets/images/og-image.png">
+  <meta name="twitter:image" content="https://presethub.site/assets/images/presethub-social-preview.jpg">
   <meta name="google-site-verification" content="">
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3554311294133493" crossorigin="anonymous"></script>
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://presethub.site/#website","name":"PresetHub","url":"https://presethub.site/","potentialAction":{"@type":"SearchAction","target":"https://presethub.site/?q={search_term_string}","query-input":"required name=search_term_string"}},{"@type":"Organization","@id":"https://presethub.site/#organization","name":"PresetHub","url":"https://presethub.site/","logo":"https://presethub.site/assets/icons/icon-512.png"},{"@type":"WebPage","@id":"https://presethub.site/#webpage","url":"https://presethub.site/","name":"PresetHub – Free Lightroom Presets & Premium Lightroom Presets","isPartOf":{"@id":"https://presethub.site/#website"}}]}
+  {"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://presethub.site/#website","name":"PresetHub","url":"https://presethub.site/","description":"Lightroom preset marketplace for free and premium XMP, DNG and mobile presets.","potentialAction":{"@type":"SearchAction","target":"https://presethub.site/?q={search_term_string}","query-input":"required name=search_term_string"}},{"@type":"Organization","@id":"https://presethub.site/#organization","name":"PresetHub","url":"https://presethub.site/","logo":{"@type":"ImageObject","url":"https://presethub.site/assets/icons/icon-512.png"}},{"@type":"WebPage","@id":"https://presethub.site/#webpage","url":"https://presethub.site/","name":"PresetHub – Free Lightroom Presets & Premium Lightroom Presets","description":"Discover, preview, download and sell Lightroom presets by creator, category and tags.","isPartOf":{"@id":"https://presethub.site/#website"},"primaryImageOfPage":{"@type":"ImageObject","url":"https://presethub.site/assets/images/presethub-social-preview.jpg"}}]}
   </script>
   <meta name="theme-color" content="#d4a373">
   <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png">
+  <link rel="icon" href="/assets/icons/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="/assets/icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,7 +39,7 @@
 
 <header>
   <div class="container nav">
-    <a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-logo-1.jpg" alt="PresetHub logo">Preset<span>Hub</span></a>
+    <a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a>
     <form class="nav-search" id="searchForm" role="search" autocomplete="off">
       <input id="searchInput" type="search" placeholder="प्रीसेट, क्रिएटर या टैग खोजें…" aria-label="Search presets" maxlength="100">
       <button type="submit"><i class="fas fa-search" aria-hidden="true"></i> खोजें</button>
@@ -106,7 +107,7 @@
       </span>
     </h2>
     <div class="bulk-toolbar" id="bulkToolbar" hidden><span><b id="selectedCount">0</b> selected</span><button class="btn btn-primary btn-sm" data-action="bulk-download"><i class="fas fa-download"></i> Download selected</button><button class="btn btn-outline btn-sm" data-action="clear-selection">Clear</button></div>
-    <div class="preset-grid" id="presetGrid" aria-live="polite"></div>
+    <div class="preset-grid" id="presetGrid" aria-live="polite"></div><div id="loadMoreSentinel" class="load-more-sentinel" aria-hidden="true"></div>
 
     <h2 class="section-title">Top Creators</h2>
     <div class="top-creators-grid" id="creators"></div>
