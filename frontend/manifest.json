@@ -1,25 +1,13 @@
 {
-  "name": "PresetHub – Lightroom Presets Marketplace",
+  "name": "PresetHub \u2013 Lightroom Presets Marketplace",
   "short_name": "PresetHub",
-  "description": "Discover, preview, download and sell free and premium Lightroom presets.",
+  "description": "Discover, preview and download Lightroom presets.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f8f6f2",
   "theme_color": "#d4a373",
-  "orientation": "portrait",
-  "categories": [
-    "photography",
-    "design",
-    "utilities"
-  ],
+  "background_color": "#f8f6f2",
   "icons": [
-    {
-      "src": "/assets/images/presethub-logo-1.jpg",
-      "sizes": "1536x1536",
-      "type": "image/jpeg",
-      "purpose": "any maskable"
-    },
     {
       "src": "/assets/icons/icon-192.png",
       "sizes": "192x192",
@@ -31,44 +19,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Search Presets",
-      "short_name": "Search",
-      "url": "/?action=search",
-      "icons": [
-        {
-          "src": "/assets/icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Wishlist",
-      "short_name": "Wishlist",
-      "url": "/?action=wishlist",
-      "icons": [
-        {
-          "src": "/assets/icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Upload Preset",
-      "short_name": "Upload",
-      "url": "/?action=upload",
-      "icons": [
-        {
-          "src": "/assets/icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
     }
   ]
 }

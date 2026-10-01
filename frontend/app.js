@@ -29,6 +29,9 @@
   const presetUrl = p => `/preset/${encodeURIComponent(p.id)}/${slug(p.name)}/`;
   const profileUrl = u => `/profile/${encodeURIComponent(u.id)}/${slug(u.username || u.name)}/`;
   const safeExternal = v => /^(https?:\/\/|mailto:)/i.test(String(v || '')) ? String(v) : '#';
+  const fallbackPreview = `${location.origin}/assets/images/og-image.png`;
+  const assetUrl = v => { const x = String(v || '').trim(); if (!x) return fallbackPreview; if (/^https?:\/\//i.test(x)) return x; if (x.startsWith('/')) return `${location.origin}${x}`; if (x.startsWith('uploads/')) return `${location.origin}/${x}`; if (/^(previews|presets|avatars)\//i.test(x)) return `${location.origin}/uploads/${x}`; return fallbackPreview; };
+  const imgTag = (src, alt, cls='') => `<img class="${cls}" src="${esc(assetUrl(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackPreview}'">`;
 
   // ============ API HELPER ============
   async function api(path, options = {}) {
@@ -103,9 +106,7 @@
 
   // ============ PRESET CARD ============
   function presetCard(p) {
-    const image = p.previewImage
-      ? `<img src="${esc(p.previewImage)}" alt="${esc(p.name)} preview" loading="lazy">`
-      : `<div class="preview-fallback" aria-label="Preset preview"><i class="fas fa-sliders"></i><span>Preset Preview</span></div>`;
+    const image = imgTag(p.previewImage, `${p.name} preset preview`, 'preset-preview-img');
     const likes = Number(p.likesCount || (p.likes || []).length);
     return `
       <article class="preset-card" data-preset-card="${esc(p.id)}">
@@ -117,7 +118,7 @@
           </div>
         </div>
         <div class="info">
-          <span class="tag">${esc(p.category || 'General')}</span>${p.format ? `<span class="tag">.${esc(p.format)}</span>` : ''}
+          <span class="tag">${esc(p.category || 'General')}</span>
           <h3>${esc(p.name)}</h3>
           <button class="author-link" data-action="profile" data-id="${esc(p.authorId || '')}">${esc(p.author || 'Creator')}</button>
           <div class="preset-description">${esc(p.description || 'Lightroom preset')}</div>
@@ -202,9 +203,7 @@
       let comments = [];
       try { reviews = await api(`/reviews/${encodeURIComponent(id)}`); } catch (_) {}
       try { comments = await api(`/comments/${encodeURIComponent(id)}`); } catch (_) {}
-      const image = p.previewImage
-        ? `<img src="${esc(p.previewImage)}" alt="${esc(p.name)} preview">`
-        : `<div class="preview-fallback large"><i class="fas fa-sliders"></i><span>Preset Preview</span></div>`;
+      const image = `<div class="preview-frame">${imgTag(p.previewImage, `${p.name} preset preview`, 'preset-detail-image')}<div class="preview-badge"><i class="fas fa-image"></i> Preview</div></div>`;
       openModal(`
         <div class="modal-grid">
           <div class="modal-preview">${image}</div>
@@ -244,27 +243,30 @@
   }
 
   // ============ DOWNLOAD (R2 SUPPORT) ============
+  function downloadOverlay(name='Preset') {
+    const old = document.getElementById('downloadProgress'); if (old) old.remove();
+    const el = document.createElement('div'); el.id='downloadProgress'; el.innerHTML=`<div class="download-progress-card"><div class="download-spinner"><i class="fas fa-download"></i></div><div><strong>Preparing download</strong><span>${esc(name)}</span><div class="progress-line"><i></i></div></div></div>`; document.body.appendChild(el);
+    return el;
+  }
+  async function notifyDownload(name, url) {
+    toast(`Download ready: ${name}`);
+    if ('Notification' in window) {
+      try { if (Notification.permission === 'default') await Notification.requestPermission(); if (Notification.permission === 'granted') new Notification('PresetHub download complete', { body: name, icon:'/assets/icons/icon-192.png', data:url }); } catch (_) {}
+    }
+  }
   async function downloadPreset(id) {
     if (!requireAuth()) return;
+    let progress;
     try {
       const p = state.currentPreset?.id === id ? state.currentPreset : await api(`/presets/${id}`);
-      if (Number(p.price || 0) > 0 && p.authorId !== state.user.id) {
-        return startPayment(p);
-      }
-      // Backend returns JSON with R2 downloadUrl
+      progress = downloadOverlay(p.name);
+      if (Number(p.price || 0) > 0 && p.authorId !== state.user.id) return startPayment(p);
       const r = await api(`/presets/${encodeURIComponent(id)}/download`, { method: 'POST' });
-      if (r.downloadUrl) {
-        const a = document.createElement('a');
-        a.href = r.downloadUrl;
-        a.download = r.originalName || `${slug(p.name)}.xmp`;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-      toast('Download started');
+      if (!r.downloadUrl) throw new Error('Download file unavailable');
+      const a = document.createElement('a'); a.href = r.downloadUrl; a.download = r.originalName || `${slug(p.name)}.xmp`; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
+      await notifyDownload(p.name, r.downloadUrl);
     } catch (e) { toast(e.message, 'error'); }
+    finally { setTimeout(()=>progress?.remove(), 650); }
   }
 
   // ============ PAYMENT ============
@@ -324,7 +326,7 @@
       const shortUrl = await getOrCreateShortLink(p.id);
       const finalUrl = shortUrl || shareUrl;
 
-      const shareText = `🎨 Check out "${p.name}" by ${p.author} on PresetHub!\n${p.description ? p.description.slice(0, 100) + '…' : ''}`;
+      const shareText = `Check out "${p.name}" by ${p.author} on PresetHub!\n${p.description ? p.description.slice(0, 100) + '…' : ''}`;
       const encodedUrl = encodeURIComponent(finalUrl);
       const encodedText = encodeURIComponent(shareText);
       const encodedTitle = encodeURIComponent(`${p.name} — PresetHub`);
@@ -332,9 +334,9 @@
 
       openModal(`
         <div class="share-panel">
-          <h2><i class="fas fa-share-nodes"></i> Share this Preset</h2>
+          <div class="share-title"><div><span class="eyebrow">PresetHub</span><h2><i class="fas fa-share-nodes"></i> Share Preset</h2></div><button class="share-close" data-action="close" aria-label="Close"><i class="fas fa-xmark"></i></button></div>
           <div class="share-preview">
-            ${p.previewImage ? `<img src="${esc(p.previewImage)}" alt="">` : '<div class="preview-fallback"><i class="fas fa-sliders"></i></div>'}
+            ${imgTag(p.previewImage, `${p.name} preview`, 'share-preview-image')}
             <div>
               <h3>${esc(p.name)}</h3>
               <p>by ${esc(p.author)} · ${money(p.price)}</p>
@@ -506,18 +508,31 @@
       if (state.user && state.user.id !== u.id) {
         try { following = (await api(`/users/${encodeURIComponent(id)}/follow-status`)).following; } catch (_) {}
       }
+      const socialMap = { instagram:'fa-instagram', youtube:'fa-youtube', twitter:'fa-x-twitter', website:'fa-globe' };
       openModal(`
-        <div class="profile-view">
-          <div class="profile-head">
-            <div class="profile-avatar">${u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : esc((u.name || 'U').charAt(0).toUpperCase())}</div>
-            <div><h2>${esc(u.name || u.username || 'Creator')}</h2><p>@${esc(u.username || 'creator')}</p><p>${esc(u.bio || '')}</p></div>
-            ${state.user && state.user.id !== u.id ? `<button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}">${following ? 'Following' : 'Follow'}</button>` : ''}
+        <div class="profile-view professional-profile">
+          <div class="profile-cover"></div>
+          <div class="profile-head profile-head-pro">
+            <div class="profile-avatar">${u.avatar ? imgTag(u.avatar, `${u.name || 'Creator'} avatar`) : esc((u.name || 'U').charAt(0).toUpperCase())}</div>
+            <div class="profile-main"><span class="eyebrow">CREATOR PROFILE</span><h2>${esc(u.name || u.username || 'Creator')}</h2><p class="profile-handle">@${esc(u.username || 'creator')}</p><p class="profile-bio">${esc(u.bio || 'Preset creator on PresetHub.')}</p></div>
+            <div class="profile-actions">${state.user && state.user.id !== u.id ? `<button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}"><i class="fas fa-user-plus"></i> ${following ? 'Following' : 'Follow'}</button>` : `<button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button>`}</div>
           </div>
-          <div class="profile-stats"><b>${u.totalPresets || 0}<span>Presets</span></b><b>${u.totalDownloads || 0}<span>Downloads</span></b><b>${u.followers || 0}<span>Followers</span></b></div>
-          <div class="social-row">${Object.entries(u.socialLinks || {}).filter(([, v]) => v).map(([k, v]) => `<a class="social-icon" href="${esc(safeExternal(v))}" target="_blank" rel="noopener">${esc(k)}</a>`).join('')}</div>
-          <h3>Presets</h3><div class="mini-preset-grid">${(presets || []).map(presetCard).join('') || '<p>No presets yet.</p>'}</div>
+          <div class="profile-stats"><b>${u.totalPresets || 0}<span>Presets</span></b><b>${u.totalDownloads || 0}<span>Downloads</span></b><b>${u.followers || 0}<span>Followers</span></b><b>${u.following || 0}<span>Following</span></b></div>
+          <div class="social-row">${Object.entries(u.socialLinks || {}).filter(([,v]) => safeExternal(v) !== '#').map(([k,v]) => `<a class="social-icon" href="${esc(safeExternal(v))}" target="_blank" rel="noopener noreferrer" aria-label="${esc(k)}"><i class="fab ${socialMap[k] || 'fa-link'}"></i><span>${esc(k)}</span></a>`).join('') || '<span class="muted">No social links added yet.</span>'}</div>
+          <div class="profile-section-head"><h3>Presets by ${esc(u.name || u.username || 'Creator')}</h3><span>${presets.length} published</span></div>
+          <div class="mini-preset-grid">${(presets || []).map(presetCard).join('') || '<div class="empty-state"><i class="fas fa-images"></i><p>No presets yet.</p></div>'}</div>
         </div>`);
     } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function editProfileModal() {
+    if (!requireAuth()) return;
+    const u = state.user;
+    openModal(`<div class="profile-edit-panel"><span class="eyebrow">ACCOUNT SETTINGS</span><h2>Edit profile</h2><form id="profileForm">
+      <div class="form-grid"><div class="form-group"><label>Name</label><input name="name" value="${esc(u.name || '')}" maxlength="50"></div><div class="form-group"><label>Username</label><input name="username" value="${esc(u.username || '')}" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+"></div></div>
+      <div class="form-group"><label>Bio</label><textarea name="bio" maxlength="500">${esc(u.bio || '')}</textarea></div>
+      <div class="form-grid"><div class="form-group"><label><i class="fab fa-instagram"></i> Instagram</label><input name="instagram" value="${esc(u.socialLinks?.instagram || '')}" placeholder="https://instagram.com/username"></div><div class="form-group"><label><i class="fab fa-youtube"></i> YouTube</label><input name="youtube" value="${esc(u.socialLinks?.youtube || '')}" placeholder="https://youtube.com/@username"></div><div class="form-group"><label><i class="fab fa-x-twitter"></i> X / Twitter</label><input name="twitter" value="${esc(u.socialLinks?.twitter || '')}" placeholder="https://x.com/username"></div><div class="form-group"><label><i class="fas fa-globe"></i> Website</label><input name="website" value="${esc(u.socialLinks?.website || '')}" placeholder="https://example.com"></div></div>
+      <button class="btn btn-primary" type="submit"><i class="fas fa-check"></i> Save profile</button></form></div>`);
   }
 
   // ============ AUTH ============
@@ -556,22 +571,12 @@
       state.user = u.user;
       const s = d.stats || {};
       openModal(`
-        <div class="account-panel">
-          <div class="dashboard-head"><div><h2>Professional Dashboard</h2><p>@${esc(d.user.username || d.user.name || 'creator')}</p></div><button class="btn btn-accent" data-action="upload">Upload</button></div>
-          <div class="dashboard-stats">
-            <div><b>${s.views || 0}</b><span>Views</span></div><div><b>${s.downloads || 0}</b><span>Downloads</span></div><div><b>${s.likes || 0}</b><span>Likes</span></div><div><b>${d.followers || 0}</b><span>Followers</span></div><div><b>${d.unreadNotifications || 0}</b><span>Unread</span></div>
-          </div>
-          <div class="account-actions">
-            <button class="btn btn-outline" data-action="my-profile">Profile</button><button class="btn btn-outline" data-action="wishlist-page">Wishlist</button><button class="btn btn-outline" data-action="downloads">Downloads</button><button class="btn btn-outline" data-action="notifications">Notifications</button><button class="btn btn-outline" data-action="my-shares">Share Links</button><button class="btn btn-danger" data-action="logout">Log out</button>
-          </div>
-          <h3>Your presets</h3><div class="dashboard-preset-list">${(d.presets || []).map(p => `<div class="dashboard-row"><div>${p.previewImage ? `<img src="${esc(p.previewImage)}" alt="">` : '<div class="preview-fallback">✦</div>'}</div><div><b>${esc(p.name)}</b><small>${esc(p.status)} · ${p.views || 0} views · ${p.downloads || 0} downloads</small></div><button class="btn btn-outline btn-sm" data-action="view-preset" data-id="${esc(p.id)}">View</button></div>`).join('') || '<p>No uploads yet.</p>'}</div>
-          <hr>
-          <form id="profileForm">
-            <div class="form-group"><label>Name</label><input name="name" value="${esc(u.user.name || '')}" maxlength="50"></div>
-            <div class="form-group"><label>Username</label><input name="username" value="${esc(u.user.username || '')}" minlength="3" maxlength="30"></div>
-            <div class="form-group"><label>Bio</label><textarea name="bio" maxlength="500">${esc(u.user.bio || '')}</textarea></div>
-            <button class="btn btn-primary">Save profile</button>
-          </form>
+        <div class="account-panel professional-dashboard">
+          <div class="dashboard-head"><div><span class="eyebrow">CREATOR STUDIO</span><h2>Professional Dashboard</h2><p>@${esc(d.user.username || d.user.name || 'creator')}</p></div><button class="btn btn-accent" data-action="upload"><i class="fas fa-cloud-arrow-up"></i> Upload</button></div>
+          <div class="dashboard-stats"><div><b>${s.views || 0}</b><span>Views</span></div><div><b>${s.downloads || 0}</b><span>Downloads</span></div><div><b>${s.likes || 0}</b><span>Likes</span></div><div><b>${d.followers || 0}</b><span>Followers</span></div><div><b>${d.unreadNotifications || 0}</b><span>Unread</span></div></div>
+          <div class="account-actions"><button class="btn btn-outline" data-action="my-profile"><i class="fas fa-user"></i> Profile</button><button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button><button class="btn btn-outline" data-action="wishlist-page"><i class="fas fa-heart"></i> Wishlist</button><button class="btn btn-outline" data-action="downloads"><i class="fas fa-download"></i> Downloads</button><button class="btn btn-outline" data-action="notifications"><i class="fas fa-bell"></i> Notifications</button><button class="btn btn-outline" data-action="my-shares"><i class="fas fa-link"></i> Share links</button><button class="btn btn-danger" data-action="logout"><i class="fas fa-right-from-bracket"></i> Log out</button></div>
+          <div class="profile-section-head"><h3>Your presets</h3><span>${(d.presets || []).length} uploads</span></div>
+          <div class="dashboard-preset-list">${(d.presets || []).map(p => `<div class="dashboard-row"><div class="dashboard-thumb">${imgTag(p.previewImage, p.name, '')}</div><div class="dashboard-row-main"><b>${esc(p.name)}</b><small>${esc(p.status)} · ${p.views || 0} views · ${p.downloads || 0} downloads</small></div><div class="dashboard-row-actions"><button class="icon-action" data-action="view-preset" data-id="${esc(p.id)}" title="View"><i class="fas fa-eye"></i></button><button class="icon-action" data-action="edit-preset" data-id="${esc(p.id)}" title="Edit"><i class="fas fa-pen"></i></button><button class="icon-action danger" data-action="delete-preset" data-id="${esc(p.id)}" title="Delete"><i class="fas fa-trash"></i></button></div></div>`).join('') || '<div class="empty-state"><i class="fas fa-cloud-arrow-up"></i><p>No uploads yet.</p></div>'}</div>
         </div>`);
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -613,7 +618,7 @@
         </div>
 
         <form id="uploadForm" enctype="multipart/form-data" data-tab="single">
-          <p style="color:var(--muted);font-size:0.85rem;margin-bottom:14px">Accepted: XMP, DNG, LRTEMPLATE, CUBE, 3DL, LOOK, COSTYLE, XML, JSON and ZIP preset packs. Max 75MB each.</p>
+          <p style="color:var(--muted);font-size:0.85rem;margin-bottom:14px">Accepted: XMP, DNG, LRTEMPLATE, CUBE, 3DL, LOOK, COSTYLE, XML, JSON, ZIP. Max 100MB each.</p>
           <div class="form-group"><label>Preset name</label><input name="name" required maxlength="100"></div>
           <div class="form-group"><label>Description</label><textarea name="description" maxlength="500"></textarea></div>
           <div class="form-group"><label>Category</label><input name="category" maxlength="50" placeholder="Natural, Vintage…"></div>
@@ -654,7 +659,7 @@
     try {
       const r = await api('/presets', { method: 'POST', body: fd });
       closeModal();
-      toast('Preset published successfully');
+      toast('Preset published successfully — SEO page created');
       loadPresets();
       location.hash = `preset-${r.id}`;
     } catch (e) { toast(e.message, 'error'); }
@@ -704,8 +709,21 @@
       r.downloads.forEach((d, i) => setTimeout(() => {
         const a = document.createElement('a'); a.href = d.url; a.download = d.filename; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
       }, i * 450));
-      state.selected.clear(); updateSelectionUI(); loadPresets(false); toast(`Starting ${r.count} download(s)…`);
+      state.selected.clear(); updateSelectionUI(); loadPresets(false); toast(`Starting ${r.count} download(s)…`); if ('Notification' in window && Notification.permission === 'granted') new Notification('PresetHub', {body:`${r.count} preset download(s) started`, icon:'/assets/icons/icon-192.png'});
     } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function editPreset(id) {
+    if (!requireAuth()) return;
+    try {
+      const p = await api(`/presets/${id}`);
+      openModal(`<div class="edit-preset-panel"><span class="eyebrow">PRESET MANAGEMENT</span><h2>Edit preset</h2><form id="editPresetForm" data-id="${esc(id)}"><div class="form-group"><label>Name</label><input name="name" maxlength="100" value="${esc(p.name)}" required></div><div class="form-group"><label>Description</label><textarea name="description" maxlength="500">${esc(p.description || '')}</textarea></div><div class="form-grid"><div class="form-group"><label>Category</label><input name="category" maxlength="50" value="${esc(p.category || 'General')}"></div><div class="form-group"><label>Price (INR)</label><input name="price" type="number" min="0" step="0.01" value="${Number(p.price||0)}"></div></div><div class="form-group"><label>Tags</label><input name="tags" maxlength="300" value="${esc((p.tags||[]).join(', '))}"></div><button class="btn btn-primary"><i class="fas fa-check"></i> Save changes</button></form></div>`);
+    } catch(e){ toast(e.message,'error'); }
+  }
+  async function deletePreset(id) {
+    if (!requireAuth()) return;
+    if (!confirm('Delete this preset permanently?')) return;
+    try { await api(`/presets/${id}`, {method:'DELETE'}); toast('Preset deleted'); closeModal(); openAccount(); loadPresets(); } catch(e){ toast(e.message,'error'); }
   }
 
   // ============ FOLLOW ============
@@ -754,12 +772,14 @@
     if (q.length < 2) { box.hidden = true; return; }
     try {
       const r = await api(`/presets/search?q=${encodeURIComponent(q)}`);
-      const rows = (r || []).slice(0, 7).map(p => `<button class="suggestion-item" data-action="view-preset" data-id="${esc(p.id)}"><strong>${esc(p.name)}</strong><small> ${esc(p.author || '')}</small></button>`);
-      rows.push(`<button class="suggestion-item google-suggestion" data-action="google-search" data-query="${esc(q)}"><strong>🔎 Google पर खोजें</strong><small>site:presethub.site</small></button>`);
+      const seen = new Set();
+      const unique = (r || []).filter(p => { const k = String(p.id); if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 6);
+      const rows = unique.map(p => `<button class="suggestion-item" data-action="view-preset" data-id="${esc(p.id)}"><span class="suggestion-thumb">${imgTag(p.previewImage,p.name,'')}</span><span><strong>${esc(p.name)}</strong><small>${esc(p.author || 'Creator')} · ${esc(p.category || 'General')}</small></span><i class="fas fa-arrow-up-right-from-square"></i></button>`);
+      rows.push(`<button class="suggestion-item google-suggestion" data-action="google-search" data-query="${esc(q)}"><span class="suggestion-google"><i class="fab fa-google"></i></span><span><strong>Google पर खोजें</strong><small>site:presethub.site ${esc(q)}</small></span><i class="fas fa-arrow-up-right-from-square"></i></button>`);
       box.innerHTML = rows.join('');
       box.hidden = false;
     } catch (_) {
-      box.innerHTML = `<button class="suggestion-item" data-action="google-search" data-query="${esc(q)}"><strong>🔎 Google पर खोजें</strong></button>`;
+      box.innerHTML = `<button class="suggestion-item google-suggestion" data-action="google-search" data-query="${esc(q)}"><span class="suggestion-google"><i class="fab fa-google"></i></span><span><strong>Google पर खोजें</strong><small>site:presethub.site ${esc(q)}</small></span></button>`;
       box.hidden = false;
     }
   }
@@ -872,6 +892,9 @@
       return;
     }
     if (action === 'my-profile') { showProfile(state.user.id); return; }
+    if (action === 'edit-profile') { editProfileModal(); return; }
+    if (action === 'edit-preset') { editPreset(el.dataset.id); return; }
+    if (action === 'delete-preset') { deletePreset(el.dataset.id); return; }
     if (action === 'my-shares') { showMyShares(); return; }
     if (action === 'select-preset') {
       const id = String(el.dataset.id);
@@ -923,14 +946,18 @@
       e.preventDefault();
       if (!requireAuth()) return;
       try {
-        const r = await api('/auth/profile', {
-          method: 'PUT',
-          body: JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))
-        });
+        const fd = Object.fromEntries(new FormData(e.target).entries());
+        const payload = { name: fd.name, username: fd.username, bio: fd.bio, socialLinks: { instagram: fd.instagram || '', youtube: fd.youtube || '', twitter: fd.twitter || '', website: fd.website || '' } };
+        const r = await api('/auth/profile', { method: 'PUT', body: JSON.stringify(payload) });
         state.user = r.user;
         updateAuthUI();
         toast('Profile updated');
       } catch (err) { toast(err.message, 'error'); }
+      return;
+    }
+    if (e.target.id === 'editPresetForm') {
+      e.preventDefault();
+      try { await api(`/presets/${e.target.dataset.id}`, { method:'PUT', body: JSON.stringify(Object.fromEntries(new FormData(e.target).entries())) }); toast('Preset updated'); closeModal(); openAccount(); loadPresets(); } catch(err){ toast(err.message,'error'); }
       return;
     }
     if (e.target.id === 'reviewForm') { e.preventDefault(); submitReview(e.target); return; }
