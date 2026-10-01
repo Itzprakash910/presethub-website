@@ -70,6 +70,28 @@ async function getPresignedUploadUrl() {
   throw new Error('Presigned URLs require R2 configuration');
 }
 
+
+async function getDownloadUrl(value, expiresIn = 300) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (!useR2()) return raw;
+  try {
+    const prefix = `${String(process.env.R2_PUBLIC_URL).replace(/\/+$/, '')}/`;
+    const key = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.replace(/^\/+/, '');
+    const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+    const client = new S3Client({
+      region: 'auto',
+      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY }
+    });
+    return await getSignedUrl(client, new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: key }), { expiresIn });
+  } catch (err) {
+    console.warn('Signed download URL failed:', err.message);
+    return raw;
+  }
+}
+
 function isR2Configured() { return useR2(); }
 
-module.exports = { uploadToR2, deleteFromR2, getPresignedUploadUrl, isR2Configured };
+module.exports = { uploadToR2, deleteFromR2, getPresignedUploadUrl, getDownloadUrl, isR2Configured };
