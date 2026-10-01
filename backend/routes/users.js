@@ -27,7 +27,7 @@ async function createNotification(userId, type, message, link) {
   if (exists) return;
   await User.updateOne(
     { _id: userId },
-    { $push: { notifications: { type, message, link: link || '/', read: false, createdAt: new Date() } } }
+    { $push: { notifications: { $each: [{ type, message, link: link || '/', read: false, createdAt: new Date() }], $slice: -100 } } }
   );
 }
 

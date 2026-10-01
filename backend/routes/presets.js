@@ -23,6 +23,20 @@ function slugify(v) {
   return String(v || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'preset';
 }
 
+function seoData(name, description, category, tags, format) {
+  const cleanName = String(name || 'Lightroom Preset').trim().slice(0, 100);
+  const cleanDesc = String(description || '').trim();
+  const tagList = Array.isArray(tags) ? tags : [];
+  const defaults = ['Lightroom preset','photo preset','free Lightroom preset','XMP preset','DNG preset','mobile Lightroom preset','photo editing preset'];
+  const keywords = [...new Set([cleanName, category || 'photo preset', format || 'preset', ...tagList, ...defaults])].slice(0, 30);
+  return {
+    slug: slugify(cleanName),
+    seoTitle: `${cleanName} Lightroom Preset | PresetHub`.slice(0, 70),
+    seoDescription: (cleanDesc || `Download ${cleanName} ${category || 'Lightroom preset'} on PresetHub.`).slice(0, 155),
+    seoKeywords: keywords
+  };
+}
+
 function toPublicPreset(p) {
   return {
     id: p._id.toString(),
@@ -44,7 +58,10 @@ function toPublicPreset(p) {
     previewImage: p.previewImage || '',
     views: Number(p.views || 0),
     likesCount: (p.likes || []).length,
-    shares: Number(p.shares || 0)
+    shares: Number(p.shares || 0),
+    format: p.format || '', presetType: p.presetType || 'lightroom',
+    slug: p.slug || slugify(p.name), seoTitle: p.seoTitle || '',
+    seoDescription: p.seoDescription || '', seoKeywords: p.seoKeywords || []
   };
 }
 
@@ -151,19 +168,14 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
           delete previewMap[fileBase];
         }
 
+        const format = path.extname(file.originalname).replace('.', '').toLowerCase();
+        const description = common.description || `Download ${displayName} ${common.category} preset on PresetHub.`;
+        const seo = seoData(displayName, description, common.category, common.tags, format);
         const preset = await Preset.create({
-          name: displayName,
-          description: common.description || `Lightroom preset: ${displayName}`,
-          category: common.category,
-          tags: common.tags,
-          price: common.price,
-          author: user.name,
-          authorId: user._id,
-          fileUrl, previewImage,
-          size: file.size,
-          originalName: file.originalname,
-          status: 'pending',
-          bulkUploadBatch: batchId
+          name: displayName, description, category: common.category, tags: common.tags,
+          price: common.price, author: user.name, authorId: user._id,
+          fileUrl, previewImage, size: file.size, originalName: file.originalname,
+          status: 'approved', bulkUploadBatch: batchId, format, presetType: 'lightroom', ...seo
         });
 
         created.push({ id: preset._id.toString(), name: preset.name, hasPreview: !!previewImage });
@@ -179,7 +191,7 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
       failed: failed.length,
       presets: created,
       errors: failed,
-      message: `${created.length} preset(s) uploaded for approval`
+      message: `${created.length} preset(s) uploaded and published immediately`
     });
   } catch (err) {
     console.error('Bulk upload error:', err);
@@ -216,18 +228,16 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
       previewImage = await uploadToR2(preview.buffer, key, preview.mimetype);
     }
 
+    const normalizedTags = tags ? (typeof tags === 'string' ? tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean).slice(0, 20) : tags) : [];
+    const categoryValue = category || 'General';
+    const descriptionValue = description || `Download ${name} ${categoryValue} preset on PresetHub.`;
+    const format = file ? path.extname(file.originalname).replace('.', '').toLowerCase() : '';
+    const seo = seoData(name, descriptionValue, categoryValue, normalizedTags, format);
     const preset = await Preset.create({
-      name,
-      description: description || '',
-      category: category || 'General',
-      tags: tags ? (typeof tags === 'string' ? tags.split(',').map(t => t.trim().toLowerCase()) : tags) : [],
-      price: parseFloat(price) || 0,
-      author: user.name,
-      authorId: user._id,
-      fileUrl, previewImage,
-      status: 'pending',
-      size: file ? file.size : 0,
-      originalName: file ? file.originalname : ''
+      name, description: descriptionValue, category: categoryValue, tags: normalizedTags,
+      price: parseFloat(price) || 0, author: user.name, authorId: user._id,
+      fileUrl, previewImage, status: 'approved', size: file ? file.size : 0,
+      originalName: file ? file.originalname : '', format, presetType: 'lightroom', ...seo
     });
 
     res.status(201).json({ ...preset.toObject(), id: preset._id.toString() });
