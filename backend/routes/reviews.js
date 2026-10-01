@@ -1,111 +1,86 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
-const { getDB } = require('../config/db');
-const { v4: uuidv4 } = require('uuid');
+const { Preset, User } = require('../models');
 const { body, validationResult } = require('express-validator');
 const { createNotification } = require('./users');
 
 const router = express.Router();
 
-// Get reviews for a preset
 router.get('/:presetId', async (req, res) => {
-  const db = await getDB();
-  const preset = db.data.presets.find(p => p.id === req.params.presetId);
+  if (!mongoose.Types.ObjectId.isValid(req.params.presetId))
+    return res.status(400).json({ error: 'Invalid ID' });
+  const preset = await Preset.findById(req.params.presetId).select('reviews').lean();
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
-  res.json((preset.reviews || []).map(r => ({ id:r.id, userName:r.userName, rating:r.rating, comment:r.comment, createdAt:r.createdAt, helpful:r.helpful || 0 })));
+  res.json((preset.reviews || []).map(r => ({
+    id: r._id.toString(), userName: r.userName, rating: r.rating,
+    comment: r.comment, createdAt: r.createdAt, helpful: r.helpful || 0
+  })));
 });
 
-// Post a review
 router.post('/:presetId', auth, [
-  body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
-  body('comment').notEmpty().withMessage('Comment is required')
+  body('rating').isInt({ min: 1, max: 5 }),
+  body('comment').notEmpty().isLength({ max: 500 })
 ], async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ error: errors.array()[0].msg });
-  }
+  if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
+  if (!mongoose.Types.ObjectId.isValid(req.params.presetId))
+    return res.status(400).json({ error: 'Invalid ID' });
 
-  const { rating, comment } = req.body;
-  const userId = req.user.id;
-  const db = await getDB();
-  const preset = db.data.presets.find(p => p.id === req.params.presetId);
+  const preset = await Preset.findById(req.params.presetId);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
-  const existingReview = preset.reviews?.find(r => r.userId === userId);
-  if (existingReview) {
-    return res.status(400).json({ error: 'You have already reviewed this preset' });
-  }
+  if (preset.reviews.some(r => r.userId?.toString() === req.user.id))
+    return res.status(400).json({ error: 'You already reviewed this preset' });
 
-  const user = db.data.users.find(u => u.id === userId);
+  const user = await User.findById(req.user.id).select('name').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const review = {
-    id: uuidv4(),
-    userId,
+  preset.reviews.push({
+    userId: req.user.id,
     userName: user.name,
-    rating: parseInt(rating),
-    comment,
-    createdAt: new Date().toISOString(),
-    helpful: 0,
-  };
-
-  if (!preset.reviews) preset.reviews = [];
-  preset.reviews.push(review);
-
-  const total = preset.reviews.reduce((sum, r) => sum + r.rating, 0);
+    rating: parseInt(req.body.rating),
+    comment: req.body.comment
+  });
+  const total = preset.reviews.reduce((s, r) => s + r.rating, 0);
   preset.avgRating = parseFloat((total / preset.reviews.length).toFixed(1));
-  await db.write();
+  await preset.save();
 
-  if (preset.authorId !== userId) {
-    await createNotification(
-      preset.authorId,
-      'review',
-      `${user.name} reviewed your preset "${preset.name}" (${rating}★)`,
-      `/preset/${preset.id}`
-    );
+  if (preset.authorId.toString() !== req.user.id) {
+    await createNotification(preset.authorId, 'review',
+      `${user.name} reviewed "${preset.name}" (${req.body.rating}★)`,
+      `/preset/${preset._id}`);
   }
 
-  res.status(201).json(review);
+  const review = preset.reviews[preset.reviews.length - 1];
+  res.status(201).json({ ...review.toObject(), id: review._id.toString() });
 });
 
-// Mark review as helpful
 router.post('/:presetId/reviews/:reviewId/helpful', auth, async (req, res) => {
-  const db = await getDB();
-  const preset = db.data.presets.find(p => p.id === req.params.presetId);
+  if (!mongoose.Types.ObjectId.isValid(req.params.presetId))
+    return res.status(400).json({ error: 'Invalid ID' });
+  const preset = await Preset.findById(req.params.presetId);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
-
-  const review = (preset.reviews || []).find(r => r.id === req.params.reviewId);
+  const review = preset.reviews.id(req.params.reviewId);
   if (!review) return res.status(404).json({ error: 'Review not found' });
-
   review.helpful = (review.helpful || 0) + 1;
-  await db.write();
+  await preset.save();
   res.json({ helpful: review.helpful });
 });
 
-// Delete review
 router.delete('/:presetId/reviews/:reviewId', auth, async (req, res) => {
-  const db = await getDB();
-  const preset = db.data.presets.find(p => p.id === req.params.presetId);
+  if (!mongoose.Types.ObjectId.isValid(req.params.presetId))
+    return res.status(400).json({ error: 'Invalid ID' });
+  const preset = await Preset.findById(req.params.presetId);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
-
-  const reviewIndex = (preset.reviews || []).findIndex(r => r.id === req.params.reviewId);
-  if (reviewIndex === -1) return res.status(404).json({ error: 'Review not found' });
-
-  const review = preset.reviews[reviewIndex];
-  if (review.userId !== req.user.id && req.user.role !== 'admin') {
+  const review = preset.reviews.id(req.params.reviewId);
+  if (!review) return res.status(404).json({ error: 'Review not found' });
+  if (review.userId.toString() !== req.user.id && req.user.role !== 'admin')
     return res.status(403).json({ error: 'Unauthorized' });
-  }
-
-  preset.reviews.splice(reviewIndex, 1);
-
-  if (preset.reviews.length > 0) {
-    const total = preset.reviews.reduce((sum, r) => sum + r.rating, 0);
-    preset.avgRating = parseFloat((total / preset.reviews.length).toFixed(1));
-  } else {
-    preset.avgRating = 0;
-  }
-
-  await db.write();
+  review.deleteOne();
+  const total = preset.reviews.reduce((s, r) => s + r.rating, 0);
+  preset.avgRating = preset.reviews.length ? parseFloat((total / preset.reviews.length).toFixed(1)) : 0;
+  await preset.save();
   res.json({ success: true });
 });
 

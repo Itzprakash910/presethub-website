@@ -1,219 +1,188 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
-const { getDB } = require('../config/db');
+const { User, Preset, Order, Download } = require('../models');
 
 const router = express.Router();
-
-// ===== DEFINE isAdmin FIRST =====
-const isAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  next();
-};
-
-// ===== THEN USE IT =====
+const isAdmin = (req, res, next) => req.user.role === 'admin'
+  ? next()
+  : res.status(403).json({ error: 'Admin access required' });
 router.use(auth, isAdmin);
 
-// Get all users
+function paginate(page, limit) {
+  const p = Math.max(1, parseInt(page) || 1);
+  const l = Math.min(500, Math.max(1, parseInt(limit) || 50));
+  return { skip: (p - 1) * l, limit: l, page: p };
+}
+
 router.get('/users', async (req, res) => {
-  const db = await getDB();
-  const users = db.data.users.map(({ password, ...rest }) => rest);
-  res.json(users);
+  const { skip, limit, page } = paginate(req.query.page, req.query.limit);
+  const [users, total] = await Promise.all([
+    User.find({}).select('-password').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    User.countDocuments()
+  ]);
+  res.json({
+    items: users.map(u => ({ ...u, id: u._id.toString() })),
+    total, page, totalPages: Math.ceil(total / limit), limit
+  });
 });
 
 router.get('/users/:id', async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.params.id);
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(400).json({ error: 'Invalid ID' });
+  const user = await User.findById(req.params.id).select('-password').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const { password, ...safeUser } = user;
-  res.json(safeUser);
+  res.json({ ...user, id: user._id.toString() });
 });
 
 router.put('/users/:id/role', async (req, res) => {
   const { role } = req.body;
-  if (!['user', 'admin'].includes(role)) {
-    return res.status(400).json({ error: 'Invalid role' });
-  }
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.params.id);
+  if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).select('-password').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
-  user.role = role;
-  await db.write();
-  const { password, ...safeUser } = user;
-  res.json(safeUser);
+  res.json({ ...user, id: user._id.toString() });
 });
 
 router.delete('/users/:id', async (req, res) => {
-  const db = await getDB();
-  const index = db.data.users.findIndex(u => u.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: 'User not found' });
-  if (db.data.users[index].role === 'admin') {
-    return res.status(400).json({ error: 'Cannot delete admin user' });
-  }
-  db.data.users.splice(index, 1);
-  await db.write();
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.role === 'admin') return res.status(400).json({ error: 'Cannot delete admin' });
+  await User.deleteOne({ _id: user._id });
   res.json({ success: true });
 });
 
 router.put('/users/:id/verify', async (req, res) => {
-  const { verified } = req.body;
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  user.verified = verified;
-  await db.write();
-  res.json({ success: true, verified });
+  await User.updateOne({ _id: req.params.id }, { verified: !!req.body.verified });
+  res.json({ success: true });
 });
 
 router.put('/users/:id', async (req, res) => {
   const { name, username, email, bio, role, verified } = req.body;
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.params.id);
+  const user = await User.findById(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   if (username && username !== user.username) {
-    const existing = db.data.users.find(u => u.username === username && u.id !== req.params.id);
-    if (existing) return res.status(409).json({ error: 'Username already taken' });
+    if (await User.exists({ username: username.toLowerCase(), _id: { $ne: user._id } }))
+      return res.status(409).json({ error: 'Username taken' });
   }
   if (email && email !== user.email) {
-    const existing = db.data.users.find(u => u.email === email && u.id !== req.params.id);
-    if (existing) return res.status(409).json({ error: 'Email already taken' });
+    if (await User.exists({ email: email.toLowerCase(), _id: { $ne: user._id } }))
+      return res.status(409).json({ error: 'Email taken' });
   }
 
   if (name) user.name = name;
-  if (username) user.username = username;
-  if (email) user.email = email;
+  if (username) user.username = username.toLowerCase();
+  if (email) user.email = email.toLowerCase();
   if (bio !== undefined) user.bio = bio;
   if (role) user.role = role;
   if (verified !== undefined) user.verified = verified;
+  await user.save();
 
-  await db.write();
-  const { password, ...safeUser } = user;
-  res.json(safeUser);
-});
-
-router.put('/orders/:id/status', async (req, res) => {
-  const { status } = req.body;
-  if (!['refunded', 'cancelled', 'paid', 'created'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status' });
-  }
-  const db = await getDB();
-  const order = (db.data.orders || []).find(o => o.id === req.params.id);
-  if (!order) return res.status(404).json({ error: 'Order not found' });
-  order.status = status;
-  await db.write();
-  res.json(order);
+  const safe = user.toObject();
+  delete safe.password;
+  safe.id = safe._id.toString();
+  res.json(safe);
 });
 
 router.put('/presets/:id/status', async (req, res) => {
   const { status } = req.body;
-  if (!['approved', 'rejected', 'pending'].includes(status)) {
+  if (!['approved', 'rejected', 'pending'].includes(status))
     return res.status(400).json({ error: 'Invalid status' });
-  }
-  const db = await getDB();
-  const preset = db.data.presets.find(p => p.id === req.params.id);
+  const preset = await Preset.findByIdAndUpdate(req.params.id, { status }, { new: true }).lean();
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
-  preset.status = status;
-  await db.write();
-  res.json(preset);
+  res.json({ ...preset, id: preset._id.toString() });
+});
+
+router.post('/presets/bulk-status', async (req, res) => {
+  const { ids, status } = req.body;
+  if (!Array.isArray(ids) || !['approved', 'rejected', 'pending'].includes(status))
+    return res.status(400).json({ error: 'Invalid input' });
+  const result = await Preset.updateMany({ _id: { $in: ids } }, { status });
+  res.json({ success: true, modified: result.modifiedCount });
 });
 
 router.get('/presets', async (req, res) => {
-  const db = await getDB();
-  res.json(db.data.presets);
+  const { skip, limit, page } = paginate(req.query.page, req.query.limit);
+  const filter = {};
+  if (req.query.status) filter.status = req.query.status;
+  const [presets, total] = await Promise.all([
+    Preset.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Preset.countDocuments(filter)
+  ]);
+  res.json({
+    items: presets.map(p => ({ ...p, id: p._id.toString(), authorId: p.authorId.toString() })),
+    total, page, totalPages: Math.ceil(total / limit), limit
+  });
 });
 
-// Analytics
 router.get('/analytics', async (req, res) => {
-  const db = await getDB();
-  const totalUsers = db.data.users.length;
-  const totalPresets = db.data.presets.length;
-  const totalDownloads = db.data.presets.reduce((sum, p) => sum + (p.downloads || 0), 0);
-  const totalRevenue = (db.data.orders || [])
-    .filter(o => o.status === 'paid')
-    .reduce((sum, o) => sum + (o.amount || 0), 0);
-  const freePresets = db.data.presets.filter(p => p.price === 0).length;
-  const paidPresets = db.data.presets.filter(p => p.price > 0).length;
+  const [totalUsers, totalPresets, totalDownloads, totalOrders, revenueAgg, freePresets, paidPresets, ratingAgg] = await Promise.all([
+    User.countDocuments(),
+    Preset.countDocuments(),
+    Download.countDocuments(),
+    Order.countDocuments(),
+    Order.aggregate([{ $match: { status: 'paid' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+    Preset.countDocuments({ price: 0 }),
+    Preset.countDocuments({ price: { $gt: 0 } }),
+    Preset.aggregate([
+      { $match: { avgRating: { $gt: 0 } } },
+      { $group: { _id: null, avg: { $avg: '$avgRating' } } }
+    ])
+  ]);
 
-  const ratedPresets = db.data.presets.filter(p => p.avgRating > 0);
-  const avgRating = ratedPresets.length
-    ? ratedPresets.reduce((sum, p) => sum + p.avgRating, 0) / ratedPresets.length
-    : 0;
-
-  const totalSubscribed = db.data.users.filter(u => {
-    const expiry = u.subscription?.expiry ? new Date(u.subscription.expiry) : null;
-    return expiry && expiry > new Date();
-  }).length;
-
-  const totalReferrals = db.data.users.reduce((sum, u) => sum + (u.referral?.referralCount || 0), 0);
-  const totalAdWatches = db.data.users.reduce((sum, u) => sum + (u.subscription?.adWatchCount || 0), 0);
-  const totalPlatformRevenue = db.data.presets.reduce((sum, p) => sum + (p.totalRevenue || 0), 0);
-  const totalAdImpressions = db.data.presets.reduce((sum, p) => sum + (p.adImpressions || 0), 0);
-
-  const creatorEarnings = {};
-  db.data.presets.forEach(p => {
-    if (!creatorEarnings[p.authorId]) {
-      creatorEarnings[p.authorId] = { name: p.author, revenue: 0, presets: 0 };
-    }
-    creatorEarnings[p.authorId].revenue += p.totalRevenue || 0;
-    creatorEarnings[p.authorId].presets += 1;
-  });
-
-  const topCreators = Object.values(creatorEarnings)
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 5);
+  const topCreators = await Preset.aggregate([
+    { $match: { status: 'approved' } },
+    { $group: { _id: '$authorId', name: { $first: '$author' }, revenue: { $sum: '$totalRevenue' }, presets: { $sum: 1 } } },
+    { $sort: { revenue: -1 } }, { $limit: 5 }
+  ]);
 
   res.json({
-    totalUsers,
-    totalPresets,
-    totalDownloads,
-    totalRevenue,
-    freePresets,
-    paidPresets,
-    avgRating: avgRating.toFixed(1),
-    totalSubscribed,
-    totalReferrals,
-    totalAdWatches,
-    totalPlatformRevenue,
-    totalAdImpressions,
-    topCreators
+    totalUsers, totalPresets, totalDownloads, totalOrders,
+    totalRevenue: revenueAgg[0]?.total || 0,
+    freePresets, paidPresets,
+    avgRating: (ratingAgg[0]?.avg || 0).toFixed(1),
+    topCreators: topCreators.map(c => ({ id: c._id.toString(), name: c.name, revenue: c.revenue, presets: c.presets }))
   });
 });
 
 router.get('/orders', async (req, res) => {
-  const db = await getDB();
-  const orders = db.data.orders || [];
-  const populatedOrders = orders.map(order => {
-    const user = db.data.users.find(u => u.id === order.userId);
-    const preset = db.data.presets.find(p => p.id === order.presetId);
-    return {
-      ...order,
-      user: user ? { id: user.id, name: user.name, email: user.email } : null,
-      preset: preset ? { id: preset.id, name: preset.name } : null
-    };
+  const { skip, limit, page } = paginate(req.query.page, req.query.limit);
+  const [orders, total] = await Promise.all([
+    Order.find({}).populate('userId', 'name email').populate('presetId', 'name')
+      .sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Order.countDocuments()
+  ]);
+  res.json({
+    items: orders.map(o => ({
+      id: o._id.toString(), amount: o.amount, status: o.status, createdAt: o.createdAt,
+      user: o.userId ? { id: o.userId._id?.toString(), name: o.userId.name, email: o.userId.email } : null,
+      preset: o.presetId ? { id: o.presetId._id?.toString(), name: o.presetId.name } : null
+    })),
+    total, page, totalPages: Math.ceil(total / limit), limit
   });
-  res.json(populatedOrders);
+});
+
+router.put('/orders/:id/status', async (req, res) => {
+  const { status } = req.body;
+  if (!['refunded', 'cancelled', 'paid', 'created'].includes(status))
+    return res.status(400).json({ error: 'Invalid status' });
+  const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true }).lean();
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  res.json({ ...order, id: order._id.toString() });
 });
 
 router.get('/stats', async (req, res) => {
-  const db = await getDB();
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  const newUsersToday = db.data.users.filter(u => new Date(u.createdAt) >= today).length;
-  const newPresetsToday = db.data.presets.filter(p => new Date(p.createdAt) >= today).length;
-  const downloadsToday = (db.data.downloads || []).filter(d => new Date(d.downloadedAt) >= today).length;
-
-  res.json({
-    newUsersToday,
-    newPresetsToday,
-    downloadsToday,
-    totalUsers: db.data.users.length,
-    totalPresets: db.data.presets.length,
-    totalDownloads: (db.data.downloads || []).length,
-    totalOrders: db.data.orders?.length || 0
-  });
+  const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+  const [newUsersToday, newPresetsToday, downloadsToday, totalUsers, totalPresets, totalDownloads, totalOrders] = await Promise.all([
+    User.countDocuments({ createdAt: { $gte: startOfDay } }),
+    Preset.countDocuments({ createdAt: { $gte: startOfDay } }),
+    Download.countDocuments({ downloadedAt: { $gte: startOfDay } }),
+    User.countDocuments(),
+    Preset.countDocuments(),
+    Download.countDocuments(),
+    Order.countDocuments()
+  ]);
+  res.json({ newUsersToday, newPresetsToday, downloadsToday, totalUsers, totalPresets, totalDownloads, totalOrders });
 });
 
 module.exports = router;

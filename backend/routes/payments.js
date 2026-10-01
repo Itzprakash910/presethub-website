@@ -1,126 +1,120 @@
 const express = require('express');
-const Razorpay = require('razorpay');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
-const { getDB } = require('../config/db');
+const { Order, Preset } = require('../models');
 
 const router = express.Router();
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+let razorpay = null;
+const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
+const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 
-// Create Order
-router.post('/create-order', auth, async (req, res) => {
+if (RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET) {
+  try {
+    const Razorpay = require('razorpay');
+    razorpay = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
+    console.log('✅ Razorpay initialized');
+  } catch (err) { console.error('Razorpay init failed:', err.message); }
+} else {
+  console.warn('⚠️  Razorpay keys not configured');
+}
+
+const ensureRazorpay = (req, res, next) =>
+  razorpay ? next() : res.status(503).json({ error: 'Payment service not configured' });
+
+router.post('/create-order', auth, ensureRazorpay, async (req, res) => {
   try {
     const { presetId } = req.body;
-    const db = await getDB();
-    const preset = db.data.presets.find(p => p.id === presetId);
+    if (!mongoose.Types.ObjectId.isValid(presetId))
+      return res.status(400).json({ error: 'Invalid preset ID' });
 
+    const preset = await Preset.findById(presetId);
     if (!preset) return res.status(404).json({ error: 'Preset not found' });
     if (preset.price <= 0) return res.status(400).json({ error: 'Preset is free' });
 
-    // Already purchased check
-    const alreadyPaid = (db.data.orders || []).some(
-      o => o.presetId === presetId && o.userId === req.user.id && o.status === 'paid'
-    );
-    if (alreadyPaid) {
+    if (await Order.exists({ presetId, userId: req.user.id, status: 'paid' }))
       return res.status(400).json({ error: 'You already own this preset' });
-    }
 
-    const amount = Math.round(preset.price * 100); // paise
-    const currency = 'INR';
-    const receipt = `receipt_${Date.now()}`;
-
+    const amount = Math.round(preset.price * 100);
     const order = await razorpay.orders.create({
-      amount,
-      currency,
-      receipt,
+      amount, currency: 'INR', receipt: `receipt_${Date.now()}`,
       payment_capture: 1,
-      notes: { presetId: preset.id, userId: req.user.id },
+      notes: { presetId: preset._id.toString(), userId: req.user.id }
     });
 
-    if (!db.data.orders) db.data.orders = [];
-    db.data.orders.push({
-      id: order.id,
-      userId: req.user.id,
-      presetId: preset.id,
-      amount: preset.price,
-      currency,
-      status: 'created',
-      createdAt: new Date().toISOString(),
+    await Order.create({
+      _id: order.id, userId: req.user.id, presetId: preset._id,
+      amount: preset.price, currency: 'INR', status: 'created'
     });
-    await db.write();
 
-    res.json({
-      key: process.env.RAZORPAY_KEY_ID,
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency,
-    });
+    res.json({ key: RAZORPAY_KEY_ID, orderId: order.id, amount: order.amount, currency: order.currency });
   } catch (err) {
-    console.error('Razorpay create-order error:', err);
-    res.status(500).json({ error: 'Failed to create order: ' + err.message });
+    console.error('Create-order error:', err);
+    res.status(500).json({ error: 'Order creation failed' });
   }
 });
 
-// Verify Payment
 router.post('/verify', auth, async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-    const db = await getDB();
-
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({ error: 'Missing payment details' });
-    }
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature)
+      return res.status(400).json({ error: 'Missing details' });
+    if (!RAZORPAY_KEY_SECRET) return res.status(503).json({ error: 'Not configured' });
 
     const body = razorpay_order_id + '|' + razorpay_payment_id;
-    const expectedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-      .update(body)
-      .digest('hex');
+    const expected = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET).update(body).digest('hex');
+    if (expected !== razorpay_signature) return res.status(400).json({ error: 'Invalid signature' });
 
-    if (expectedSignature !== razorpay_signature) {
-      return res.status(400).json({ error: 'Invalid signature' });
-    }
-
-    const order = (db.data.orders || []).find(o => o.id === razorpay_order_id);
+    const order = await Order.findById(razorpay_order_id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
-
-    if (order.userId !== req.user.id) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
+    if (order.userId.toString() !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
 
     order.status = 'paid';
     order.paymentId = razorpay_payment_id;
-    order.paidAt = new Date().toISOString();
-    await db.write();
+    order.paidAt = new Date();
+    await order.save();
 
-    res.json({ success: true, message: 'Payment verified, download available' });
+    await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: order.amount } });
+
+    res.json({ success: true, message: 'Payment verified' });
   } catch (err) {
-    console.error('Payment verify error:', err);
-    res.status(500).json({ error: 'Payment verification failed' });
+    console.error('Verify error:', err);
+    res.status(500).json({ error: 'Verification failed' });
   }
 });
 
-// Get order status
+router.post('/webhook', express.json({ type: 'application/json' }), async (req, res) => {
+  try {
+    if (!RAZORPAY_KEY_SECRET) return res.status(503).end();
+    const sig = req.headers['x-razorpay-signature'];
+    if (!sig) return res.status(400).end();
+    const expected = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET).update(JSON.stringify(req.body)).digest('hex');
+    if (expected !== sig) return res.status(400).end();
+
+    const event = req.body?.event;
+    const payment = req.body?.payload?.payment?.entity;
+    if (event === 'payment.captured' && payment?.order_id) {
+      await Order.updateOne(
+        { _id: payment.order_id, status: { $ne: 'paid' } },
+        { status: 'paid', paymentId: payment.id, paidAt: new Date() }
+      );
+    }
+    res.json({ received: true });
+  } catch (err) { console.error('Webhook error:', err); res.status(500).end(); }
+});
+
 router.get('/order/:orderId', auth, async (req, res) => {
-  const db = await getDB();
-  const order = (db.data.orders || []).find(o => o.id === req.params.orderId);
+  const order = await Order.findById(req.params.orderId).lean();
   if (!order) return res.status(404).json({ error: 'Order not found' });
-
-  if (order.userId !== req.user.id && req.user.role !== 'admin') {
+  if (order.userId.toString() !== req.user.id && req.user.role !== 'admin')
     return res.status(403).json({ error: 'Unauthorized' });
-  }
-  res.json(order);
+  res.json({ ...order, id: order._id.toString() });
 });
 
-// Get user's orders
 router.get('/my-orders', auth, async (req, res) => {
-  const db = await getDB();
-  const orders = (db.data.orders || []).filter(o => o.userId === req.user.id);
-  res.json(orders);
+  const orders = await Order.find({ userId: req.user.id }).sort({ createdAt: -1 }).lean();
+  res.json(orders.map(o => ({ ...o, id: o._id.toString() })));
 });
 
 module.exports = router;

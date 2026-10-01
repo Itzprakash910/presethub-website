@@ -1,280 +1,170 @@
 const express = require('express');
-const auth = require('../middleware/auth');
-const { getDB } = require('../config/db');
-const { v4: uuidv4 } = require('uuid');
-const multer = require('multer');
+const mongoose = require('mongoose');
 const path = require('path');
-const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+const auth = require('../middleware/auth');
+const { User, Preset, Download } = require('../models');
+const { uploadAvatar } = require('../middleware/upload');
+const { uploadToR2 } = require('../config/r2');
 
 const router = express.Router();
-
-// ===== HELPER: create notification =====
-async function createNotification(userId, type, message, link) {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === userId);
-  if (!user) return;
-  if (!user.notifications) user.notifications = [];
-
-  const exists = user.notifications.some(n => n.message === message && n.type === type && !n.read);
-  if (exists) return;
-
-  user.notifications.push({
-    id: uuidv4(),
-    type,
-    message,
-    read: false,
-    createdAt: new Date().toISOString(),
-    link: link || '/'
-  });
-  await db.write();
+function cleanSocialLinks(value) {
+  const out = {};
+  for (const key of ['instagram','youtube','twitter','website']) {
+    const v = String(value?.[key] || '').trim();
+    out[key] = /^(https?:\/\/)/i.test(v) ? v.slice(0, 300) : '';
+  }
+  return out;
 }
 
-// ===== AVATAR UPLOAD =====
-const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const avatarDir = path.join(__dirname, '../../uploads/avatars');
-    if (!fs.existsSync(avatarDir)) fs.mkdirSync(avatarDir, { recursive: true });
-    cb(null, avatarDir);
-  },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, unique + path.extname(file.originalname));
-  }
-});
 
-const avatarFilter = (req, file, cb) => {
-  const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (allowed.includes(ext)) cb(null, true);
-  else cb(new Error('Only images allowed'), false);
-};
+async function createNotification(userId, type, message, link) {
+  if (!mongoose.Types.ObjectId.isValid(userId)) return;
+  const exists = await User.findOne({
+    _id: userId,
+    notifications: { $elemMatch: { message, type, read: false } }
+  }).lean();
+  if (exists) return;
+  await User.updateOne(
+    { _id: userId },
+    { $push: { notifications: { type, message, link: link || '/', read: false, createdAt: new Date() } } }
+  );
+}
 
-const uploadAvatar = multer({
-  storage: avatarStorage,
-  fileFilter: avatarFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }
-}).single('avatar');
-
-// ===== GET /users (public) =====
 router.get('/', async (req, res) => {
-  const db = await getDB();
-  const users = db.data.users.map(({ password, ...rest }) => ({
-    id: rest.id,
-    name: rest.name,
-    username: rest.username,
-    avatar: rest.avatar,
-    followers: rest.followers?.length || 0,
-    presetCount: db.data.presets.filter(p => p.authorId === rest.id).length
-  }));
-  res.json(users);
-});
-
-// ===== GET own profile =====
-router.get('/me', auth, async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const { password, ...safeUser } = user;
-  res.json(safeUser);
-});
-
-// ===== UPDATE profile =====
-router.put('/me', auth, async (req, res) => {
-  const { name, username, bio, avatar, socialLinks, email } = req.body;
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-
-  if (username && username !== user.username) {
-    const existing = db.data.users.find(u => u.username === username && u.id !== req.user.id);
-    if (existing) return res.status(409).json({ error: 'Username taken' });
-  }
-  if (email && email !== user.email) {
-    const existing = db.data.users.find(u => u.email === email && u.id !== req.user.id);
-    if (existing) return res.status(409).json({ error: 'Email taken' });
-  }
-
-  if (name) user.name = name;
-  if (username) user.username = username;
-  if (bio !== undefined) user.bio = bio;
-  if (avatar) user.avatar = avatar;
-  if (email) user.email = email;
-  if (socialLinks) user.socialLinks = { ...user.socialLinks, ...socialLinks };
-
-  await db.write();
-  const { password, ...safeUser } = user;
-  res.json(safeUser);
-});
-
-// ===== UPLOAD avatar =====
-router.put('/me/avatar', auth, (req, res) => {
-  uploadAvatar(req, res, async function (err) {
-    if (err) return res.status(400).json({ error: err.message });
-    if (!req.file) return res.status(400).json({ error: 'No file' });
-
-    const db = await getDB();
-    const user = db.data.users.find(u => u.id === req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    if (user.avatar && user.avatar.startsWith('/uploads/avatars/')) {
-      const oldPath = path.join(__dirname, '../..', user.avatar);
-      if (fs.existsSync(oldPath)) {
-        try { fs.unlinkSync(oldPath); } catch (e) {}
-      }
-    }
-
-    user.avatar = `/uploads/avatars/${req.file.filename}`;
-    await db.write();
-    res.json({ avatar: user.avatar });
-  });
-});
-
-// ===== GET top creators =====
-router.get('/top', async (req, res) => {
-  const db = await getDB();
-  const users = db.data.users;
-  const presets = db.data.presets;
-
-  const top = users.map(u => {
-    const userPresets = presets.filter(p => p.authorId === u.id && p.status === 'approved');
-    const totalDownloads = userPresets.reduce((sum, p) => sum + (p.downloads || 0), 0);
-    return {
-      id: u.id,
-      name: u.name,
-      username: u.username || u.email?.split('@')[0] || '',
-      avatar: u.avatar,
-      presetCount: userPresets.length,
-      totalDownloads,
-      followers: u.followers?.length || 0,
-    };
-  })
-  .sort((a, b) => b.presetCount - a.presetCount || b.totalDownloads - a.totalDownloads)
-  .slice(0, 5);
-
-  res.json(top);
-});
-
-// ===== FOLLOW STATUS =====
-router.get('/:id/follow-status', auth, async (req, res) => {
-  const db = await getDB();
-  const target = db.data.users.find(u => u.id === req.params.id);
-  if (!target) return res.status(404).json({ error: 'User not found' });
-  res.json({ following: (target.followers || []).includes(req.user.id) });
-});
-
-// ===== GET public profile =====
-router.get('/:id', async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-
-  const presets = db.data.presets.filter(p => p.authorId === user.id && p.status === 'approved');
-  const totalDownloads = presets.reduce((sum, p) => sum + (p.downloads || 0), 0);
-
-  res.json({
-    id: user.id,
-    name: user.name,
-    username: user.username,
-    avatar: user.avatar,
-    bio: user.bio,
-    socialLinks: user.socialLinks || {},
-    verified: !!user.verified,
-    totalPresets: presets.length,
-    totalDownloads,
-    followers: user.followers?.length || 0,
-    following: user.following?.length || 0,
-  });
-});
-
-// ===== GET presets by user =====
-router.get('/:id/presets', async (req, res) => {
-  const db = await getDB();
-  const presets = db.data.presets.filter(p => p.authorId === req.params.id && p.status === 'approved');
-  res.json(presets.map(p => ({
-    id:p.id,name:p.name,description:p.description||'',category:p.category||'General',
-    tags:Array.isArray(p.tags)?p.tags.slice(0,10):[],price:Number(p.price||0),author:p.author||'Creator',
-    authorId:p.authorId,createdAt:p.createdAt,updatedAt:p.updatedAt,downloads:Number(p.downloads||0),
-    avgRating:Number(p.avgRating||0),previewImage:p.previewImage||'',views:Number(p.views||0),
-    likesCount:(p.likes||[]).length,shares:Number(p.shares||0),
-    reviews:(p.reviews||[]).map(r=>({id:r.id,userName:r.userName,rating:r.rating,comment:r.comment,createdAt:r.createdAt,helpful:r.helpful||0}))
+  const users = await User.find({}).select('name username avatar followers').lean();
+  const counts = await Preset.aggregate([
+    { $match: { status: 'approved' } },
+    { $group: { _id: '$authorId', count: { $sum: 1 } } }
+  ]);
+  const map = Object.fromEntries(counts.map(c => [c._id.toString(), c.count]));
+  res.json(users.map(u => ({
+    id: u._id.toString(), name: u.name, username: u.username, avatar: u.avatar,
+    followers: (u.followers || []).length,
+    presetCount: map[u._id.toString()] || 0
   })));
 });
 
-// ===== FOLLOW / UNFOLLOW =====
-router.post('/:id/follow', auth, async (req, res) => {
-  const db = await getDB();
-  const target = db.data.users.find(u => u.id === req.params.id);
-  if (!target) return res.status(404).json({ error: 'User not found' });
-  if (target.id === req.user.id) return res.status(400).json({ error: 'Cannot follow self' });
+router.get('/me', auth, async (req, res) => {
+  const user = await User.findById(req.user.id).select('-password').lean();
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ ...user, id: user._id.toString() });
+});
 
-  const current = db.data.users.find(u => u.id === req.user.id);
-  if (!current) return res.status(404).json({ error: 'User not found' });
+router.put('/me', auth, async (req, res) => {
+  const { name, username, bio, avatar, socialLinks, email } = req.body;
+  const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
 
-  if (!target.followers) target.followers = [];
-  if (!current.following) current.following = [];
+  if (username && username !== user.username) {
+    if (await User.exists({ username: username.toLowerCase(), _id: { $ne: user._id } }))
+      return res.status(409).json({ error: 'Username taken' });
+    user.username = username.toLowerCase();
+  }
+  if (email && email !== user.email) {
+    if (await User.exists({ email: email.toLowerCase(), _id: { $ne: user._id } }))
+      return res.status(409).json({ error: 'Email taken' });
+    user.email = email.toLowerCase();
+  }
+  if (name) user.name = name;
+  if (bio !== undefined) user.bio = bio;
+  if (avatar) user.avatar = avatar;
+  if (socialLinks) user.socialLinks = { ...(user.socialLinks?.toObject?.() || {}), ...cleanSocialLinks(socialLinks) };
 
-  const isFollowing = target.followers.includes(current.id);
+  await user.save();
+  const safe = user.toObject();
+  delete safe.password;
+  safe.id = safe._id.toString();
+  res.json(safe);
+});
 
-  if (isFollowing) {
-    target.followers = target.followers.filter(id => id !== current.id);
-    current.following = current.following.filter(id => id !== target.id);
-    await db.write();
-    return res.json({
-      following: false,
-      followersCount: target.followers.length,
-      followingCount: current.following.length
-    });
-  } else {
-    target.followers.push(current.id);
-    current.following.push(target.id);
-    await db.write();
-    await createNotification(target.id, 'follow', `${current.name} started following you!`, `/profile/${current.id}`);
-    return res.json({
-      following: true,
-      followersCount: target.followers.length,
-      followingCount: current.following.length
-    });
+router.put('/me/avatar', auth, uploadAvatar, async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const key = `avatars/${uuidv4()}${path.extname(req.file.originalname)}`;
+    const url = await uploadToR2(req.file.buffer, key, req.file.mimetype);
+    await User.updateOne({ _id: req.user.id }, { avatar: url });
+    res.json({ avatar: url, message: 'Avatar updated' });
+  } catch (e) {
+    console.error('Avatar error:', e);
+    res.status(500).json({ error: 'Avatar upload failed' });
   }
 });
 
-// ===== GET downloads history =====
-router.get('/me/downloads', auth, async (req, res) => {
-  const db = await getDB();
-  const downloads = (db.data.downloads || []).filter(d => d.userId === req.user.id);
-  const presetIds = downloads.map(d => d.presetId);
-  const presets = db.data.presets.filter(p => presetIds.includes(p.id));
-  res.json(presets);
+router.get('/top', async (req, res) => {
+  const top = await User.aggregate([
+    { $lookup: { from: 'presets', localField: '_id', foreignField: 'authorId', as: 'presets' } },
+    { $addFields: { approved: { $filter: { input: '$presets', as: 'p', cond: { $eq: ['$$p.status', 'approved'] } } } } },
+    { $project: {
+      name: 1, username: 1, avatar: 1,
+      presetCount: { $size: '$approved' },
+      totalDownloads: { $sum: '$approved.downloads' },
+      followers: { $size: { $ifNull: ['$followers', []] } }
+    }},
+    { $sort: { presetCount: -1, totalDownloads: -1 } },
+    { $limit: 5 }
+  ]);
+  res.json(top.map(u => ({ ...u, id: u._id.toString() })));
 });
 
-// ===== TOGGLE wishlist =====
+router.get('/me/dashboard', auth, async (req, res) => {
+  const [user, presets, downloads, unread] = await Promise.all([
+    User.findById(req.user.id).select('name username avatar followers following subscription notifications').lean(),
+    Preset.find({ authorId: req.user.id }).sort({ createdAt: -1 }).limit(12).lean(),
+    Download.countDocuments({ userId: req.user.id }),
+    User.aggregate([
+      { $match: { _id: new mongoose.Types.ObjectId(req.user.id) } },
+      { $project: { count: { $size: { $filter: { input: '$notifications', as: 'n', cond: { $eq: ['$$n.read', false] } } } } } }
+    ])
+  ]);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const ids = presets.map(p => p._id);
+  const agg = ids.length ? await Preset.aggregate([{ $match: { _id: { $in: ids } } }, { $group: { _id: null, downloads: { $sum: '$downloads' }, views: { $sum: '$views' }, likes: { $sum: { $size: '$likes' } }, shares: { $sum: '$shares' }, revenue: { $sum: '$totalRevenue' } } }]) : [];
+  const a = agg[0] || { downloads: 0, views: 0, likes: 0, shares: 0, revenue: 0 };
+  res.json({
+    user: { id: user._id.toString(), name: user.name, username: user.username, avatar: user.avatar },
+    followers: (user.followers || []).length,
+    following: (user.following || []).length,
+    downloads,
+    unreadNotifications: unread[0]?.count || 0,
+    stats: a,
+    presets: presets.map(p => ({ id: p._id.toString(), name: p.name, status: p.status, price: p.price, downloads: p.downloads, views: p.views, likes: (p.likes || []).length, shares: p.shares, previewImage: p.previewImage, createdAt: p.createdAt }))
+  });
+});
+
+router.get('/me/downloads', auth, async (req, res) => {
+  const downloads = await Download.find({ userId: req.user.id }).select('presetId').lean();
+  const ids = [...new Set(downloads.map(d => d.presetId.toString()))];
+  const presets = await Preset.find({ _id: { $in: ids }, status: 'approved' }).lean();
+  res.json(presets.map(p => ({ ...p, id: p._id.toString(), authorId: p.authorId.toString() })));
+});
+
 router.post('/me/wishlist/:presetId', auth, async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.user.id);
+  if (!mongoose.Types.ObjectId.isValid(req.params.presetId))
+    return res.status(400).json({ error: 'Invalid ID' });
+  const user = await User.findById(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  if (!user.wishlist) user.wishlist = [];
-  const idx = user.wishlist.indexOf(req.params.presetId);
-
+  const idx = user.wishlist.findIndex(id => id.toString() === req.params.presetId);
   if (idx === -1) user.wishlist.push(req.params.presetId);
   else user.wishlist.splice(idx, 1);
-
-  await db.write();
-  res.json({ wishlist: user.wishlist });
+  await user.save();
+  res.json({ wishlist: user.wishlist.map(id => id.toString()) });
 });
 
-// ===== SUBSCRIPTION =====
-router.get('/me/subscription', auth, async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+router.get('/me/wishlist/presets', auth, async (req, res) => {
+  const user = await User.findById(req.user.id).select('wishlist').lean();
+  const presets = await Preset.find({ _id: { $in: user?.wishlist || [] }, status: 'approved' }).lean();
+  res.json(presets.map(p => ({ ...p, id: p._id.toString(), authorId: p.authorId.toString() })));
+});
 
+router.get('/me/subscription', auth, async (req, res) => {
+  const user = await User.findById(req.user.id).select('subscription referral').lean();
+  if (!user) return res.status(404).json({ error: 'User not found' });
   const sub = user.subscription || {};
   const ref = user.referral || {};
-  const now = new Date();
-  const isPremium = sub.expiry && new Date(sub.expiry) > now;
-
   res.json({
-    isPremium,
+    isPremium: sub.expiry && new Date(sub.expiry) > new Date(),
     expiry: sub.expiry || null,
     adWatchCount: sub.adWatchCount || 0,
     adRewardDays: sub.adRewardDays || 0,
@@ -284,126 +174,152 @@ router.get('/me/subscription', auth, async (req, res) => {
   });
 });
 
-// ===== AD WATCHED =====
 router.post('/ads/watched', auth, async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.user.id);
+  const user = await User.findById(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-
   const sub = user.subscription || {};
-  const last = sub.lastAdWatch ? new Date(sub.lastAdWatch) : null;
-
-  if (last && (Date.now() - last.getTime()) < 5000) {
-    return res.status(429).json({ error: 'Please wait before watching another ad' });
+  if (sub.lastAdWatch && (Date.now() - new Date(sub.lastAdWatch).getTime()) < 5000) {
+    return res.status(429).json({ error: 'Please wait before next ad' });
   }
-
   sub.adWatchCount = (sub.adWatchCount || 0) + 1;
-  sub.lastAdWatch = new Date().toISOString();
-
+  sub.lastAdWatch = new Date();
   if (sub.adWatchCount % 10 === 0) {
     const now = new Date();
     let expiry = sub.expiry ? new Date(sub.expiry) : now;
     if (expiry < now) expiry = now;
     expiry.setDate(expiry.getDate() + 10);
-    sub.expiry = expiry.toISOString();
+    sub.expiry = expiry;
     sub.adRewardDays = (sub.adRewardDays || 0) + 10;
   }
-
   user.subscription = sub;
-  await db.write();
-
-  res.json({
-    adWatchCount: sub.adWatchCount,
-    expiry: sub.expiry,
-    daysEarned: sub.adRewardDays || 0
-  });
+  await user.save();
+  res.json({ adWatchCount: sub.adWatchCount, expiry: sub.expiry, daysEarned: sub.adRewardDays || 0 });
 });
 
-// ===== GENERATE REFERRAL =====
 router.post('/referrals/generate', auth, async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.user.id);
+  const user = await User.findById(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-
-  if (!user.referral) {
-    user.referral = { code: null, referredBy: null, referralCount: 0, referralRewardDays: 0 };
-  }
-
+  if (!user.referral) user.referral = {};
   if (!user.referral.code) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let code = '';
-    for (let i = 0; i < 6; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
     user.referral.code = code;
   }
-
-  await db.write();
+  await user.save();
   res.json({ referralCode: user.referral.code });
 });
 
-// ===== NOTIFICATIONS =====
 router.get('/me/notifications', auth, async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.user.id);
+  const user = await User.findById(req.user.id).select('notifications').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json(user.notifications || []);
+  res.json((user.notifications || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 });
 
 router.post('/notifications/read/:id', auth, async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-
-  const notif = (user.notifications || []).find(n => n.id === req.params.id);
-  if (notif) notif.read = true;
-  await db.write();
+  await User.updateOne(
+    { _id: req.user.id, 'notifications._id': req.params.id },
+    { $set: { 'notifications.$.read': true } }
+  );
   res.json({ success: true });
 });
 
 router.post('/notifications/read-all', auth, async (req, res) => {
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-
-  (user.notifications || []).forEach(n => n.read = true);
-  await db.write();
+  await User.updateOne({ _id: req.user.id }, { $set: { 'notifications.$[].read': true } });
   res.json({ success: true });
 });
 
-// ===== EARNINGS =====
-router.get('/:id/earnings', auth, async (req, res) => {
-  const userId = req.params.id;
-  if (req.user.id !== userId && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Unauthorized' });
+router.get('/:id/follow-status', auth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(400).json({ error: 'Invalid ID' });
+  const target = await User.findById(req.params.id).select('followers').lean();
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  res.json({ following: (target.followers || []).some(id => id.toString() === req.user.id) });
+});
+
+router.get('/:id', async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(400).json({ error: 'Invalid ID' });
+  const user = await User.findById(req.params.id).select('name username avatar bio socialLinks verified followers following').lean();
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const stats = await Preset.aggregate([
+    { $match: { authorId: user._id, status: 'approved' } },
+    { $group: { _id: null, count: { $sum: 1 }, downloads: { $sum: '$downloads' } } }
+  ]);
+  const s = stats[0] || { count: 0, downloads: 0 };
+  res.json({
+    id: user._id.toString(), name: user.name, username: user.username,
+    avatar: user.avatar, bio: user.bio, socialLinks: user.socialLinks || {},
+    verified: !!user.verified, totalPresets: s.count, totalDownloads: s.downloads,
+    followers: (user.followers || []).length, following: (user.following || []).length
+  });
+});
+
+router.get('/:id/presets', async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(400).json({ error: 'Invalid ID' });
+  const presets = await Preset.find({ authorId: req.params.id, status: 'approved' }).lean();
+  res.json(presets.map(p => ({
+    id: p._id.toString(), name: p.name, description: p.description,
+    category: p.category, tags: p.tags || [], price: p.price,
+    author: p.author, authorId: p.authorId.toString(),
+    createdAt: p.createdAt, updatedAt: p.updatedAt,
+    downloads: p.downloads, avgRating: p.avgRating,
+    previewImage: p.previewImage, views: p.views,
+    likesCount: (p.likes || []).length, shares: p.shares,
+    reviews: (p.reviews || []).map(r => ({ ...r, id: r._id.toString() }))
+  })));
+});
+
+router.post('/:id/follow', auth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(400).json({ error: 'Invalid ID' });
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot follow self' });
+
+  const [target, current] = await Promise.all([
+    User.findById(req.params.id),
+    User.findById(req.user.id)
+  ]);
+  if (!target || !current) return res.status(404).json({ error: 'User not found' });
+
+  const following = target.followers.some(id => id.toString() === current._id.toString());
+
+  if (following) {
+    target.followers = target.followers.filter(id => id.toString() !== current._id.toString());
+    current.following = current.following.filter(id => id.toString() !== target._id.toString());
+    await Promise.all([target.save(), current.save()]);
+    return res.json({ following: false, followersCount: target.followers.length });
   }
 
-  const db = await getDB();
-  const user = db.data.users.find(u => u.id === userId);
+  target.followers.push(current._id);
+  current.following.push(target._id);
+  await Promise.all([target.save(), current.save()]);
+  await createNotification(target._id, 'follow', `${current.name} started following you!`, `/profile/${current._id}`);
+  res.json({ following: true, followersCount: target.followers.length });
+});
+
+router.get('/:id/earnings', auth, async (req, res) => {
+  if (req.user.id !== req.params.id && req.user.role !== 'admin')
+    return res.status(403).json({ error: 'Unauthorized' });
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(400).json({ error: 'Invalid ID' });
+
+  const user = await User.findById(req.params.id).select('name email').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const presets = db.data.presets.filter(p => p.authorId === userId);
-  const presetStats = presets.map(p => ({
-    id: p.id,
-    name: p.name,
-    category: p.category,
-    downloads: p.downloads || 0,
-    impressions: p.adImpressions || 0,
-    revenue: p.totalRevenue || 0
+  const presets = await Preset.find({ authorId: req.params.id }).select('name category downloads adImpressions totalRevenue').lean();
+  const stats = presets.map(p => ({
+    id: p._id.toString(), name: p.name, category: p.category,
+    downloads: p.downloads || 0, impressions: p.adImpressions || 0, revenue: p.totalRevenue || 0
   }));
-
-  const totalImpressions = presetStats.reduce((sum, p) => sum + p.impressions, 0);
-  const totalRevenue = presetStats.reduce((sum, p) => sum + p.revenue, 0);
-  const totalDownloads = presetStats.reduce((sum, p) => sum + p.downloads, 0);
-
+  const total = stats.reduce((s, p) => s + p.revenue, 0);
   res.json({
-    user: { id: user.id, name: user.name, email: user.email },
-    totalImpressions,
-    totalRevenue,
-    totalDownloads,
-    presets: presetStats,
-    canWithdraw: totalRevenue >= 100,
-    withdrawalStatus: user.withdrawalStatus || null
+    user: { id: user._id.toString(), name: user.name, email: user.email },
+    totalImpressions: stats.reduce((s, p) => s + p.impressions, 0),
+    totalRevenue: total,
+    totalDownloads: stats.reduce((s, p) => s + p.downloads, 0),
+    presets: stats,
+    canWithdraw: total >= 100
   });
 });
 
