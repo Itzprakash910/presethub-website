@@ -42,3 +42,4 @@ const uploadAvatar = multer({
 }).single('avatar');
 
 module.exports = { uploadFields, bulkUploadFields, uploadAvatar };
+oadAvatar };
