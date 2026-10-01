@@ -44,3 +44,27 @@ services:
         sync: false
       - key: API_BASE
         value: https://presethub.site/api
+  - type: worker
+    name: presethub-telegram-bot
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm run bot
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CLIENT_URL
+        value: https://presethub.site
+      - key: API_BASE
+        value: https://presethub.site/api
+      - key: NODE_VERSION
+        value: 20.11.0
+      - key: JWT_SECRET
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_CHAT_ID
+        sync: false

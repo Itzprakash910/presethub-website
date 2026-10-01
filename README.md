@@ -41,3 +41,16 @@ The project creates a dedicated crawlable URL for each approved preset and inclu
 - Configure Razorpay keys to enable paid presets. Never put the Razorpay secret in frontend code.
 - Submit `https://presethub.site/sitemap.xml` in Google Search Console. Google controls when snippets, icons and sitelinks appear; metadata cannot guarantee a specific search result layout.
 - Do not commit `.env` or production secrets. Use Render environment variables.
+
+## Telegram Bot deployment
+
+The Telegram bot runs as a separate Render Worker (`presethub-telegram-bot`) using `npm run bot`.
+Set these environment variables on the worker:
+- `BOT_TOKEN`
+- `MONGODB_URI`
+- `JWT_SECRET` (same value as the web service)
+- `API_BASE=https://presethub.site/api`
+- `CLIENT_URL=https://presethub.site`
+- `ADMIN_CHAT_ID` (optional)
+
+Do not run multiple polling bot instances with the same `BOT_TOKEN`, otherwise Telegram may return a 409 conflict because only one long-polling consumer should be active.
