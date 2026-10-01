@@ -1,4 +1,4 @@
-# PresetHub — production-ready MongoDB preset marketplace
+# PresetHub — production-ready Lightroom preset marketplace
 
 PresetHub is a mobile-first Lightroom preset marketplace with:
 - MongoDB persistence via Mongoose
@@ -13,6 +13,14 @@ PresetHub is a mobile-first Lightroom preset marketplace with:
 - PWA install/offline shell
 - Google AdSense publisher integration with Auto Ads support
 - security headers, rate limits, upload validation and centralized errors
+- 3-column responsive preset catalog with skeleton loading and image previews
+- creator avatar + profile poster uploads, preset poster replacement and metadata editing
+- rich search across preset name, creator username, tags and categories
+- follow-gated creator messaging, inbox, unread counts and message notifications
+- like/comment/review/follow/purchase/download notifications
+- signed R2 download URLs when R2 is configured to keep paid preset files protected
+- canonical production host redirect to https://presethub.site and a dedicated service-error page
+- stronger favicon/PWA/OG/JSON-LD/robots/sitemap SEO assets
 
 ## Production setup
 1. Copy `backend/.env.example` to `.env` and fill secrets.
@@ -26,13 +34,10 @@ PresetHub is a mobile-first Lightroom preset marketplace with:
 The project creates a dedicated crawlable URL for each approved preset and includes it in the sitemap. This improves discoverability, but no software can guarantee a #1 Google ranking.
 
 
-## PresetHub final build notes
-
-- User uploads are published immediately; admin approval is not required. Admin remains a separate control/reporting area.
-- Supported preset uploads include XMP, DNG, LRTEMPLATE, CUBE, 3DL, LOOK, COSTYLE, XML, JSON and ZIP preset packs.
-- Each published preset receives a server-rendered SEO URL, canonical URL, Open Graph preview, Twitter metadata, JSON-LD and inclusion in `/sitemap.xml`.
-- Search suggestions include a Google `site:presethub.site` search option. Search ranking cannot be guaranteed by code; indexing and ranking are controlled by Google.
-- MongoDB creates collections/indexes through Mongoose. Configure `MONGODB_URI` and allow the Render service to reach the Atlas cluster.
-- In MongoDB Atlas, add an appropriate Network Access rule for the Render deployment. Render outbound IPs can change; use the provider-recommended secure allowlist for your plan rather than embedding credentials in code.
-- AdSense Auto Ads are loaded from `ADSENSE_CLIENT`; `frontend/ads.txt` is included. AdSense approval and ad serving are controlled by Google.
-- Keep secrets only in Render environment variables; never commit `.env`.
+## Final production checklist
+- Set `CLIENT_URL=https://presethub.site` in production. Requests to other web hosts are redirected to the canonical site; `/healthz` remains available for Render health checks.
+- Configure MongoDB and R2 before production uploads. R2 is strongly recommended because Render local disk is ephemeral.
+- Keep the R2 bucket private for preset files when possible. The backend creates short-lived signed download URLs when R2 is configured.
+- Configure Razorpay keys to enable paid presets. Never put the Razorpay secret in frontend code.
+- Submit `https://presethub.site/sitemap.xml` in Google Search Console. Google controls when snippets, icons and sitelinks appear; metadata cannot guarantee a specific search result layout.
+- Do not commit `.env` or production secrets. Use Render environment variables.
