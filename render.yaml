@@ -3,7 +3,7 @@ services:
     name: presethub
     runtime: node
     rootDir: backend
-    buildCommand: npm ci --omit=dev
+    buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/presets?limit=1
     autoDeploy: true
@@ -12,11 +12,15 @@ services:
         value: production
       - key: CLIENT_URL
         value: https://presethub.site
+      - key: NODE_VERSION
+        value: 20.11.0
       - key: JWT_SECRET
         sync: false
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD
+        sync: false
+      - key: MONGODB_URI
         sync: false
       - key: RAZORPAY_KEY_ID
         sync: false
@@ -25,6 +29,16 @@ services:
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_CHAT_ID
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        value: presethub-files
+      - key: R2_PUBLIC_URL
         sync: false
       - key: API_BASE
         value: https://presethub.site/api
