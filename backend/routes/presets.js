@@ -23,18 +23,15 @@ function slugify(v) {
   return String(v || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'preset';
 }
 
-function seoData(name, description, category, tags, format) {
-  const cleanName = String(name || 'Lightroom Preset').trim().slice(0, 100);
-  const cleanDesc = String(description || '').trim();
-  const tagList = Array.isArray(tags) ? tags : [];
-  const defaults = ['Lightroom preset','photo preset','free Lightroom preset','XMP preset','DNG preset','mobile Lightroom preset','photo editing preset'];
-  const keywords = [...new Set([cleanName, category || 'photo preset', format || 'preset', ...tagList, ...defaults])].slice(0, 30);
-  return {
-    slug: slugify(cleanName),
-    seoTitle: `${cleanName} Lightroom Preset | PresetHub`.slice(0, 70),
-    seoDescription: (cleanDesc || `Download ${cleanName} ${category || 'Lightroom preset'} on PresetHub.`).slice(0, 155),
-    seoKeywords: keywords
-  };
+
+function publicAssetUrl(value) {
+  const v = String(value || '').trim();
+  if (!v) return `${SITE_URL}/assets/images/og-image.png`;
+  if (/^https?:\/\//i.test(v)) return v;
+  if (v.startsWith('/')) return `${SITE_URL}${v}`;
+  if (v.startsWith('uploads/')) return `${SITE_URL}/${v}`;
+  if (v.startsWith('previews/') || v.startsWith('presets/') || v.startsWith('avatars/')) return `${SITE_URL}/uploads/${v}`;
+  return `${SITE_URL}/assets/images/og-image.png`;
 }
 
 function toPublicPreset(p) {
@@ -55,13 +52,10 @@ function toPublicPreset(p) {
       id: r._id.toString(), userName: r.userName, rating: r.rating,
       comment: r.comment, createdAt: r.createdAt, helpful: r.helpful || 0
     })),
-    previewImage: p.previewImage || '',
+    previewImage: publicAssetUrl(p.previewImage),
     views: Number(p.views || 0),
     likesCount: (p.likes || []).length,
-    shares: Number(p.shares || 0),
-    format: p.format || '', presetType: p.presetType || 'lightroom',
-    slug: p.slug || slugify(p.name), seoTitle: p.seoTitle || '',
-    seoDescription: p.seoDescription || '', seoKeywords: p.seoKeywords || []
+    shares: Number(p.shares || 0)
   };
 }
 
@@ -168,14 +162,19 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
           delete previewMap[fileBase];
         }
 
-        const format = path.extname(file.originalname).replace('.', '').toLowerCase();
-        const description = common.description || `Download ${displayName} ${common.category} preset on PresetHub.`;
-        const seo = seoData(displayName, description, common.category, common.tags, format);
         const preset = await Preset.create({
-          name: displayName, description, category: common.category, tags: common.tags,
-          price: common.price, author: user.name, authorId: user._id,
-          fileUrl, previewImage, size: file.size, originalName: file.originalname,
-          status: 'approved', bulkUploadBatch: batchId, format, presetType: 'lightroom', ...seo
+          name: displayName,
+          description: common.description || `Lightroom preset: ${displayName}`,
+          category: common.category,
+          tags: common.tags,
+          price: common.price,
+          author: user.name,
+          authorId: user._id,
+          fileUrl, previewImage,
+          size: file.size,
+          originalName: file.originalname,
+          status: 'approved',
+          bulkUploadBatch: batchId
         });
 
         created.push({ id: preset._id.toString(), name: preset.name, hasPreview: !!previewImage });
@@ -191,7 +190,7 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
       failed: failed.length,
       presets: created,
       errors: failed,
-      message: `${created.length} preset(s) uploaded and published immediately`
+      message: `${created.length} preset(s) published successfully`
     });
   } catch (err) {
     console.error('Bulk upload error:', err);
@@ -228,19 +227,21 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
       previewImage = await uploadToR2(preview.buffer, key, preview.mimetype);
     }
 
-    const normalizedTags = tags ? (typeof tags === 'string' ? tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean).slice(0, 20) : tags) : [];
-    const categoryValue = category || 'General';
-    const descriptionValue = description || `Download ${name} ${categoryValue} preset on PresetHub.`;
-    const format = file ? path.extname(file.originalname).replace('.', '').toLowerCase() : '';
-    const seo = seoData(name, descriptionValue, categoryValue, normalizedTags, format);
     const preset = await Preset.create({
-      name, description: descriptionValue, category: categoryValue, tags: normalizedTags,
-      price: parseFloat(price) || 0, author: user.name, authorId: user._id,
-      fileUrl, previewImage, status: 'approved', size: file ? file.size : 0,
-      originalName: file ? file.originalname : '', format, presetType: 'lightroom', ...seo
+      name,
+      description: description || '',
+      category: category || 'General',
+      tags: tags ? (typeof tags === 'string' ? tags.split(',').map(t => t.trim().toLowerCase()) : tags) : [],
+      price: parseFloat(price) || 0,
+      author: user.name,
+      authorId: user._id,
+      fileUrl, previewImage,
+      status: 'approved',
+      size: file ? file.size : 0,
+      originalName: file ? file.originalname : ''
     });
 
-    res.status(201).json({ ...preset.toObject(), id: preset._id.toString() });
+    res.status(201).json({ ...toPublicPreset(preset.toObject()), fileUrl: preset.fileUrl, originalName: preset.originalName });
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: 'Upload failed' });
@@ -262,6 +263,10 @@ router.post('/:id/download', auth, async (req, res) => {
   preset.downloads = (preset.downloads || 0) + 1;
   await preset.save();
   await Download.create({ userId: req.user.id, presetId: preset._id });
+
+  await createNotification(req.user.id, 'download-complete',
+    `Download completed: \"${preset.name}\"`,
+    `/preset/${preset._id}/${slugify(preset.name)}/`);
 
   if (preset.authorId.toString() !== req.user.id) {
     const user = await User.findById(req.user.id).select('name').lean();

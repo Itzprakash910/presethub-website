@@ -100,6 +100,7 @@ router.post('/login', validate(loginValidation), async (req, res) => {
     }
 
     user.lastLogin = new Date();
+    user.lastActive = new Date();
     await user.save();
 
     const token = jwt.sign({ id: user._id.toString(), email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
