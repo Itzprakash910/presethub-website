@@ -72,7 +72,13 @@ const PresetSchema = new Schema({
   price: { type: Number, default: 0, min: 0, max: 999999.99 },
   author: { type: String, required: true },
   authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
+  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved', index: true },
+  slug: { type: String, default: '' },
+  presetType: { type: String, default: 'lightroom', index: true },
+  format: { type: String, default: '', index: true },
+  seoTitle: { type: String, default: '' },
+  seoDescription: { type: String, default: '' },
+  seoKeywords: [{ type: String }],
   fileUrl: { type: String, default: '' },
   previewImage: { type: String, default: '' },
   size: { type: Number, default: 0 },
@@ -92,6 +98,9 @@ const PresetSchema = new Schema({
 PresetSchema.index({ name: 'text', description: 'text', tags: 'text', author: 'text' });
 PresetSchema.index({ createdAt: -1 });
 PresetSchema.index({ downloads: -1 });
+PresetSchema.index({ category: 1, createdAt: -1 });
+PresetSchema.index({ status: 1, updatedAt: -1 });
+PresetSchema.index({ authorId: 1, status: 1, createdAt: -1 });
 
 
 // ========== COMMENT ==========
