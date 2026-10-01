@@ -6,7 +6,7 @@ const auth = require('../middleware/auth');
 const { optionalAuth } = require('../middleware/auth');
 const { Preset, User, Download, Share, Order } = require('../models');
 const { uploadFields, bulkUploadFields } = require('../middleware/upload');
-const { uploadToR2, deleteFromR2 } = require('../config/r2');
+const { uploadToR2, deleteFromR2, getDownloadUrl, isR2Configured } = require('../config/r2');
 const { validate, presetValidation } = require('../utils/validators');
 const { createNotification } = require('./users');
 
@@ -21,6 +21,13 @@ function safeFilename(v) {
 
 function slugify(v) {
   return String(v || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'preset';
+}
+
+function localDownloadUrl(preset, userId) {
+  const jwt = require('jsonwebtoken');
+  const token = jwt.sign({ type:'preset-download', presetId:preset._id.toString(), userId:String(userId) }, process.env.JWT_SECRET, { expiresIn:'5m' });
+  const filename = encodeURIComponent(path.basename(preset.fileKey || preset.fileUrl || preset.originalName || 'preset'));
+  return `${SITE_URL}/uploads/presets/${filename}?token=${encodeURIComponent(token)}`;
 }
 
 
@@ -55,7 +62,8 @@ function toPublicPreset(p) {
     previewImage: publicAssetUrl(p.previewImage),
     views: Number(p.views || 0),
     likesCount: (p.likes || []).length,
-    shares: Number(p.shares || 0)
+    shares: Number(p.shares || 0),
+    originalName: p.originalName || ''
   };
 }
 
@@ -156,8 +164,10 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
         const fileUrl = await uploadToR2(file.buffer, fileKey, file.mimetype);
 
         let previewImage = '';
+        let previewKey = '';
         if (previewFile) {
           const pKey = `previews/${uuidv4()}${path.extname(previewFile.originalname)}`;
+          previewKey = pKey;
           previewImage = await uploadToR2(previewFile.buffer, pKey, previewFile.mimetype);
           delete previewMap[fileBase];
         }
@@ -170,7 +180,7 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
           price: common.price,
           author: user.name,
           authorId: user._id,
-          fileUrl, previewImage,
+          fileUrl, fileKey, previewImage, previewKey,
           size: file.size,
           originalName: file.originalname,
           status: 'approved',
@@ -216,15 +226,15 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
 
     const file = req.files?.file?.[0];
     const preview = req.files?.previewImage?.[0];
-    let fileUrl = '', previewImage = '';
+    let fileUrl = '', fileKey = '', previewImage = '', previewKey = '';
 
     if (file) {
-      const key = `presets/${uuidv4()}${path.extname(file.originalname)}`;
-      fileUrl = await uploadToR2(file.buffer, key, file.mimetype);
+      fileKey = `presets/${uuidv4()}${path.extname(file.originalname).toLowerCase()}`;
+      fileUrl = await uploadToR2(file.buffer, fileKey, file.mimetype);
     }
     if (preview) {
-      const key = `previews/${uuidv4()}${path.extname(preview.originalname)}`;
-      previewImage = await uploadToR2(preview.buffer, key, preview.mimetype);
+      previewKey = `previews/${uuidv4()}${path.extname(preview.originalname).toLowerCase()}`;
+      previewImage = await uploadToR2(preview.buffer, previewKey, preview.mimetype);
     }
 
     const preset = await Preset.create({
@@ -235,7 +245,7 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
       price: parseFloat(price) || 0,
       author: user.name,
       authorId: user._id,
-      fileUrl, previewImage,
+      fileUrl, fileKey, previewImage, previewKey,
       status: 'approved',
       size: file ? file.size : 0,
       originalName: file ? file.originalname : ''
@@ -276,7 +286,7 @@ router.post('/:id/download', auth, async (req, res) => {
   }
 
   if (preset.fileUrl && preset.fileUrl.startsWith('http')) {
-    return res.json({ downloadUrl: preset.fileUrl, originalName: preset.originalName || `${slugify(preset.name)}.xmp` });
+    return res.json({ downloadUrl: isR2Configured() ? await getDownloadUrl(preset.fileKey || preset.fileUrl) : localDownloadUrl(preset, req.user.id), originalName: preset.originalName || `${slugify(preset.name)}.xmp` });
   }
   return res.status(404).json({ error: 'Preset file missing' });
 });
@@ -304,9 +314,10 @@ router.post('/bulk-download', auth, async (req, res) => {
       skipped.push({ id: p._id.toString(), name: p.name, reason: 'File unavailable' });
       continue;
     }
-    downloads.push({ id: p._id.toString(), name: p.name, url: p.fileUrl, filename: safeFilename(p.originalName || `${slugify(p.name)}.xmp`) });
+    downloads.push({ id: p._id.toString(), name: p.name, url: p.fileUrl, fileKey: p.fileKey || '', filename: safeFilename(p.originalName || `${slugify(p.name)}.xmp`) });
   }
   if (!downloads.length) return res.status(403).json({ error: 'No downloadable presets in selection', skipped });
+  for (const d of downloads) { const p = presets.find(x => x._id.toString() === d.id); d.url = isR2Configured() ? await getDownloadUrl(d.fileKey || d.url) : localDownloadUrl(p, req.user.id); }
   await Promise.all(downloads.map(d => Download.create({ userId: req.user.id, presetId: d.id })));
   await Preset.updateMany({ _id: { $in: downloads.map(d => d.id) } }, { $inc: { downloads: 1 } });
   res.json({ success: true, downloads, skipped, count: downloads.length });
@@ -322,15 +333,15 @@ router.delete('/:id', auth, async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
 
   const keyFromUrl = url => url && url.includes('/') ? url.replace(`${process.env.R2_PUBLIC_URL}/`, '') : null;
-  if (preset.fileUrl) await deleteFromR2(keyFromUrl(preset.fileUrl));
-  if (preset.previewImage) await deleteFromR2(keyFromUrl(preset.previewImage));
+  if (preset.fileUrl || preset.fileKey) await deleteFromR2(preset.fileKey || keyFromUrl(preset.fileUrl));
+  if (preset.previewImage || preset.previewKey) await deleteFromR2(preset.previewKey || keyFromUrl(preset.previewImage));
 
   await Preset.deleteOne({ _id: preset._id });
   res.json({ success: true });
 });
 
 // ===== UPDATE =====
-router.put('/:id', auth, async (req, res) => {
+router.put('/:id', auth, uploadFields, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
   const preset = await Preset.findById(req.params.id);
@@ -339,13 +350,36 @@ router.put('/:id', auth, async (req, res) => {
     return res.status(403).json({ error: 'Unauthorized' });
 
   const { name, description, category, tags, price } = req.body;
-  if (name) preset.name = name;
-  if (description !== undefined) preset.description = description;
-  if (category) preset.category = category;
-  if (tags) preset.tags = typeof tags === 'string' ? tags.split(',').map(t => t.trim().toLowerCase()) : tags;
-  if (price !== undefined) preset.price = parseFloat(price);
+  if (name) preset.name = String(name).trim().slice(0, 100);
+  if (description !== undefined) preset.description = String(description).trim().slice(0, 500);
+  if (category) preset.category = String(category).trim().slice(0, 50);
+  if (tags !== undefined) preset.tags = (typeof tags === 'string' ? tags.split(',') : tags).map(t => String(t).trim().toLowerCase()).filter(Boolean).slice(0, 10);
+  if (price !== undefined) {
+    const nextPrice = Number.parseFloat(price);
+    if (!Number.isFinite(nextPrice) || nextPrice < 0) return res.status(400).json({ error: 'Invalid price' });
+    preset.price = Math.min(nextPrice, 999999.99);
+  }
+
+  const previewFile = req.files?.previewImage?.[0];
+  if (previewFile) {
+    const previewKey = `previews/${uuidv4()}${path.extname(previewFile.originalname).toLowerCase()}`;
+    const oldPreview = preset.previewImage;
+    preset.previewImage = await uploadToR2(previewFile.buffer, previewKey, previewFile.mimetype);
+    preset.previewKey = previewKey;
+    if (oldPreview) await deleteFromR2(oldPreview);
+  }
+  const replacementFile = req.files?.file?.[0];
+  if (replacementFile) {
+    const fileKey = `presets/${uuidv4()}${path.extname(replacementFile.originalname).toLowerCase()}`;
+    const oldFile = preset.fileUrl;
+    preset.fileUrl = await uploadToR2(replacementFile.buffer, fileKey, replacementFile.mimetype);
+    preset.fileKey = fileKey;
+    preset.originalName = replacementFile.originalname;
+    preset.size = replacementFile.size;
+    if (oldFile) await deleteFromR2(oldFile);
+  }
   await preset.save();
-  res.json({ ...preset.toObject(), id: preset._id.toString() });
+  res.json({ ...toPublicPreset(preset.toObject()), fileUrl: preset.fileUrl, originalName: preset.originalName, message: 'Preset updated successfully' });
 });
 
 // ===== ENGAGEMENT =====
@@ -438,31 +472,6 @@ router.get('/:id/share-stats', auth, async (req, res) => {
 
   const platforms = preset.shareStats instanceof Map
     ? Object.fromEntries(preset.shareStats)
-    : (preset.shareStats || {});
-
-  if (preset.authorId.toString() !== req.user.id && req.user.role !== 'admin') {
-    return res.json({ totalShares: preset.shares || 0, platforms });
-  }
-
-  const shares = await Share.find({ presetId: preset._id }).sort({ sharedAt: -1 }).limit(20).lean();
-  const uniqueSharers = await Share.distinct('userId', { presetId: preset._id });
-  const userIds = shares.map(s => s.userId).filter(Boolean);
-  const users = await User.find({ _id: { $in: userIds } }).select('name username').lean();
-  const map = Object.fromEntries(users.map(u => [u._id.toString(), u.name || u.username]));
-
-  res.json({
-    totalShares: preset.shares || 0,
-    uniqueSharers: uniqueSharers.length,
-    platforms,
-    recent: shares.map(s => ({
-      userName: map[s.userId?.toString()] || 'Anonymous',
-      platform: s.platform,
-      sharedAt: s.sharedAt
-    }))
-  });
-});
-
-module.exports = router;ntries(preset.shareStats)
     : (preset.shareStats || {});
 
   if (preset.authorId.toString() !== req.user.id && req.user.role !== 'admin') {

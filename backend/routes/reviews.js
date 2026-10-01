@@ -65,6 +65,10 @@ router.post('/:presetId/reviews/:reviewId/helpful', auth, async (req, res) => {
   if (!review) return res.status(404).json({ error: 'Review not found' });
   review.helpful = (review.helpful || 0) + 1;
   await preset.save();
+  if (review.userId && review.userId.toString() !== req.user.id) {
+    const user = await User.findById(req.user.id).select('name username').lean();
+    await createNotification(review.userId, 'review-helpful', `${user?.name || user?.username || 'Someone'} marked your review as helpful`, `/preset/${preset._id}`);
+  }
   res.json({ helpful: review.helpful });
 });
 
