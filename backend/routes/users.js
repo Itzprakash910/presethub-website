@@ -324,4 +324,4 @@ router.get('/:id/earnings', auth, async (req, res) => {
 });
 
 module.exports = router;
-module.exports.createNotification = createNotification;
+module.exports.createNotification = createNotification;ation = createNotification;

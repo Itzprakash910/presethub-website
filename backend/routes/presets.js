@@ -462,4 +462,29 @@ router.get('/:id/share-stats', auth, async (req, res) => {
   });
 });
 
+module.exports = router;ntries(preset.shareStats)
+    : (preset.shareStats || {});
+
+  if (preset.authorId.toString() !== req.user.id && req.user.role !== 'admin') {
+    return res.json({ totalShares: preset.shares || 0, platforms });
+  }
+
+  const shares = await Share.find({ presetId: preset._id }).sort({ sharedAt: -1 }).limit(20).lean();
+  const uniqueSharers = await Share.distinct('userId', { presetId: preset._id });
+  const userIds = shares.map(s => s.userId).filter(Boolean);
+  const users = await User.find({ _id: { $in: userIds } }).select('name username').lean();
+  const map = Object.fromEntries(users.map(u => [u._id.toString(), u.name || u.username]));
+
+  res.json({
+    totalShares: preset.shares || 0,
+    uniqueSharers: uniqueSharers.length,
+    platforms,
+    recent: shares.map(s => ({
+      userName: map[s.userId?.toString()] || 'Anonymous',
+      platform: s.platform,
+      sharedAt: s.sharedAt
+    }))
+  });
+});
+
 module.exports = router;
