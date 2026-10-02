@@ -1,10 +1,10 @@
 User-agent: *
 Allow: /
-Allow: /assets/
-Allow: /uploads/previews/
-Allow: /uploads/avatars/
-Allow: /uploads/covers/
 Disallow: /api/
+Disallow: /admin.html
+Disallow: /uploads/
+Sitemap: https://presethub.site/sitemap.xml
+api/
 Disallow: /admin
 Disallow: /uploads/presets/
 Sitemap: https://presethub.site/sitemap.xml

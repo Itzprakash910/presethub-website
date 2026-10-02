@@ -1,12 +1,15 @@
 {
-  "name": "PresetHub – Lightroom Presets Marketplace",
+  "name": "PresetHub – Free & Premium Lightroom Presets Marketplace",
   "short_name": "PresetHub",
-  "description": "Discover, preview, download and sell Lightroom presets by creator, category and tags.",
+  "description": "Discover, preview, download and sell free and premium Lightroom presets by creators on PresetHub.",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "theme_color": "#d4a373",
   "background_color": "#f8f6f2",
+  "lang": "en-IN",
+  "dir": "ltr",
   "icons": [
     {
       "src": "/assets/icons/icon-192.png",

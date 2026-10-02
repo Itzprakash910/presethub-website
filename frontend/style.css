@@ -44,8 +44,8 @@ body.dark {
 
 body {
   font-family: "Inter", sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  background: #f8f6f2;
+  color: #1e1e1e;
   line-height: 1.5;
 }
 
@@ -64,7 +64,7 @@ img { max-width: 100%; display: block; }
   margin-bottom: 40px;
 }
 .creator-card {
-  background: var(--card-bg);
+  background: #fff;
   padding: 20px;
   border-radius: 16px;
   text-align: center;
@@ -340,7 +340,7 @@ header {
   color: #6b6b6b;
 }
 .hero-visual {
-  background: var(--thumb-bg);
+  background: #e8e0d6;
   border-radius: 24px;
   padding: 20px;
   position: relative;
@@ -405,7 +405,7 @@ header {
   margin-bottom: 56px;
 }
 .category-card {
-  background: var(--card-bg);
+  background: #fff;
   padding: 18px 12px;
   border-radius: 20px;
   text-align: center;
@@ -426,17 +426,17 @@ header {
 /* ===== PRESET GRID ===== */
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
   gap: 28px;
   margin-bottom: 56px;
 }
 .preset-card {
-  background: var(--card-bg);
+  background: #fff;
   border-radius: 24px;
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
   transition: 0.3s;
-  border: 1px solid var(--border);
+  border: 1px solid #f0ebe3;
 }
 .preset-card:hover {
   transform: translateY(-8px);
@@ -445,9 +445,8 @@ header {
 }
 .preset-card .thumb {
   position: relative;
-  background: var(--thumb-bg);
-  aspect-ratio: 4 / 5;
-  height: auto;
+  background: #e8e0d6;
+  height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -576,7 +575,7 @@ header {
   padding: 24px;
   border-radius: 24px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
-  border: 1px solid var(--border);
+  border: 1px solid #f0ebe3;
 }
 .testimonial-card .stars {
   color: #f4a261;
@@ -663,7 +662,7 @@ header {
   gap: 32px;
 }
 .modal .modal-preview {
-  background: var(--thumb-bg);
+  background: #e8e0d6;
   border-radius: 20px;
   overflow: hidden;
   min-height: 200px;
@@ -1034,8 +1033,8 @@ body.dark { background: var(--bg); color: var(--text); }
 @media(max-width:700px){.share-grid{grid-template-columns:repeat(4,1fr)}.profile-head-pro{align-items:flex-start;flex-wrap:wrap}.profile-actions{width:100%}.profile-actions .btn{width:100%;justify-content:center}.profile-stats{grid-template-columns:repeat(2,1fr)}.form-grid{grid-template-columns:1fr}.dashboard-row{grid-template-columns:54px 1fr}.dashboard-row-actions{grid-column:2}.seo-hero{grid-template-columns:1fr;padding:14px}.seo-info-grid{grid-template-columns:repeat(2,1fr)}.seo-actions .btn{flex:1;justify-content:center}.quick-links{overflow-x:auto;flex-wrap:nowrap;padding-bottom:3px}}
 @media(max-width:480px){.share-grid{grid-template-columns:repeat(2,1fr)}.modal{padding:18px}.preset-grid{gap:12px}.preset-card .info{padding:13px}.preset-card .info h3{font-size:.95rem}.nav-actions{gap:6px}.nav-actions .btn-sm{padding:7px 11px}.seo-info-grid{grid-template-columns:1fr 1fr}}
 
-/* ===== PresetHub final UX layer ===== */
-body { background: var(--bg); color: var(--text); transition: background .2s ease,color .2s ease; }
+.site-credit{display:inline-flex;gap:5px;align-items:center}.site-credit a{color:inherit;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+or: var(--text); transition: background .2s ease,color .2s ease; }
 header { background: var(--header-bg); color: var(--text); }
 .category-card,.creator-card,.preset-card,.modal,.seo-info-card,.seo-related-card { background: var(--card-bg); color: var(--text); border-color: var(--border); }
 .category-card .count,.creator-card .stats,.seo-copy .desc { color: var(--muted); }
