@@ -461,7 +461,11 @@ router.post('/:id/view', optionalAuth, async (req, res) => {
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
   preset.views = (preset.views || 0) + 1;
   await preset.save();
-  res.json({ views: preset.views });
+  const milestones = [50,100,150,200,250,500,1000,2000,5000,10000];
+  if (milestones.includes(preset.views) && preset.authorId) {
+    await createNotification(preset.authorId, 'views-milestone', `🎉 Your preset "${preset.name}" reached ${preset.views} views!`, `/preset/${preset._id}/${slugify(preset.name)}/`);
+  }
+  res.json({ views: preset.views, milestone: milestones.includes(preset.views) ? preset.views : null });
 });
 
 router.post('/:id/like', auth, async (req, res) => {

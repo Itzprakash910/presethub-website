@@ -28,6 +28,12 @@ router.post('/:presetId', auth, async (req, res, next) => {
     if (preset.authorId.toString() !== req.user.id) {
       await createNotification(preset.authorId, 'comment', `${user.name || user.username || 'Someone'} commented on "${preset.name}"`, `/preset/${preset._id}`);
     }
+    if (parentId) {
+      const parent = await Comment.findById(parentId).select('userId').lean();
+      if (parent && parent.userId.toString() !== req.user.id) {
+        await createNotification(parent.userId, 'comment-reply', `${user.name || user.username || 'Someone'} replied to your comment on "${preset.name}"`, `/preset/${preset._id}`);
+      }
+    }
     res.status(201).json({ id: comment._id.toString(), presetId: comment.presetId.toString(), userId: comment.userId.toString(), userName: comment.userName, text: comment.text, parentId: comment.parentId ? comment.parentId.toString() : null, likes: 0, createdAt: comment.createdAt });
   } catch (e) { next(e); }
 });

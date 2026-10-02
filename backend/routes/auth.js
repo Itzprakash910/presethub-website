@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { User } = require('../models');
 const auth = require('../middleware/auth');
@@ -165,6 +166,47 @@ router.put('/change-password', auth, validate(changePasswordValidation), async (
   } catch (e) { res.status(500).json({ error: 'Failed' }); }
 });
 
+
+
+router.post('/request-reset', async (req, res) => {
+  try {
+    const email = String(req.body.email || '').toLowerCase().trim();
+    // Always return the same public response to avoid account enumeration.
+    const generic = { success: true, message: 'If that email exists, a password reset link has been sent.' };
+    if (!email) return res.json(generic);
+    const user = await User.findOne({ email });
+    if (!user) return res.json(generic);
+    const raw = crypto.randomBytes(32).toString('hex');
+    user.passwordResetTokenHash = crypto.createHash('sha256').update(raw).digest('hex');
+    user.passwordResetExpires = new Date(Date.now() + 30 * 60 * 1000);
+    await user.save();
+    const resetUrl = `${(process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '')}/?reset=${raw}`;
+    if (process.env.RESEND_API_KEY && process.env.MAIL_FROM) {
+      try {
+        await fetch('https://api.resend.com/emails', { method:'POST', headers:{'Authorization':`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json'}, body:JSON.stringify({from:process.env.MAIL_FROM,to:[email],subject:'PresetHub password reset',html:`<p>Reset your PresetHub password:</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 30 minutes.</p>`}) });
+      } catch(e) { console.error('Reset email send failed:',e.message); }
+    } else if (process.env.NODE_ENV !== 'production') {
+      console.log('DEV PASSWORD RESET URL:', resetUrl);
+    }
+    return res.json(generic);
+  } catch(e) { console.error('Password reset request:',e); res.json({success:true,message:'If that email exists, a password reset link has been sent.'}); }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const token = String(req.body.token || '').trim();
+    const password = String(req.body.password || '');
+    if (!token || password.length < 8) return res.status(400).json({error:'Valid reset token and 8+ character password are required'});
+    const hash = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await User.findOne({passwordResetTokenHash:hash,passwordResetExpires:{$gt:new Date()}});
+    if (!user) return res.status(400).json({error:'Reset link is invalid or expired'});
+    user.password = await bcrypt.hash(password, 12);
+    user.passwordResetTokenHash = '';
+    user.passwordResetExpires = null;
+    await user.save();
+    res.json({success:true,message:'Password reset successfully'});
+  } catch(e){ res.status(500).json({error:'Password reset failed'}); }
+});
 router.post('/logout', auth, (req, res) => res.json({ success: true }));
 router.post('/refresh-token', auth, async (req, res) => {
   const token = jwt.sign({ id: req.user.id, email: req.user.email, role: req.user.role }, JWT_SECRET, { expiresIn: '7d' });
