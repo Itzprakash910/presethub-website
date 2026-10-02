@@ -1,626 +1,630 @@
-// PresetHub Telegram Bot
-// Uses the same MongoDB models/JWT/API as the main PresetHub backend.
+// backend/bot.js
 require('dotenv').config();
-
 const { Telegraf, Markup } = require('telegraf');
 const axios = require('axios');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { connectDB } = require('./config/db');
-const { User, Preset } = require('./models');
+const path = require('path');
+const fs = require('fs');
 
-const BOT_TOKEN = String(process.env.BOT_TOKEN || '').trim();
-const ADMIN_CHAT_ID = String(process.env.ADMIN_CHAT_ID || '').trim();
-const API_BASE = String(process.env.API_BASE || 'https://presethub.site/api').replace(/\/+$/, '');
-const SITE_URL = String(process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
-const JWT_SECRET = String(process.env.JWT_SECRET || '');
+// ============================================================
+// ===== BOT TOKEN FROM ENV =====
+// ============================================================
+const BOT_TOKEN = process.env.BOT_TOKEN || '';
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID || '';
+const API_BASE = process.env.API_BASE || 'https://presethub.site/api';
 
 if (!BOT_TOKEN) {
-  console.error('❌ BOT_TOKEN is missing. Telegram bot worker will not start.');
-  process.exit(1);
-}
-if (!JWT_SECRET || JWT_SECRET.length < 32) {
-  console.error('❌ JWT_SECRET must be configured and at least 32 characters long.');
+  console.error('❌ BOT_TOKEN not set in .env');
+  console.log('⚠️  Bot will not start. Set BOT_TOKEN in .env file');
   process.exit(1);
 }
 
-const bot = new Telegraf(BOT_TOKEN, {
-  handlerTimeout: 30_000,
-});
+console.log('🤖 Bot Token configured:', BOT_TOKEN ? 'yes' : 'no');
+console.log('📱 Admin Chat ID configured:', ADMIN_CHAT_ID ? 'yes' : 'no');
 
+const bot = new Telegraf(BOT_TOKEN);
 const loginStates = new Map();
 const uploadStates = new Map();
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+// ==================== DATABASE FUNCTIONS ====================
+const { User, Preset } = require('./models');
+const { connectDB } = require('./config/db');
 
-function apiHeaders(user) {
-  return user?.token ? { Authorization: `Bearer ${user.token}` } : {};
-}
-
-function issueToken(user) {
-  return jwt.sign(
-    { id: user._id.toString(), email: user.email, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-}
-
+async function ensureBotDB() { await connectDB(); }
 async function getUserByTelegramId(telegramId) {
-  await connectDB();
   return User.findOne({ telegramId: String(telegramId) });
 }
-
 async function saveTelegramUser(ctx) {
-  if (!ctx.from) return null;
-  await connectDB();
-
-  const telegramId = String(ctx.from.id);
-  let user = await User.findOne({ telegramId });
-
-  if (!user) {
-    const email = `telegram_${telegramId}@telegram.presethub.site`;
-    const usernameBase = String(ctx.from.username || `telegram_${telegramId}`)
-      .toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24) || `telegram_${telegramId}`;
-
-    let username = usernameBase;
-    let suffix = 1;
-    while (await User.exists({ username })) {
-      username = `${usernameBase.slice(0, 20)}_${suffix++}`;
-    }
-
-    const password = await bcrypt.hash(`${telegramId}:${Date.now()}:${Math.random()}`, 12);
-    user = await User.create({
-      email,
-      password,
-      name: [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || 'Telegram User',
-      username,
-      role: 'user',
-      verified: true,
-      telegramId,
-      telegram: {
-        firstName: ctx.from.first_name || '',
-        lastName: ctx.from.last_name || '',
-        username: ctx.from.username || '',
-        languageCode: ctx.from.language_code || '',
-      },
-      lastActive: new Date(),
-      commandsCount: 1,
-    });
-  } else {
-    user.telegram = {
-      firstName: ctx.from.first_name || '',
-      lastName: ctx.from.last_name || '',
-      username: ctx.from.username || '',
-      languageCode: ctx.from.language_code || '',
-    };
-    user.lastActive = new Date();
-    user.commandsCount = Number(user.commandsCount || 0) + 1;
-    await user.save();
+  const from = ctx.from;
+  let user = await User.findOne({ telegramId: String(from.id) });
+  const telegram = { firstName: from.first_name || '', lastName: from.last_name || '', username: from.username || '', languageCode: from.language_code || '' };
+  if (user) {
+    user.telegram = telegram; user.lastActive = new Date(); user.commandsCount = (user.commandsCount || 0) + 1; await user.save(); return user;
   }
-
-  // Refresh the stored API token when missing or expired. This lets Telegram users
-  // keep using authenticated API actions after a bot restart / token expiry.
-  let tokenValid = false;
-  if (user.token) {
-    try { jwt.verify(user.token, JWT_SECRET); tokenValid = true; } catch (_) {}
-  }
-  if (!tokenValid) {
-    user.token = issueToken(user);
-    await user.save();
-  }
-
+  user = await User.create({
+    email: `telegram_${from.id}@users.presethub.local`, password: '', name: from.first_name || 'Telegram User', username: `tg_${String(from.id).slice(-12)}`,
+    role: 'user', verified: true, telegramId: String(from.id), telegram, lastActive: new Date(), commandsCount: 1
+  });
   return user;
 }
-
 async function linkTelegramId(userId, telegramId, token, ctx) {
-  await connectDB();
-  const current = await User.findById(userId);
-  if (!current) throw new Error('User not found');
-
-  const oldLink = await User.findOne({ telegramId: String(telegramId), _id: { $ne: current._id } });
-  if (oldLink) {
-    // Only remove bot-created synthetic accounts; never delete a real account.
-    if (String(oldLink.email || '').endsWith('@telegram.presethub.site')) {
-      await oldLink.deleteOne();
-    } else {
-      oldLink.telegramId = undefined;
-      oldLink.telegram = undefined;
-      oldLink.token = '';
-      await oldLink.save();
-    }
-  }
-
-  current.telegramId = String(telegramId);
-  current.token = token;
-  current.telegram = {
-    firstName: ctx.from.first_name || '',
-    lastName: ctx.from.last_name || '',
-    username: ctx.from.username || '',
-    languageCode: ctx.from.language_code || '',
-  };
-  current.lastActive = new Date();
-  current.commandsCount = Number(current.commandsCount || 0) + 1;
-  await current.save();
-  return current;
+  const from=ctx.from; const user=await User.findById(userId); if(!user) throw new Error('User not found');
+  user.telegramId=String(telegramId); user.token=token; user.telegram={firstName:from.first_name||'',lastName:from.last_name||'',username:from.username||'',languageCode:from.language_code||''}; user.lastActive=new Date(); await user.save(); return user;
 }
+async function unlinkTelegramId(telegramId) { await User.updateOne({telegramId:String(telegramId)},{$unset:{telegramId:1,token:1}}); }
 
-async function unlinkTelegramId(telegramId) {
-  await connectDB();
-  const user = await User.findOne({ telegramId: String(telegramId) });
-  if (!user) return;
-
-  if (String(user.email || '').endsWith('@telegram.presethub.site')) {
-    await user.deleteOne();
-  } else {
-    user.telegramId = undefined;
-    user.telegram = undefined;
-    user.token = '';
-    await user.save();
-  }
-}
-
-function publicPresetLine(p) {
-  const price = Number(p.price || 0) === 0 ? 'मुफ्त' : `₹${Number(p.price).toFixed(2)}`;
-  const tags = Array.isArray(p.tags) && p.tags.length ? `\n   🏷️ ${p.tags.slice(0, 4).map(escapeHtml).join(', ')}` : '';
-  return `• <b>${escapeHtml(p.name)}</b> — ${escapeHtml(p.author || 'Creator')}\n   💰 ${price} | ⭐ ${Number(p.avgRating || 0).toFixed(1)} | ⬇️ ${Number(p.downloads || 0)}${tags}\n   🆔 <code>${escapeHtml(p.id)}</code>`;
-}
-
-async function handleDownload(ctx, presetId) {
-  const user = ctx.dbUser || await getUserByTelegramId(ctx.from?.id);
-  if (!user?.token) {
-    return ctx.reply('कृपया पहले /login करें।');
-  }
-
-  await ctx.sendChatAction('typing');
+// ==================== MIDDLEWARE ====================
+bot.use(async (ctx, next) => {
   try {
-    const res = await axios.post(
-      `${API_BASE}/presets/${encodeURIComponent(presetId)}/download`,
-      {},
-      { headers: apiHeaders(user), timeout: 20_000 }
-    );
-
-    const { downloadUrl, originalName } = res.data || {};
-    if (!downloadUrl) throw new Error('Download URL missing from API response');
-
-    // Telegram fetches the short-lived signed/local download URL directly.
-    await ctx.replyWithDocument(
-      { url: downloadUrl, filename: originalName || 'preset.xmp' },
-      { caption: `✅ ${escapeHtml(originalName || 'Preset')} डाउनलोड हो गया।`, parse_mode: 'HTML' }
-    );
+    if (ctx.from) {
+      await saveTelegramUser(ctx);
+    }
+    ctx.dbUser = await getUserByTelegramId(ctx.from?.id);
+    await next();
   } catch (err) {
-    const status = err?.response?.status;
-    const apiError = err?.response?.data?.error;
-    console.error('Download error:', status || '', apiError || err.message);
-    if (status === 401) return ctx.reply('🔐 आपका Telegram login expire हो गया है। /login दोबारा करें।');
-    if (status === 403) return ctx.reply('⛔ यह paid preset है। पहले वेबसाइट पर purchase करें।');
-    if (status === 404) return ctx.reply('❌ Preset/file server पर नहीं मिली।');
-    return ctx.reply('❌ Download विफल हुआ। कृपया थोड़ी देर बाद फिर कोशिश करें।');
+    console.error('Middleware error:', err);
+    await next();
   }
-}
+});
 
+// ==================== MAIN MENU ====================
 const mainMenu = Markup.keyboard([
   ['🔍 खोजें', '📂 श्रेणियाँ'],
   ['🔥 लोकप्रिय', '🆕 नए'],
   ['👤 मेरा अकाउंट', '🛒 मेरे ऑर्डर'],
-  ['📋 मेरे प्रीसेट', '🌐 वेबसाइट'],
-  ['📤 अपलोड करें', '📊 एडमिन पैनल'],
+  ['📤 अपलोड करें', '📋 मेरे प्रीसेट'],
+  ['📊 एडमिन पैनल']
 ]).resize();
-
-// ==================== DATABASE MIDDLEWARE ====================
-bot.use(async (ctx, next) => {
-  try {
-    if (ctx.from) ctx.dbUser = await saveTelegramUser(ctx);
-    await next();
-  } catch (err) {
-    console.error('Bot middleware error:', err);
-    try { await next(); } catch (nextErr) { console.error('Bot next error:', nextErr); }
-  }
-});
 
 // ==================== START ====================
 bot.start(async (ctx) => {
   await ctx.sendChatAction('typing');
-  const welcome = `🎨 <b>PresetHub Bot – Lightroom Presets</b>\n\nनमस्ते ${escapeHtml(ctx.from.first_name || 'Creator')}! 👋\n\nयहाँ आप presets खोज, डाउनलोड, wishlist और अपने account को manage कर सकते हैं।\n\n<b>Quick commands</b>\n/search &lt;query&gt;\n/categories\n/popular\n/recent\n/top\n/preset &lt;id&gt;\n/download &lt;id&gt;\n/login\n/logout\n/myorders\n/mypresets\n/subscription\n/referral\n/earnings\n\n🌐 <a href="${SITE_URL}">PresetHub Website</a>`;
-  await ctx.reply(welcome, { parse_mode: 'HTML', ...mainMenu });
+  const welcome = `
+🎨 *PresetHub Bot – Lightroom Presets*
 
-  if (ADMIN_CHAT_ID && String(ctx.chat.id) !== ADMIN_CHAT_ID) {
-    try {
-      await bot.telegram.sendMessage(
-        ADMIN_CHAT_ID,
-        `👤 New Telegram user: ${escapeHtml(ctx.from.first_name || '')} (@${escapeHtml(ctx.from.username || 'No username')})\nID: <code>${ctx.from.id}</code>`,
-        { parse_mode: 'HTML' }
-      );
-    } catch (e) {
-      console.error('Admin notification failed:', e.message);
-    }
+नमस्ते ${ctx.from.first_name}! 👋
+
+मैं आपको हजारों प्रीसेट्स खोजने, डाउनलोड करने, अपलोड करने और प्रबंधित करने में मदद करूँगा।
+
+🔹 *कमांड्स:*
+/start - Restart
+/search <query> – खोजें
+/categories – श्रेणियाँ
+/popular – लोकप्रिय
+/recent – नए
+/top – टॉप क्रिएटर्स
+/preset <id> – विवरण
+/download <id> – डाउनलोड
+/login – अकाउंट लिंक करें
+/logout – अनलिंक
+/myorders – मेरे ऑर्डर
+/admin – एडमिन पैनल
+/upload – अपलोड
+/mypresets – मेरे प्रीसेट
+/subscription – सब्सक्रिप्शन
+/referral – रेफरल
+/earnings – कमाई
+
+🌐 *Website:* https://presethub.site
+  `;
+  await ctx.replyWithMarkdown(welcome, mainMenu);
+  
+  // Send welcome message to admin
+  try {
+    await bot.telegram.sendMessage(ADMIN_CHAT_ID, `👤 New user started bot: ${ctx.from.first_name} (@${ctx.from.username || 'No username'})`);
+  } catch (e) {
+    console.error('Admin notification failed:', e.message);
   }
 });
 
 // ==================== SEARCH ====================
 bot.command('search', async (ctx) => {
-  const query = ctx.message.text.split(' ').slice(1).join(' ').trim();
-  if (!query) return ctx.reply('उदाहरण: /search sunset');
-
+  await ctx.sendChatAction('typing');
+  const query = ctx.message.text.split(' ').slice(1).join(' ');
+  if (!query) {
+    return ctx.reply('कृपया खोज शब्द दें:\n`/search सनसेट`', { parse_mode: 'Markdown' });
+  }
   try {
-    const res = await axios.get(`${API_BASE}/search`, { params: { q: query }, timeout: 15_000 });
-    const data = res.data || {};
-    const presets = Array.isArray(data.presets) ? data.presets : [];
-    const users = Array.isArray(data.users) ? data.users : [];
-    const categories = Array.isArray(data.categories) ? data.categories : [];
+    const res = await axios.get(`${API_BASE}/presets/search?q=${encodeURIComponent(query)}`);
+    const presets = res.data;
+    if (!presets.length) return ctx.reply('😕 कोई प्रीसेट नहीं मिला।');
 
-    if (!presets.length && !users.length && !categories.length) return ctx.reply('😕 कोई result नहीं मिला।');
-
-    let msg = `🔍 <b>Search: ${escapeHtml(query)}</b>\n\n`;
-    if (presets.length) {
-      msg += '<b>Presets</b>\n' + presets.slice(0, 8).map(publicPresetLine).join('\n\n') + '\n\n';
-    }
-    if (users.length) {
-      msg += '<b>Creators</b>\n' + users.slice(0, 5).map(u => `• ${escapeHtml(u.name || 'Creator')} ${u.username ? `(@${escapeHtml(u.username)})` : ''}`).join('\n') + '\n\n';
-    }
-    if (categories.length) {
-      msg += '<b>Categories</b>\n' + categories.slice(0, 5).map(c => `• ${escapeHtml(c.name)} (${c.count || 0})`).join('\n');
-    }
-    await ctx.reply(msg, { parse_mode: 'HTML' });
+    let msg = `🔍 *"${query}"* के परिणाम:\n\n`;
+    presets.slice(0, 10).forEach((p, i) => {
+      msg += `${i + 1}. *${p.name}* – ${p.author}\n   💰 ${p.price === 0 ? 'मुफ्त' : '₹' + p.price} ⭐ ${p.avgRating || 0}\n   \`${p.id}\`\n\n`;
+    });
+    msg += 'विस्तार: `/preset <id>`';
+    await ctx.replyWithMarkdown(msg);
   } catch (err) {
-    console.error('Search error:', err.response?.data || err.message);
-    await ctx.reply('❌ Search service अभी उपलब्ध नहीं है।');
+    console.error('Search error:', err.message);
+    ctx.reply('❌ खोज में त्रुटि। कृपया बाद में प्रयास करें।');
   }
 });
 
 // ==================== CATEGORIES ====================
 bot.command('categories', async (ctx) => {
+  await ctx.sendChatAction('typing');
   try {
-    await connectDB();
-    const categories = await Preset.aggregate([
-      { $match: { status: 'approved' } },
-      { $group: { _id: '$category', count: { $sum: 1 } } },
-      { $sort: { count: -1, _id: 1 } },
-      { $limit: 30 },
-    ]);
-    if (!categories.length) return ctx.reply('📂 अभी कोई category उपलब्ध नहीं है।');
-    const msg = '📂 <b>Categories</b>\n\n' + categories.map(c => `• ${escapeHtml(c._id || 'General')} — ${c.count}`).join('\n');
-    await ctx.reply(msg, { parse_mode: 'HTML' });
+    const cats = await Preset.distinct('category', { status: 'approved' });
+    let msg = '📂 *श्रेणियाँ:*\n\n';
+    cats.forEach(c => { msg += `• ${c}\n`; });
+    msg += '\n`/category <नाम>` से देखें';
+    await ctx.replyWithMarkdown(msg);
   } catch (err) {
     console.error('Categories error:', err.message);
-    await ctx.reply('❌ Categories load नहीं हुईं।');
+    ctx.reply('❌ श्रेणियाँ लोड नहीं हुईं।');
   }
 });
 
 bot.command('category', async (ctx) => {
-  const cat = ctx.message.text.split(' ').slice(1).join(' ').trim();
-  if (!cat) return ctx.reply('उदाहरण: /category wedding');
+  await ctx.sendChatAction('typing');
+  const cat = ctx.message.text.split(' ').slice(1).join(' ');
+  if (!cat) return ctx.reply('श्रेणी नाम दें:\n`/category सनसेट`', { parse_mode: 'Markdown' });
+
   try {
-    const res = await axios.get(`${API_BASE}/presets`, { params: { category: cat, limit: 10 }, timeout: 15_000 });
-    const presets = Array.isArray(res.data?.presets) ? res.data.presets : [];
-    if (!presets.length) return ctx.reply(`❌ ${cat} में कोई approved preset नहीं मिला।`);
-    await ctx.reply(`📂 <b>${escapeHtml(cat)}</b>\n\n${presets.map(publicPresetLine).join('\n\n')}`, { parse_mode: 'HTML' });
+    const res = await axios.get(`${API_BASE}/presets?category=${encodeURIComponent(cat)}&limit=10`);
+    const presets = res.data.presets || [];
+    if (!presets.length) return ctx.reply(`"${cat}" में कोई प्रीसेट नहीं।`);
+
+    let msg = `📂 *${cat}* – ${presets.length} प्रीसेट:\n\n`;
+    presets.forEach(p => {
+      msg += `• *${p.name}* – ${p.author}\n   ${p.price === 0 ? 'मुफ्त' : '₹' + p.price} ⭐ ${p.avgRating || 0}\n   \`${p.id}\`\n`;
+    });
+    await ctx.replyWithMarkdown(msg);
   } catch (err) {
-    console.error('Category error:', err.response?.data || err.message);
-    await ctx.reply('❌ Category load नहीं हुई।');
+    console.error('Category error:', err.message);
+    ctx.reply('❌ लोड नहीं हुए।');
   }
 });
 
 // ==================== POPULAR / RECENT / TOP ====================
-async function listPresets(ctx, title, params) {
+bot.command('popular', async (ctx) => {
+  await ctx.sendChatAction('typing');
   try {
-    const res = await axios.get(`${API_BASE}/presets`, { params: { limit: 10, ...params }, timeout: 15_000 });
-    const presets = Array.isArray(res.data?.presets) ? res.data.presets : [];
-    if (!presets.length) return ctx.reply('अभी कोई preset नहीं मिला।');
-    await ctx.reply(`${title}\n\n${presets.map(publicPresetLine).join('\n\n')}`, { parse_mode: 'HTML' });
-  } catch (err) {
-    console.error('Preset list error:', err.response?.data || err.message);
-    await ctx.reply('❌ Presets load नहीं हुए।');
-  }
-}
+    const res = await axios.get(`${API_BASE}/presets?sort=popular&limit=10`);
+    const presets = res.data.presets || [];
+    if (!presets.length) return ctx.reply('कोई लोकप्रिय प्रीसेट नहीं।');
 
-bot.command('popular', ctx => listPresets(ctx, '🔥 <b>Popular Presets</b>', { sort: 'popular' }));
-bot.command('recent', ctx => listPresets(ctx, '🆕 <b>New Presets</b>', { sort: 'newest' }));
+    let msg = '🔥 *लोकप्रिय प्रीसेट:*\n\n';
+    presets.forEach(p => {
+      msg += `• *${p.name}* – ${p.author}\n   ⭐ ${p.avgRating || 0} | ⬇️ ${p.downloads || 0}\n   \`${p.id}\`\n`;
+    });
+    await ctx.replyWithMarkdown(msg);
+  } catch (err) {
+    console.error('Popular error:', err.message);
+    ctx.reply('❌ लोड नहीं हुए।');
+  }
+});
+
+bot.command('recent', async (ctx) => {
+  await ctx.sendChatAction('typing');
+  try {
+    const res = await axios.get(`${API_BASE}/presets?sort=newest&limit=10`);
+    const presets = res.data.presets || [];
+    if (!presets.length) return ctx.reply('कोई नए प्रीसेट नहीं।');
+
+    let msg = '🆕 *नए प्रीसेट:*\n\n';
+    presets.forEach(p => {
+      msg += `• *${p.name}* – ${p.author}\n   ⭐ ${p.avgRating || 0}\n   \`${p.id}\`\n`;
+    });
+    await ctx.replyWithMarkdown(msg);
+  } catch (err) {
+    console.error('Recent error:', err.message);
+    ctx.reply('❌ लोड नहीं हुए।');
+  }
+});
 
 bot.command('top', async (ctx) => {
+  await ctx.sendChatAction('typing');
   try {
-    const res = await axios.get(`${API_BASE}/users/top`, { timeout: 15_000 });
-    const creators = Array.isArray(res.data) ? res.data : [];
-    if (!creators.length) return ctx.reply('अभी कोई creator नहीं मिला।');
-    const msg = '🏆 <b>Top Creators</b>\n\n' + creators.slice(0, 10).map((c, i) =>
-      `${i + 1}. <b>${escapeHtml(c.name || 'Creator')}</b>${c.username ? ` (@${escapeHtml(c.username)})` : ''}\n   Presets: ${c.presetCount || 0} | Downloads: ${c.totalDownloads || 0}`
-    ).join('\n\n');
-    await ctx.reply(msg, { parse_mode: 'HTML' });
+    const res = await axios.get(`${API_BASE}/users/top`);
+    const creators = res.data;
+    if (!creators.length) return ctx.reply('कोई क्रिएटर नहीं।');
+
+    let msg = '🏆 *टॉप क्रिएटर्स:*\n\n';
+    creators.slice(0, 5).forEach((c, i) => {
+      msg += `${i + 1}. *${c.name}* – ${c.presetCount} प्रीसेट, ${c.totalDownloads} डाउनलोड\n`;
+    });
+    await ctx.replyWithMarkdown(msg);
   } catch (err) {
     console.error('Top error:', err.message);
-    await ctx.reply('❌ Creators load नहीं हुए।');
+    ctx.reply('❌ लोड नहीं हुए।');
   }
 });
 
 // ==================== PRESET DETAIL ====================
 bot.command('preset', async (ctx) => {
+  await ctx.sendChatAction('typing');
   const id = ctx.message.text.split(' ')[1];
-  if (!id) return ctx.reply('उदाहरण: /preset <id>');
+  if (!id) return ctx.reply('आईडी दें:\n`/preset <id>`', { parse_mode: 'Markdown' });
+
   try {
-    const res = await axios.get(`${API_BASE}/presets/${encodeURIComponent(id)}`, { timeout: 15_000 });
+    const res = await axios.get(`${API_BASE}/presets/${id}`);
     const p = res.data;
-    const tags = Array.isArray(p.tags) && p.tags.length ? `\n🏷️ ${p.tags.map(escapeHtml).join(', ')}` : '';
-    const msg = `📦 <b>${escapeHtml(p.name)}</b>\n\n✍️ ${escapeHtml(p.author || 'Creator')}\n📂 ${escapeHtml(p.category || 'General')}\n💰 ${Number(p.price || 0) === 0 ? 'मुफ्त' : `₹${Number(p.price).toFixed(2)}`}\n⭐ ${Number(p.avgRating || 0).toFixed(1)}\n⬇️ ${Number(p.downloads || 0)}\n📝 ${escapeHtml(p.description || 'No description')}${tags}\n\n🆔 <code>${escapeHtml(p.id)}</code>`;
-    const buttons = [
-      [Markup.button.callback('⬇️ Download', `download_${p.id}`), Markup.button.callback('❤️ Wishlist', `wishlist_${p.id}`)],
-      [Markup.button.url('🌐 Open on PresetHub', `${SITE_URL}/preset/${encodeURIComponent(p.id)}`)],
-    ];
-    await ctx.reply(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) });
+    let msg = `📦 *${p.name}*\n`;
+    msg += `✍️ ${p.author}\n`;
+    msg += `📂 ${p.category}\n`;
+    msg += `💰 ${p.price === 0 ? 'मुफ्त' : '₹' + p.price}\n`;
+    msg += `⭐ ${p.avgRating || 0} (${p.reviews?.length || 0} reviews)\n`;
+    msg += `⬇️ ${p.downloads || 0} downloads\n`;
+    msg += `📝 ${p.description || 'No description'}\n\n`;
+    msg += `🆔 \`${p.id}\``;
+
+    await ctx.replyWithMarkdown(msg, Markup.inlineKeyboard([
+      Markup.button.callback('⬇️ डाउनलोड', `download_${p.id}`),
+      Markup.button.callback('❤️ Wishlist', `wishlist_${p.id}`)
+    ]));
   } catch (err) {
-    console.error('Preset detail error:', err.response?.data || err.message);
-    await ctx.reply('❌ Preset नहीं मिला।');
+    console.error('Preset detail error:', err.message);
+    ctx.reply('❌ प्रीसेट नहीं मिला।');
   }
 });
 
 // ==================== DOWNLOAD ====================
 bot.command('download', async (ctx) => {
   const id = ctx.message.text.split(' ')[1];
-  if (!id) return ctx.reply('उदाहरण: /download <id>');
+  if (!id) return ctx.reply('आईडी दें:\n`/download <id>`', { parse_mode: 'Markdown' });
   await handleDownload(ctx, id);
 });
 
+async function handleDownload(ctx, presetId) {
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('कृपया पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
+
+  await ctx.sendChatAction('typing');
+  try {
+    const res = await axios.post(`${API_BASE}/presets/${presetId}/download`, {}, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` },
+      responseType: 'arraybuffer'
+    });
+
+    const fileName = res.headers['content-disposition']?.match(/filename="(.+)"/)?.[1] || 'preset.xmp';
+    await ctx.replyWithDocument(
+      { source: Buffer.from(res.data), filename: fileName },
+      { caption: '✅ प्रीसेट डाउनलोड हो गया!' }
+    );
+  } catch (err) {
+    console.error('Download error:', err?.response?.data || err.message);
+    if (err.response?.status === 403) {
+      ctx.reply('⛔ इस प्रीसेट को खरीदना होगा।');
+    } else if (err.response?.status === 404) {
+      ctx.reply('❌ फ़ाइल सर्वर पर नहीं मिली।');
+    } else {
+      ctx.reply('❌ डाउनलोड विफल। कृपया बाद में प्रयास करें।');
+    }
+  }
+}
+
 // ==================== LOGIN / LOGOUT ====================
 bot.command('login', async (ctx) => {
-  if (ctx.dbUser?.token) return ctx.reply('✅ आपका Telegram account पहले से linked है।', mainMenu);
+  if (ctx.dbUser && ctx.dbUser.token) {
+    return ctx.reply('✅ आप पहले से लिंक हैं।', mainMenu);
+  }
   loginStates.set(ctx.chat.id, { step: 'email' });
-  await ctx.reply('📧 Website वाला email दर्ज करें।\nरद्द करने के लिए /cancel');
+  await ctx.reply('📧 अपना ईमेल दर्ज करें (रद्द: /cancel):');
 });
 
 bot.command('logout', async (ctx) => {
-  if (!ctx.dbUser?.telegramId) return ctx.reply('आपका account linked नहीं है।', mainMenu);
+  if (!ctx.dbUser || !ctx.dbUser.telegramId) {
+    return ctx.reply('आप लॉगिन नहीं हैं।', mainMenu);
+  }
   await unlinkTelegramId(ctx.from.id);
   ctx.dbUser = null;
-  await ctx.reply('✅ Telegram unlink हो गया।', mainMenu);
+  ctx.reply('✅ लॉगआउट हो गया।', mainMenu);
 });
 
 // ==================== MY ORDERS ====================
 bot.command('myorders', async (ctx) => {
-  if (!ctx.dbUser?.token) return ctx.reply('कृपया पहले /login करें।');
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('कृपया पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
   try {
-    const res = await axios.get(`${API_BASE}/payments/my-orders`, { headers: apiHeaders(ctx.dbUser), timeout: 15_000 });
-    const orders = Array.isArray(res.data) ? res.data : [];
-    if (!orders.length) return ctx.reply('🛒 आपके कोई orders नहीं हैं।');
-    const msg = '🛒 <b>My Orders</b>\n\n' + orders.slice(0, 20).map(o =>
-      `• Preset: <code>${escapeHtml(o.presetId)}</code>\n  ₹${Number(o.amount || 0).toFixed(2)} — ${escapeHtml(o.status || '')}\n  ${o.createdAt ? new Date(o.createdAt).toLocaleDateString('en-IN') : ''}`
-    ).join('\n\n');
-    await ctx.reply(msg, { parse_mode: 'HTML' });
+    const res = await axios.get(`${API_BASE}/payments/my-orders`, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    const orders = res.data;
+    if (!orders.length) return ctx.reply('आपके कोई ऑर्डर नहीं।');
+
+    let msg = '🛒 *मेरे ऑर्डर:*\n\n';
+    orders.forEach(o => {
+      msg += `• ${o.presetId}\n  ₹${o.amount} – ${o.status}\n  ${new Date(o.createdAt).toLocaleDateString()}\n\n`;
+    });
+    await ctx.replyWithMarkdown(msg);
   } catch (err) {
-    console.error('My orders error:', err.response?.data || err.message);
-    await ctx.reply('❌ Orders load नहीं हुए।');
+    console.error('My orders error:', err.message);
+    ctx.reply('❌ ऑर्डर लोड नहीं हुए।');
   }
 });
 
 // ==================== ADMIN ====================
 bot.command('admin', async (ctx) => {
-  if (!ctx.dbUser?.token) return ctx.reply('⛔ पहले /login करें।');
-  if (ctx.dbUser.role !== 'admin') return ctx.reply('⛔ आप admin नहीं हैं।');
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('⛔ पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
+  if (ctx.dbUser.role !== 'admin') {
+    return ctx.reply('⛔ आप एडमिन नहीं हैं।');
+  }
+
   try {
-    const res = await axios.get(`${API_BASE}/admin/analytics`, { headers: apiHeaders(ctx.dbUser), timeout: 15_000 });
-    const d = res.data || {};
-    await ctx.reply(
-      `🛠️ <b>PresetHub Admin</b>\n\n👥 Users: ${d.totalUsers || 0}\n📦 Presets: ${d.totalPresets || 0}\n⬇️ Downloads: ${d.totalDownloads || 0}\n💰 Revenue: ₹${Number(d.totalRevenue || 0).toFixed(2)}\n⭐ Avg rating: ${Number(d.avgRating || 0).toFixed(2)}`,
-      { parse_mode: 'HTML' }
-    );
+    const res = await axios.get(`${API_BASE}/admin/analytics`, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    const data = res.data;
+    let msg = `🛠️ *एडमिन डैशबोर्ड*\n\n`;
+    msg += `👥 Users: ${data.totalUsers}\n`;
+    msg += `📦 Presets: ${data.totalPresets}\n`;
+    msg += `⬇️ Downloads: ${data.totalDownloads}\n`;
+    msg += `💰 Revenue: ₹${data.totalRevenue}\n`;
+    msg += `⭐ Avg Rating: ${data.avgRating}\n`;
+    await ctx.replyWithMarkdown(msg);
   } catch (err) {
-    console.error('Admin error:', err.response?.data || err.message);
-    await ctx.reply('❌ Admin data नहीं मिला।');
+    console.error('Admin error:', err.message);
+    ctx.reply('❌ एडमिन डेटा नहीं मिला।');
   }
 });
 
 // ==================== UPLOAD FLOW ====================
 bot.command('upload', async (ctx) => {
-  if (!ctx.dbUser?.token) return ctx.reply('कृपया पहले /login करें।');
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('कृपया पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
   uploadStates.set(ctx.chat.id, { step: 'name', data: {} });
-  await ctx.reply('📝 Preset name दें।\nरद्द: /cancel');
+  await ctx.reply('📝 प्रीसेट का नाम दें (/cancel से रद्द करें):');
 });
 
 bot.command('cancel', async (ctx) => {
   const chatId = ctx.chat.id;
-  if (uploadStates.delete(chatId)) return ctx.reply('❌ Upload cancelled।', mainMenu);
-  if (loginStates.delete(chatId)) return ctx.reply('❌ Login cancelled।', mainMenu);
-  return ctx.reply('कोई active action नहीं है।');
+  if (uploadStates.has(chatId)) {
+    uploadStates.delete(chatId);
+    await ctx.reply('❌ अपलोड रद्द।', mainMenu);
+  } else if (loginStates.has(chatId)) {
+    loginStates.delete(chatId);
+    await ctx.reply('❌ लॉगिन रद्द।', mainMenu);
+  } else {
+    await ctx.reply('कोई सक्रिय कार्य नहीं।');
+  }
 });
 
-// ==================== TEXT FLOW ====================
+// ==================== TEXT HANDLER ====================
 bot.on('text', async (ctx, next) => {
   const chatId = ctx.chat.id;
-  const text = String(ctx.message.text || '').trim();
+  const text = ctx.message.text.trim();
 
-  // Ignore Telegram commands here; their command handlers run separately.
-  if (text.startsWith('/')) return next();
-
+  // Login flow
   const loginState = loginStates.get(chatId);
   if (loginState) {
     if (loginState.step === 'email') {
-      if (!/^\S+@\S+\.\S+$/.test(text)) return ctx.reply('❌ सही email दर्ज करें।');
       loginState.email = text.toLowerCase();
       loginState.step = 'password';
-      return ctx.reply('🔑 Website password दर्ज करें।');
+      await ctx.reply('🔑 पासवर्ड दर्ज करें:');
+      return;
     }
     if (loginState.step === 'password') {
       try {
-        const res = await axios.post(`${API_BASE}/auth/login`, { email: loginState.email, password: text }, { timeout: 15_000 });
-        const token = res.data?.token;
-        const user = res.data?.user;
-        if (!token || !user?.id) throw new Error('Invalid login response');
+        const res = await axios.post(`${API_BASE}/auth/login`, {
+          email: loginState.email,
+          password: text
+        });
+        const { token, user } = res.data;
         await linkTelegramId(user.id, ctx.from.id, token, ctx);
         loginStates.delete(chatId);
         ctx.dbUser = await getUserByTelegramId(ctx.from.id);
-        return ctx.reply(`✅ Login सफल! स्वागत है ${escapeHtml(user.name || user.username || 'Creator')}`, { parse_mode: 'HTML', ...mainMenu });
+        await ctx.reply(`✅ लॉगिन सफल! स्वागत है ${user.name}`, mainMenu);
       } catch (err) {
-        console.error('Login error:', err.response?.data || err.message);
         loginStates.delete(chatId);
-        return ctx.reply('❌ Email/password गलत है या login service unavailable है।');
+        await ctx.reply('❌ गलत ईमेल या पासवर्ड।');
       }
+      return;
     }
   }
 
+  // Upload flow
   const uploadState = uploadStates.get(chatId);
   if (uploadState) {
     if (uploadState.step === 'name') {
-      uploadState.data.name = text.slice(0, 100);
+      uploadState.data.name = text;
       uploadState.step = 'category';
-      return ctx.reply('📂 Category दें, जैसे Wedding / Cinematic / Portrait');
+      await ctx.reply('📂 श्रेणी चुनें (सनसेट / नैचुरल / विंटेज / ब्लैक & व्हाइट / सिटीस्केप):');
+      return;
     }
     if (uploadState.step === 'category') {
-      uploadState.data.category = text.slice(0, 50);
+      uploadState.data.category = text;
       uploadState.step = 'price';
-      return ctx.reply('💰 Price दें (0 = free):');
+      await ctx.reply('💰 कीमत (0 = मुफ्त):');
+      return;
     }
     if (uploadState.step === 'price') {
-      const price = Number(text);
-      if (!Number.isFinite(price) || price < 0) return ctx.reply('❌ सही price दें, जैसे 0 या 99');
-      uploadState.data.price = Math.min(price, 999999.99);
+      uploadState.data.price = parseFloat(text) || 0;
       uploadState.step = 'description';
-      return ctx.reply('📝 Description दें या skip लिखें:');
+      await ctx.reply('📝 विवरण दें (या "skip"):');
+      return;
     }
     if (uploadState.step === 'description') {
-      uploadState.data.description = text.toLowerCase() === 'skip' ? '' : text.slice(0, 500);
+      uploadState.data.description = text === 'skip' ? '' : text;
       uploadState.step = 'file';
-      return ctx.reply('📎 अब .xmp / .lrtemplate / .dng file भेजें।\nPoster/preview के लिए website upload page इस्तेमाल करें।');
+      await ctx.reply('📎 अब .dng / .xmp फ़ाइल भेजें:');
+      return;
     }
   }
 
+  // Menu buttons
   const actions = {
-    '🔍 खोजें': () => ctx.reply('🔎 Search: /search <query>'),
+    '🔍 खोजें': () => ctx.reply('खोज शब्द:\n/search <query>'),
     '📂 श्रेणियाँ': () => ctx.reply('/categories'),
     '🔥 लोकप्रिय': () => ctx.reply('/popular'),
     '🆕 नए': () => ctx.reply('/recent'),
     '👤 मेरा अकाउंट': () => showProfile(ctx),
     '🛒 मेरे ऑर्डर': () => ctx.reply('/myorders'),
-    '📋 मेरे प्रीसेट': () => ctx.reply('/mypresets'),
-    '🌐 वेबसाइट': () => ctx.reply(SITE_URL),
     '📤 अपलोड करें': () => ctx.reply('/upload'),
+    '📋 मेरे प्रीसेट': () => ctx.reply('/mypresets'),
     '📊 एडमिन पैनल': () => ctx.reply('/admin'),
   };
-  if (actions[text]) return actions[text]();
-  return next();
-});
 
-// ==================== FILE HANDLER ====================
-bot.on('document', async (ctx) => {
-  const chatId = ctx.chat.id;
-  const state = uploadStates.get(chatId);
-  if (!state || state.step !== 'file') return;
-
-  const doc = ctx.message.document;
-  const name = doc.file_name || 'preset';
-  const ext = name.toLowerCase().slice(name.lastIndexOf('.'));
-  if (!['.dng', '.xmp', '.lrtemplate'].includes(ext)) {
-    return ctx.reply('❌ सिर्फ .dng, .xmp या .lrtemplate file भेजें।');
+  if (actions[text]) {
+    await actions[text]();
+    return;
   }
 
-  // Telegram uploads are intentionally not pushed directly into the website API here,
-  // because the API expects multipart file + preview fields. We keep this flow explicit
-  // and direct the creator to the website upload page rather than silently losing files.
-  uploadStates.delete(chatId);
-  await ctx.reply(
-    `✅ File received: ${escapeHtml(name)}\n\n🌐 Complete upload (poster, tags, description, price और publish) के लिए:\n${SITE_URL}/#upload`,
-    { parse_mode: 'HTML', ...mainMenu }
-  );
+  await next();
+});
+
+// ==================== FILE HANDLERS ====================
+bot.on('document', async (ctx) => {
+  const chatId = ctx.chat.id;
+  const uploadState = uploadStates.get(chatId);
+  if (!uploadState || uploadState.step !== 'file') return;
+
+  const doc = ctx.message.document;
+  const fileName = doc.file_name || '';
+  const ext = path.extname(fileName).toLowerCase();
+
+  if (!['.dng', '.xmp', '.lrtemplate'].includes(ext)) {
+    return ctx.reply('❌ सिर्फ .dng, .xmp या .lrtemplate फ़ाइल भेजें।');
+  }
+
+  try {
+    const fileLink = await ctx.telegram.getFileLink(doc.file_id);
+    uploadState.data.fileName = fileName;
+    uploadState.data.fileId = doc.file_id;
+    uploadState.step = 'done';
+
+    await ctx.reply('✅ फ़ाइल मिल गई। अब /mypresets से चेक करें या वेबसाइट पर पूरा अपलोड करें।');
+    uploadStates.delete(chatId);
+  } catch (err) {
+    console.error('File handler error:', err);
+    ctx.reply('❌ फ़ाइल प्रोसेस नहीं हो पाई।');
+  }
 });
 
 // ==================== PROFILE ====================
 async function showProfile(ctx) {
+  if (!ctx.dbUser) {
+    return ctx.reply('कृपया पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
   const u = ctx.dbUser;
-  if (!u) return ctx.reply('कृपया पहले /login करें।');
-  const msg = `👤 <b>My Account</b>\n\nनाम: ${escapeHtml(u.name)}\nUsername: ${u.username ? `@${escapeHtml(u.username)}` : 'N/A'}\nRole: ${escapeHtml(u.role)}\nTelegram: ${u.telegramId ? '✅ Linked' : '❌ Not linked'}`;
-  await ctx.reply(msg, { parse_mode: 'HTML' });
+  let msg = `👤 *मेरा अकाउंट*\n\n`;
+  msg += `नाम: ${u.name}\n`;
+  msg += `यूज़रनेम: ${u.username || 'N/A'}\n`;
+  msg += `रोल: ${u.role}\n`;
+  msg += `लिंक: ${u.token ? '✅' : '❌'}\n`;
+  await ctx.replyWithMarkdown(msg);
 }
 
 // ==================== INLINE ACTIONS ====================
-bot.action(/^download_(.+)$/, async (ctx) => {
-  try { await ctx.answerCbQuery('Download शुरू हो रहा है…'); } catch (_) {}
+bot.action(/download_(.+)/, async (ctx) => {
   await handleDownload(ctx, ctx.match[1]);
+  await ctx.answerCbQuery();
 });
 
-bot.action(/^wishlist_(.+)$/, async (ctx) => {
-  const user = ctx.dbUser;
-  if (!user?.token) return ctx.answerCbQuery('पहले /login करें');
+bot.action(/wishlist_(.+)/, async (ctx) => {
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    await ctx.answerCbQuery('पहले लॉगिन करें');
+    return;
+  }
   try {
-    await axios.post(`${API_BASE}/users/me/wishlist/${encodeURIComponent(ctx.match[1])}`, {}, { headers: apiHeaders(user), timeout: 15_000 });
+    await axios.post(`${API_BASE}/users/me/wishlist/${ctx.match[1]}`, {}, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
     await ctx.answerCbQuery('❤️ Wishlist updated');
   } catch (err) {
-    console.error('Wishlist error:', err.response?.data || err.message);
-    await ctx.answerCbQuery('Wishlist update failed');
+    console.error('Wishlist error:', err.message);
+    await ctx.answerCbQuery('Failed');
   }
 });
 
 // ==================== EXTRA COMMANDS ====================
 bot.command('subscription', async (ctx) => {
-  if (!ctx.dbUser?.token) return ctx.reply('पहले /login करें।');
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
   try {
-    const res = await axios.get(`${API_BASE}/users/me/subscription`, { headers: apiHeaders(ctx.dbUser), timeout: 15_000 });
-    const s = res.data || {};
-    await ctx.reply(`👑 <b>Subscription</b>\n\nStatus: ${s.isPremium ? '✅ Premium' : 'Free'}\nAd Watches: ${s.adWatchCount || 0}\nReferral Code: ${escapeHtml(s.referralCode || 'Not generated')}`, { parse_mode: 'HTML' });
+    const res = await axios.get(`${API_BASE}/users/me/subscription`, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    const s = res.data;
+    let msg = `👑 *Subscription*\n\n`;
+    msg += `Status: ${s.isPremium ? '✅ Premium' : 'Free'}\n`;
+    msg += `Ad Watches: ${s.adWatchCount}\n`;
+    msg += `Referral Code: ${s.referralCode || 'Not generated'}\n`;
+    await ctx.replyWithMarkdown(msg);
   } catch (err) {
-    console.error('Subscription error:', err.response?.data || err.message);
-    await ctx.reply('❌ Subscription load नहीं हुआ।');
+    console.error('Subscription error:', err.message);
+    ctx.reply('❌ Failed to load subscription.');
   }
 });
 
 bot.command('referral', async (ctx) => {
-  if (!ctx.dbUser?.token) return ctx.reply('पहले /login करें।');
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
   try {
-    const res = await axios.post(`${API_BASE}/users/referrals/generate`, {}, { headers: apiHeaders(ctx.dbUser), timeout: 15_000 });
-    await ctx.reply(`🔗 Referral Code:\n<code>${escapeHtml(res.data?.referralCode || '')}</code>`, { parse_mode: 'HTML' });
+    const res = await axios.post(`${API_BASE}/users/referrals/generate`, {}, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    await ctx.reply(`🔗 आपका Referral Code:\n\`${res.data.referralCode}\``, { parse_mode: 'Markdown' });
   } catch (err) {
-    console.error('Referral error:', err.response?.data || err.message);
-    await ctx.reply('❌ Referral code generate नहीं हुआ।');
+    console.error('Referral error:', err.message);
+    ctx.reply('❌ Failed.');
   }
 });
 
 bot.command('earnings', async (ctx) => {
-  if (!ctx.dbUser?.token) return ctx.reply('पहले /login करें।');
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
   try {
-    const res = await axios.get(`${API_BASE}/users/${encodeURIComponent(ctx.dbUser.id)}/earnings`, { headers: apiHeaders(ctx.dbUser), timeout: 15_000 });
-    const e = res.data || {};
-    await ctx.reply(`💰 <b>Earnings</b>\n\nTotal Revenue: ₹${Number(e.totalRevenue || 0).toFixed(2)}\nDownloads: ${e.totalDownloads || 0}\nImpressions: ${e.totalImpressions || 0}\nWithdraw available: ${e.canWithdraw ? 'Yes' : 'No'}`, { parse_mode: 'HTML' });
+    const res = await axios.get(`${API_BASE}/users/${ctx.dbUser.id}/earnings`, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    const e = res.data;
+    let msg = `💰 *Earnings*\n\n`;
+    msg += `Total Revenue: ₹${e.totalRevenue.toFixed(2)}\n`;
+    msg += `Downloads: ${e.totalDownloads}\n`;
+    msg += `Impressions: ${e.totalImpressions}\n`;
+    await ctx.replyWithMarkdown(msg);
   } catch (err) {
-    console.error('Earnings error:', err.response?.data || err.message);
-    await ctx.reply('❌ Earnings load नहीं हुई।');
+    console.error('Earnings error:', err.message);
+    ctx.reply('❌ Failed to load earnings.');
   }
 });
 
 bot.command('mypresets', async (ctx) => {
-  if (!ctx.dbUser?.token) return ctx.reply('पहले /login करें।');
+  if (!ctx.dbUser || !ctx.dbUser.token) {
+    return ctx.reply('पहले `/login` करें।', { parse_mode: 'Markdown' });
+  }
   try {
-    const res = await axios.get(`${API_BASE}/users/${encodeURIComponent(ctx.dbUser.id)}/presets`, { headers: apiHeaders(ctx.dbUser), timeout: 15_000 });
-    const presets = Array.isArray(res.data) ? res.data : [];
-    if (!presets.length) return ctx.reply('📋 आपने अभी तक कोई preset upload नहीं किया।');
-    const msg = '📋 <b>My Presets</b>\n\n' + presets.slice(0, 20).map(p => `• <b>${escapeHtml(p.name)}</b> — ${escapeHtml(p.status || 'approved')}\n  <code>${escapeHtml(p.id)}</code>`).join('\n\n');
-    await ctx.reply(msg, { parse_mode: 'HTML' });
+    const res = await axios.get(`${API_BASE}/users/${ctx.dbUser.id}/presets`, {
+      headers: { Authorization: `Bearer ${ctx.dbUser.token}` }
+    });
+    const presets = res.data;
+    if (!presets.length) return ctx.reply('आपने अभी तक कोई प्रीसेट अपलोड नहीं किया।');
+
+    let msg = '📋 *मेरे प्रीसेट:*\n\n';
+    presets.forEach(p => {
+      msg += `• *${p.name}* (${p.status})\n  \`${p.id}\`\n`;
+    });
+    await ctx.replyWithMarkdown(msg);
   } catch (err) {
-    console.error('My presets error:', err.response?.data || err.message);
-    await ctx.reply('❌ My presets load नहीं हुए।');
+    console.error('My presets error:', err.message);
+    ctx.reply('❌ Failed.');
   }
 });
 
-// ==================== ERROR HANDLING / LAUNCH ====================
-bot.catch(async (err, ctx) => {
-  console.error('Telegram handler error:', err);
-  try { await ctx.reply('⚠️ Bot में temporary error आया। कृपया दोबारा कोशिश करें।'); } catch (_) {}
-});
-
-async function start() {
-  await connectDB();
-  const me = await bot.telegram.getMe();
-  console.log(`🤖 Telegram bot: @${me.username || me.first_name} (${me.id})`);
-  console.log(`🌐 API: ${API_BASE}`);
-  console.log(`🌐 Site: ${SITE_URL}`);
-  await bot.launch({ dropPendingUpdates: true });
-  console.log('✅ Telegram bot polling started.');
-}
-
-start().catch((err) => {
-  console.error('❌ Telegram bot startup failed:', err);
-  process.exit(1);
-});
+// ==================== LAUNCH ====================
+console.log('🤖 Starting Telegram Bot...');
+ensureBotDB().then(() => bot.launch())
+  .then(() => {
+    console.log('✅ Telegram bot started successfully!');
+    console.log('📱 Bot username: @presethub_bot');
+    console.log('🔗 Bot link: https://t.me/presethub_bot');
+  })
+  .catch(err => {
+    console.error('❌ Bot launch error:', err);
+    console.log('⚠️  Bot will retry in 5 seconds...');
+    setTimeout(() => {
+      bot.launch().catch(e => console.error('Retry failed:', e));
+    }, 5000);
+  });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
