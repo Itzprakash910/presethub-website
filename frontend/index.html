@@ -1,1024 +1,146 @@
 <!DOCTYPE html>
-<html lang="hi" dir="ltr">
+<html lang="hi">
 <head>
   <meta charset="UTF-8">
-
-  <!-- =========================================================
-       BASIC / VIEWPORT
-       ========================================================= -->
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1, viewport-fit=cover">
-
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-
-  <title>PresetHub – Free & Premium Lightroom Presets</title>
-
-  <meta name="description"
-        content="PresetHub पर Free और Premium Lightroom Presets खोजें, preview करें, download करें और अपने presets share करें। Preset name, creator, category और tags से presets खोजें।">
-
-  <meta name="keywords"
-        content="Lightroom presets, free Lightroom presets, premium Lightroom presets, Lightroom preset download, Lightroom mobile presets, XMP presets, DNG presets, Lightroom photo presets, Instagram presets, portrait presets, wedding presets, cinematic presets, vintage presets, natural presets, black and white presets, photo editing presets, preset marketplace, preset creator, free presets, PresetHub">
-
-  <meta name="author"
-        content="Omprakash (HeyOmii)">
-
-  <meta name="creator"
-        content="Omprakash (HeyOmii)">
-
-  <meta name="publisher"
-        content="PresetHub">
-
-  <meta name="application-name"
-        content="PresetHub">
-
-  <meta name="apple-mobile-web-app-title"
-        content="PresetHub">
-
-  <meta name="mobile-web-app-capable"
-        content="yes">
-
-  <meta name="apple-mobile-web-app-capable"
-        content="yes">
-
-  <meta name="apple-mobile-web-app-status-bar-style"
-        content="default">
-
-  <meta name="format-detection"
-        content="telephone=no">
-
-  <!-- =========================================================
-       SEARCH ENGINE / INDEXING
-       ========================================================= -->
-  <meta name="robots"
-        content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
-
-  <meta name="googlebot"
-        content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
-
-  <meta name="bingbot"
-        content="index,follow,max-image-preview:large,max-image-preview:large">
-
-  <meta name="referrer"
-        content="strict-origin-when-cross-origin">
-
-  <link rel="canonical"
-        href="https://presethub.site/">
-
-  <!-- =========================================================
-       BRAND / THEME
-       ========================================================= -->
-  <meta name="theme-color"
-        content="#d4a373">
-
-  <meta name="msapplication-TileColor"
-        content="#d4a373">
-
-  <meta name="msapplication-navbutton-color"
-        content="#d4a373">
-
-  <!-- =========================================================
-       GOOGLE ADSENSE
-       ========================================================= -->
-
-  <!-- AdSense account verification / publisher identification -->
-  <meta name="google-adsense-account"
-        content="ca-pub-3554311294133493">
-
-  <!-- Google AdSense -->
-  <script async
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3554311294133493"
-          crossorigin="anonymous"></script>
-
-  <!--
-    NOTE:
-    AMP Auto Ads code intentionally NOT used here because this is
-    a normal HTML/PWA page, not an AMP HTML document.
-
-    AdSense Auto Ads can be enabled from the AdSense account
-    using the script above.
-  -->
-
-  <!-- =========================================================
-       OPEN GRAPH / FACEBOOK / WHATSAPP / SOCIAL PREVIEW
-       ========================================================= -->
-  <meta property="og:site_name"
-        content="PresetHub">
-
-  <meta property="og:type"
-        content="website">
-
-  <meta property="og:locale"
-        content="en_IN">
-
-  <meta property="og:title"
-        content="PresetHub – Free & Premium Lightroom Presets">
-
-  <meta property="og:description"
-        content="Discover, preview and download Lightroom presets on PresetHub. Search presets by name, creator, category or tags and explore photo editing presets.">
-
-  <meta property="og:url"
-        content="https://presethub.site/">
-
-  <meta property="og:image"
-        content="https://presethub.site/assets/images/og-image.png">
-
-  <meta property="og:image:secure_url"
-        content="https://presethub.site/assets/images/og-image.png">
-
-  <meta property="og:image:type"
-        content="image/png">
-
-  <meta property="og:image:width"
-        content="1200">
-
-  <meta property="og:image:height"
-        content="630">
-
-  <meta property="og:image:alt"
-        content="PresetHub Lightroom Presets Marketplace">
-
-  <!-- =========================================================
-       TWITTER / X CARD
-       ========================================================= -->
-  <meta name="twitter:card"
-        content="summary_large_image">
-
-  <meta name="twitter:title"
-        content="PresetHub – Free & Premium Lightroom Presets">
-
-  <meta name="twitter:description"
-        content="Find, preview and download Lightroom presets. Search by preset name, creator, category and tags on PresetHub.">
-
-  <meta name="twitter:image"
-        content="https://presethub.site/assets/images/og-image.png">
-
-  <meta name="twitter:image:alt"
-        content="PresetHub Lightroom Presets Marketplace">
-
-  <!-- =========================================================
-       PERFORMANCE / CONNECTIONS
-       ========================================================= -->
-
-  <!-- Font Awesome -->
-  <link rel="preconnect"
-        href="https://cdnjs.cloudflare.com"
-        crossorigin>
-
-  <link rel="dns-prefetch"
-        href="//cdnjs.cloudflare.com">
-
-  <!-- Google Fonts -->
-  <link rel="preconnect"
-        href="https://fonts.googleapis.com">
-
-  <link rel="preconnect"
-        href="https://fonts.gstatic.com"
-        crossorigin>
-
-  <link rel="dns-prefetch"
-        href="//fonts.googleapis.com">
-
-  <!-- =========================================================
-       FONT AWESOME
-       ========================================================= -->
-
-  <link rel="preload"
-        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-        as="style"
-        crossorigin>
-
-  <link rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-
-  <!-- =========================================================
-       WEBSITE FONT
-       ========================================================= -->
-
-  <link rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700;800&display=swap">
-
-  <!-- =========================================================
-       FAVICON / PWA ICONS
-       ========================================================= -->
-
-  <link rel="icon"
-        href="/assets/icons/favicon.ico"
-        type="image/x-icon">
-
-  <link rel="icon"
-        type="image/png"
-        sizes="64x64"
-        href="/assets/icons/presethub-p-64.png">
-
-  <link rel="icon"
-        type="image/png"
-        sizes="192x192"
-        href="/assets/icons/presethub-p-192.png">
-
-  <link rel="icon"
-        type="image/png"
-        sizes="512x512"
-        href="/assets/icons/presethub-p-512.png">
-
-  <link rel="apple-touch-icon"
-        sizes="180x180"
-        href="/assets/icons/presethub-p-180.png">
-
-  <link rel="manifest"
-        href="/manifest.json">
-
-  <!-- =========================================================
-       SOCIAL PROFILE
-       ========================================================= -->
-
-  <link rel="me"
-        href="https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn">
-
-  <!-- =========================================================
-       MAIN WEBSITE CSS
-       ========================================================= -->
-
-  <link rel="stylesheet"
-        href="/style.css">
-
-  <!-- =========================================================
-       STRUCTURED DATA / JSON-LD
-       ========================================================= -->
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PresetHub – Free & Premium Lightroom Presets Marketplace</title>
+  <meta name="description" content="Discover, preview, download and sell Lightroom presets on PresetHub. Search by preset name, creator, category or tag and find free and premium Lightroom presets.">
+    <meta name="keywords" content="Lightroom presets, free Lightroom presets, premium Lightroom presets, Lightroom preset marketplace, XMP presets, DNG presets, Lightroom mobile presets, photo presets, portrait presets, wedding presets, cinematic presets, vintage presets, natural presets, black and white presets, preset creator, sell Lightroom presets, download Lightroom presets, PresetHub, Omprakash, HeyOmii">
+    <meta name="author" content="Omprakash (HeyOmii)">
+    <meta name="creator" content="Omprakash (HeyOmii)">
+    <meta name="publisher" content="PresetHub">
+    <meta name="application-name" content="PresetHub">
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta name="theme-color" content="#d4a373">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="PresetHub">
+    <meta property="og:site_name" content="PresetHub">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="en_IN">
+    <meta property="og:title" content="PresetHub – Free &amp; Premium Lightroom Presets Marketplace">
+    <meta property="og:description" content="Discover, preview, download and sell Lightroom presets on PresetHub. Search by preset name, creator, category or tag and find free and premium Lightroom presets.">
+    <meta property="og:url" content="https://presethub.site/">
+    <meta property="og:image" content="https://presethub.site/assets/images/og-image.png">
+    <meta property="og:image:secure_url" content="https://presethub.site/assets/images/og-image.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:alt" content="PresetHub – Lightroom Presets Marketplace">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="PresetHub – Free &amp; Premium Lightroom Presets Marketplace">
+    <meta name="twitter:description" content="Discover, preview, download and sell Lightroom presets on PresetHub. Search by preset name, creator, category or tag and find free and premium Lightroom presets.">
+    <meta name="twitter:image" content="https://presethub.site/assets/images/og-image.png">
+    <meta name="twitter:image:alt" content="PresetHub – Lightroom Presets Marketplace">
+    <link rel="canonical" href="https://presethub.site/">
+    <link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" as="style" crossorigin>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap">
+  <link rel="me" href="https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn">
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-
-      {
-        "@type": "WebSite",
-        "@id": "https://presethub.site/#website",
-        "name": "PresetHub",
-        "alternateName": [
-          "Preset Hub",
-          "PresetHub Lightroom Presets"
-        ],
-        "url": "https://presethub.site/",
-        "description": "PresetHub is a Lightroom preset discovery and sharing platform where users can discover, preview and download photo editing presets.",
-        "inLanguage": "hi-IN",
-        "publisher": {
-          "@id": "https://presethub.site/#organization"
-        },
-        "potentialAction": {
-          "@type": "SearchAction",
-          "target": {
-            "@type": "EntryPoint",
-            "urlTemplate": "https://presethub.site/?q={search_term_string}"
-          },
-          "query-input": "required name=search_term_string"
-        }
-      },
-
-      {
-        "@type": "Organization",
-        "@id": "https://presethub.site/#organization",
-        "name": "PresetHub",
-        "url": "https://presethub.site/",
-        "logo": {
-          "@type": "ImageObject",
-          "url": "https://presethub.site/assets/icons/presethub-p-512.png",
-          "width": 512,
-          "height": 512
-        },
-        "image": "https://presethub.site/assets/images/og-image.png",
-        "sameAs": [
-          "https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"
-        ],
-        "founder": {
-          "@id": "https://presethub.site/#omprakash"
-        }
-      },
-
-      {
-        "@type": "Person",
-        "@id": "https://presethub.site/#omprakash",
-        "name": "Omprakash",
-        "alternateName": [
-          "HeyOmii",
-          "Omprakash HeyOmii"
-        ],
-        "url": "https://presethub.site/",
-        "sameAs": [
-          "https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"
-        ]
-      },
-
-      {
-        "@type": "WebPage",
-        "@id": "https://presethub.site/#webpage",
-        "url": "https://presethub.site/",
-        "name": "PresetHub – Free & Premium Lightroom Presets",
-        "description": "Discover, preview and download Lightroom presets on PresetHub. Search presets by name, creator, category or tags.",
-        "isPartOf": {
-          "@id": "https://presethub.site/#website"
-        },
-        "about": {
-          "@id": "https://presethub.site/#organization"
-        },
-        "primaryImageOfPage": {
-          "@type": "ImageObject",
-          "url": "https://presethub.site/assets/images/og-image.png",
-          "width": 1200,
-          "height": 630
-        },
-        "inLanguage": "hi-IN"
-      }
-    ]
-  }
+  {"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://presethub.site/#website","name":"PresetHub","alternateName":"Preset Hub","url":"https://presethub.site/","potentialAction":{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://presethub.site/?q={search_term_string}"},"query-input":"required name=search_term_string"}},{"@type":"Organization","@id":"https://presethub.site/#organization","name":"PresetHub","url":"https://presethub.site/","logo":"https://presethub.site/assets/icons/icon-512.png","sameAs":["https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"]},{"@type":"Person","@id":"https://presethub.site/#omprakash","name":"Omprakash","alternateName":"HeyOmii","url":"https://presethub.site/","sameAs":["https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"]},{"@type":"WebPage","@id":"https://presethub.site/#webpage","url":"https://presethub.site/","name":"PresetHub – Free & Premium Lightroom Presets Marketplace","description":"Discover, preview, download and sell Lightroom presets on PresetHub. Search by preset name, creator, category or tag and find free and premium Lightroom presets.","isPartOf":{"@id":"https://presethub.site/#website"},"publisher":{"@id":"https://presethub.site/#organization"}}]}
   </script>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3554311294133493" crossorigin="anonymous"></script>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/style.css">
 </head>
-
 <body>
-
-<a class="skip-link"
-   href="#presets">
-  Skip to presets
-</a>
-
-<!-- =========================================================
-     HEADER / NAVBAR
-     ========================================================= -->
+<a class="skip-link" href="#presets">Skip to presets</a>
 
 <header>
   <div class="container nav">
-
-    <a class="logo"
-       href="/"
-       aria-label="PresetHub Home">
-
-      <img
-        class="brand-logo"
-        src="/assets/images/presethub-logo-1.jpg"
-        alt="PresetHub logo"
-        width="48"
-        height="48"
-        decoding="async">
-
-      Preset<span>Hub</span>
-    </a>
-
-    <!-- SEARCH -->
-
-    <form
-      class="nav-search"
-      id="searchForm"
-      role="search"
-      autocomplete="off">
-
-      <label
-        class="sr-only"
-        for="searchInput">
-        Search presets, creators or tags
-      </label>
-
-      <input
-        id="searchInput"
-        type="search"
-        placeholder="प्रीसेट, क्रिएटर या टैग खोजें…"
-        aria-label="Search presets, creators or tags"
-        maxlength="100"
-        autocomplete="off">
-
-      <button
-        type="submit"
-        class="btn btn-primary"
-        aria-label="Search">
-
-        <i
-          class="fas fa-search"
-          aria-hidden="true">
-        </i>
-
-        खोजें
-      </button>
-
-      <div
-        id="searchSuggestions"
-        hidden>
-      </div>
-
+    <a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-logo-1.jpg" alt="PresetHub logo">Preset<span>Hub</span></a>
+    <form class="nav-search" id="searchForm" role="search" autocomplete="off">
+      <input id="searchInput" type="search" placeholder="प्रीसेट, क्रिएटर या टैग खोजें…" aria-label="Search presets" maxlength="100">
+      <button type="submit"><i class="fas fa-search" aria-hidden="true"></i> खोजें</button>
+      <div id="searchSuggestions" hidden></div>
     </form>
-
-    <!-- NAV ACTIONS -->
-
     <div class="nav-actions">
-
-      <button
-        class="btn btn-outline btn-sm"
-        data-action="install"
-        title="Install PresetHub"
-        type="button">
-
-        <i
-          class="fas fa-download"
-          aria-hidden="true">
-        </i>
-
-        Install
-      </button>
-
-      <button
-        class="icon-btn"
-        data-action="theme"
-        type="button"
-        aria-label="Toggle dark mode"
-        title="Toggle theme">
-
-        <i
-          class="fas fa-moon"
-          aria-hidden="true">
-        </i>
-
-      </button>
-
-      <!-- AUTH -->
-
+      <button class="btn btn-outline btn-sm" data-action="install" title="Install PresetHub"><i class="fas fa-download"></i> Install</button>
+      <button class="icon-btn" data-action="theme" aria-label="Toggle dark mode"><i class="fas fa-moon" aria-hidden="true"></i></button>
       <div id="authSection">
-
-        <button
-          class="btn btn-outline btn-sm"
-          data-action="login"
-          type="button">
-
-          <i
-            class="fas fa-right-to-bracket"
-            aria-hidden="true">
-          </i>
-
-          लॉग इन
-        </button>
-
-        <button
-          class="btn btn-primary btn-sm"
-          data-action="signup"
-          type="button">
-
-          <i
-            class="fas fa-user-plus"
-            aria-hidden="true">
-          </i>
-
-          साइन अप
-        </button>
-
+        <button class="btn btn-outline btn-sm" data-action="login">लॉग इन</button>
+        <button class="btn btn-primary btn-sm" data-action="signup">साइन अप</button>
       </div>
-
-      <!-- USER -->
-
-      <div
-        id="userSection">
-
-        <a
-          class="btn btn-outline btn-sm hidden"
-          id="adminLink"
-          href="/admin.html">
-
-          <i
-            class="fas fa-shield-halved"
-            aria-hidden="true">
-          </i>
-
-          Admin
-        </a>
-
-        <button
-          class="btn btn-accent btn-sm"
-          data-action="upload"
-          type="button">
-
-          <i
-            class="fas fa-cloud-arrow-up"
-            aria-hidden="true">
-          </i>
-
-          अपलोड
-        </button>
-
-        <button
-          class="user-avatar"
-          id="avatar"
-          data-action="account"
-          type="button"
-          title="मेरा अकाउंट"
-          aria-label="My account">
-        </button>
-
+      <div id="userSection">
+        <a class="btn btn-outline btn-sm hidden" id="adminLink" href="/admin.html">Admin</a>
+        <button class="btn btn-accent btn-sm" data-action="upload"><i class="fas fa-upload" aria-hidden="true"></i> अपलोड</button>
+        <button class="user-avatar" id="avatar" data-action="account" title="मेरा अकाउंट" aria-label="My account"></button>
       </div>
-
     </div>
-
   </div>
 </header>
 
-<!-- =========================================================
-     MAIN
-     ========================================================= -->
-
 <main>
-
-  <!-- HERO -->
-
-  <section
-    class="hero"
-    aria-labelledby="heroTitle">
-
+  <section class="hero">
     <div class="container hero-grid">
-
       <div>
-
-        <h1 id="heroTitle">
-          बेहतरीन
-          <span>Lightroom Presets</span>,
-          एक क्लिक में
-        </h1>
-
-        <p>
-          Free और premium presets खोजें, preview करें,
-          download करें और अपने बनाए presets share करें।
-        </p>
-
-        <hr>
-
-
-        <h5>
-          Free Download, Free Upload Preset,
-          Preset Share Karen Apni Social Media Platform Par !!
-        </h5>
-
+        <h1>बेहतरीन <span>Lightroom Presets</span>, एक क्लिक में</h1>
+        <p>Free और premium presets खोजें, डाउनलोड करें, या अपने बनाए presets बेचें।</p>
         <div class="hero-btns">
-
-          <a
-            class="btn btn-primary"
-            href="#presets">
-
-            <i
-              class="fas fa-wand-magic-sparkles"
-              aria-hidden="true">
-            </i>
-
-            Presets देखें
-          </a>
-
-          <button
-            class="btn btn-outline"
-            data-action="upload"
-            type="button">
-
-            <i
-              class="fas fa-cloud-arrow-up"
-              aria-hidden="true">
-            </i>
-
-            अपना preset अपलोड करें
-          </button>
-
+          <a class="btn btn-primary" href="#presets">Presets देखें</a>
+          <button class="btn btn-outline" data-action="upload">अपना preset बेचें</button>
         </div>
-
-        <div
-          class="hero-stats"
-          aria-label="Preset statistics">
-
-          <div>
-            <div
-              class="num"
-              id="statPresets">
-              –
-            </div>
-
-            <div class="label">
-              Presets
-            </div>
-          </div>
-
-          <div>
-            <div
-              class="num"
-              id="statFree">
-              –
-            </div>
-
-            <div class="label">
-              Free
-            </div>
-          </div>
-
+        <div class="hero-stats">
+          <div><div class="num" id="statPresets">–</div><div class="label">Presets</div></div>
+          <div><div class="num" id="statFree">–</div><div class="label">Free</div></div>
         </div>
-
       </div>
-
-      <!-- HERO FEATURED PRESET -->
-
       <div class="hero-visual">
-
-        <a
-          id="heroFeaturedLink"
-          href="#presets"
-          aria-label="Open featured preset">
-
-          <img
-            id="heroFeaturedImage"
-            src="/assets/images/og-image.png"
-            alt="Featured Lightroom preset preview"
-            width="1200"
-            height="630"
-            decoding="async"
-            fetchpriority="high">
+        <a id="heroFeaturedLink" href="#presets" aria-label="Open featured preset">
+          <img id="heroFeaturedImage" src="/assets/images/og-image.png" alt="Featured Lightroom preset preview" decoding="async" fetchpriority="high">
         </a>
-
-        <div
-          class="hero-badge"
-          id="heroFeaturedBadge">
-
-          <i
-            class="fas fa-star"
-            aria-hidden="true">
-          </i>
-
-          Top featured preset
-        </div>
-
+        <div class="hero-badge" id="heroFeaturedBadge"><i class="fas fa-star" aria-hidden="true"></i> Top featured preset</div>
       </div>
-
     </div>
-
   </section>
 
-  <!-- =========================================================
-       CONTENT
-       ========================================================= -->
-
   <div class="container">
+    <div class="adsense-slot" aria-label="Advertisement"><!-- AdSense Auto Ads can fill this area when enabled in the AdSense account. --></div>
+    <h2 class="section-title"><span>Explore Presets</span><a href="/blog.html">Guides &amp; SEO Resources</a></h2>
+    <nav class="quick-links" aria-label="PresetHub sections"><a href="/about.html">About</a><a href="/faq.html">FAQ</a><a href="/creator-program.html">Creators</a><a href="/download-guide.html">Download Guide</a><a href="/lightroom-guide.html">Lightroom Guide</a></nav>
+    <h2 class="section-title">Categories</h2>
+    <div class="categories" id="categories"></div>
 
-    <!-- AdSense placeholder -->
-    <div
-      class="adsense-slot"
-      aria-label="Advertisement">
-    </div>
+    <h2 class="section-title featured-title"><span>Featured Presets</span><span class="section-subtitle">Rating · Views · Likes · Comments · Shares</span></h2>
+    <div class="featured-grid" id="featuredGrid" aria-live="polite"></div>
 
-    <!-- QUICK LINKS -->
+    <div class="search-entity-results" id="searchEntityResults" hidden></div>
 
-    <h2 class="section-title">
-
-      <span>
-        Explore Presets
-      </span>
-
-      <a
-        href="/blog.html">
-
-        Guides &amp; SEO Resources
-      </a>
-
-    </h2>
-
-    <nav
-      class="quick-links"
-      aria-label="PresetHub sections">
-
-      <a href="/about.html">
-        About
-      </a>
-
-      <a href="/faq.html">
-        FAQ
-      </a>
-
-      <a href="/creator-program.html">
-        Creators
-      </a>
-
-      <a href="/download-guide.html">
-        Download Guide
-      </a>
-
-      <a href="/lightroom-guide.html">
-        Lightroom Guide
-      </a>
-
-    </nav>
-
-    <!-- CATEGORIES -->
-
-    <h2 class="section-title">
-      Categories
-    </h2>
-
-    <div
-      class="categories"
-      id="categories"
-      aria-live="polite">
-    </div>
-
-    <!-- FEATURED PRESETS -->
-
-    <h2
-      class="section-title featured-title">
-
-      <span>
-        Featured Presets
-      </span>
-
-      <span class="section-subtitle">
-        Rating · Views · Likes · Comments · Shares
-      </span>
-
-    </h2>
-
-    <div
-      class="featured-grid"
-      id="featuredGrid"
-      aria-live="polite">
-    </div>
-
-    <!-- SEARCH ENTITY RESULTS -->
-
-    <div
-      class="search-entity-results"
-      id="searchEntityResults"
-      hidden>
-    </div>
-
-    <!-- PRESET LIST -->
-
-    <h2
-      class="section-title"
-      id="presets">
-
-      <span id="listTitle">
-        सभी Presets
-      </span>
-
-      <span
-        style="display:flex;gap:8px;flex-wrap:wrap">
-
-        <select
-          class="filter-select"
-          id="priceFilter"
-          aria-label="Price filter">
-
-          <option value="">
-            सभी कीमतें
-          </option>
-
-          <option value="free">
-            Free
-          </option>
-
-          <option value="paid">
-            Paid
-          </option>
-
+    <h2 class="section-title" id="presets">
+      <span id="listTitle">सभी Presets</span>
+      <span style="display:flex;gap:8px;flex-wrap:wrap">
+        <select class="filter-select" id="priceFilter" aria-label="Price filter">
+          <option value="">सभी कीमतें</option><option value="free">Free</option><option value="paid">Paid</option>
         </select>
-
-        <select
-          class="filter-select"
-          id="sortFilter"
-          aria-label="Sort presets">
-
-          <option value="newest">
-            नए पहले
-          </option>
-
-          <option value="popular">
-            Popular
-          </option>
-
-          <option value="rating">
-            Top rated
-          </option>
-
+        <select class="filter-select" id="sortFilter" aria-label="Sort">
+          <option value="newest">नए पहले</option><option value="popular">Popular</option><option value="rating">Top rated</option>
         </select>
-
       </span>
-
     </h2>
+    <div class="bulk-toolbar" id="bulkToolbar" hidden><span><b id="selectedCount">0</b> selected</span><button class="btn btn-primary btn-sm" data-action="bulk-download"><i class="fas fa-download"></i> Download selected</button><button class="btn btn-outline btn-sm" data-action="clear-selection">Clear</button></div>
+    <div class="preset-grid" id="presetGrid" aria-live="polite"></div>
 
-    <!-- BULK DOWNLOAD -->
-
-    <div
-      class="bulk-toolbar"
-      id="bulkToolbar"
-      hidden>
-
-      <span>
-        <b id="selectedCount">
-          0
-        </b>
-
-        selected
-      </span>
-
-      <button
-        class="btn btn-primary btn-sm"
-        data-action="bulk-download"
-        type="button">
-
-        <i
-          class="fas fa-download"
-          aria-hidden="true">
-        </i>
-
-        Download selected
-      </button>
-
-      <button
-        class="btn btn-outline btn-sm"
-        data-action="clear-selection"
-        type="button">
-
-        <i
-          class="fas fa-xmark"
-          aria-hidden="true">
-        </i>
-
-        Clear
-      </button>
-
-    </div>
-
-    <!-- PRESET GRID -->
-
-    <div
-      class="preset-grid"
-      id="presetGrid"
-      aria-live="polite">
-    </div>
-
-    <!-- TOP CREATORS -->
-
-    <h2 class="section-title">
-      Top Creators
-    </h2>
-
-    <div
-      class="top-creators-grid"
-      id="creators"
-      aria-live="polite">
-    </div>
-
+    <h2 class="section-title">Top Creators</h2>
+    <div class="top-creators-grid" id="creators"></div>
   </div>
-
 </main>
 
-<!-- =========================================================
-     SEO HELP
-     ========================================================= -->
-
-<section
-  class="seo-help container"
-  aria-labelledby="seoHelpTitle">
-
-  <h2 id="seoHelpTitle">
-    Find Lightroom presets faster
-  </h2>
-
-  <p>
-    Search PresetHub by preset name, creator, photography style,
-    category or tag. Explore Lightroom presets with preview images,
-    ratings, views, likes, comments and shares. Each public preset
-    can have its own search-friendly page.
-  </p>
-
-</section>
-
-<!-- =========================================================
-     FOOTER
-     ========================================================= -->
+<section class="seo-help container"><h2>Find Lightroom presets faster</h2><p>Search by preset name, creator, style, category, or tag. PresetHub publishes a dedicated page for every approved preset so individual preset pages can be discovered by search engines.</p></section>
 
 <footer>
-
-  <div
-    class="container footer-bottom"
-    style="border-top:0">
-
-    <span>
-      © <span id="currentYear">PresetHub</span>
-    </span>
-
-    <span>
-      Made for photographers
-      <i
-        class="fas fa-camera"
-        aria-hidden="true">
-      </i>
-    </span>
-
-    <span>
-      Website by
-
-      <a
-        href="https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"
-        target="_blank"
-        rel="me noopener noreferrer"
-        aria-label="HeyOmii Instagram">
-
-        Omprakash (@heyomii__08)
-
-      </a>
-    </span>
-
-    <span>
-
-      <a href="/privacy.html">
-        Privacy
-      </a>
-
-      ·
-
-      <a href="/terms.html">
-        Terms
-      </a>
-
-      ·
-
-      <a href="/about.html">
-        About
-      </a>
-
-      ·
-
-      <a href="/download-app.html">
-        Install App
-      </a>
-
-    </span>
-
+  <div class="container footer-bottom" style="border-top:0">
+    <span>© PresetHub</span><span>Made for photographers <i class="fas fa-camera" aria-hidden="true"></i></span><span>Website by <a href="https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn" target="_blank" rel="me noopener noreferrer">Omprakash (HeyOmii)</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a> · <a href="/download-app.html">Install App</a></span>
   </div>
-
 </footer>
 
-<!-- =========================================================
-     GLOBAL MODAL
-     ========================================================= -->
-
-<div
-  class="modal-overlay"
-  id="overlay"
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="modalTitle">
-
-  <div class="modal">
-
-    <button
-      class="close"
-      data-action="close"
-      type="button"
-      aria-label="Close">
-
-      <i
-        class="fas fa-xmark"
-        aria-hidden="true">
-      </i>
-
-    </button>
-
-    <div
-      id="modalBody">
-    </div>
-
-  </div>
-
+<div class="modal-overlay" id="overlay" role="dialog" aria-modal="true">
+  <div class="modal"><button class="close" data-action="close" aria-label="Close">×</button><div id="modalBody"></div></div>
 </div>
-
-<!-- =========================================================
-     GLOBAL TOAST / ALERT
-     ========================================================= -->
-
-<div
-  id="toastBox"
-  aria-live="polite"
-  aria-atomic="true">
-</div>
-
-<!-- =========================================================
-     APP JAVASCRIPT
-     ========================================================= -->
-
-<script
-  src="/app.js"
-  defer>
-</script>
-
-<!-- =========================================================
-     YEAR
-     ========================================================= -->
-
-<script>
-  document.addEventListener("DOMContentLoaded", function () {
-    const year = document.getElementById("currentYear");
-
-    if (year) {
-      year.textContent =
-        "© " + new Date().getFullYear() + " PresetHub";
-    }
-  });
-</script>
-
+<div id="toastBox" aria-live="polite"></div>
+<script src="/app.js"></script>
 </body>
 </html>

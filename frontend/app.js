@@ -101,7 +101,7 @@
   };
   function cacheableApi(path) {
     const p = String(path || '');
-    return /^(GET|HEAD)/i.test('GET') && !p.startsWith('/auth/') && !p.startsWith('/admin/') && !p.startsWith('/payments/') && !p.startsWith('/users/me');
+    return !p.startsWith('/auth/') && !p.startsWith('/admin/') && !p.startsWith('/payments/') && !p.startsWith('/users/me');
   }
   function setNetworkState(online, message) {
     state.online = !!online;
@@ -246,6 +246,7 @@
     document.body.style.overflow = 'hidden';
   }
   function closeModal() {
+    if(chatTimer){clearInterval(chatTimer);chatTimer=null;}
     const overlay = $('#overlay');
     if (overlay) overlay.classList.remove('active');
     document.body.style.overflow = '';
@@ -264,7 +265,7 @@
       if (avatar) {
         avatar.textContent = (state.user.name || state.user.username || 'U').trim().charAt(0).toUpperCase();
         if (state.user.avatar) {
-          avatar.style.backgroundImage = `url("${state.user.avatar}")`;
+          avatar.style.backgroundImage = `url("${assetUrl(state.user.avatar)}")`;
           avatar.style.backgroundSize = 'cover';
           avatar.textContent = '';
         }
@@ -483,8 +484,8 @@
             </div>
             <div class="comment-box">
               <h3>Comments</h3>
-              ${comments.length ? comments.map(c => `<div class="comment"><b>${esc(c.userName)}</b><small>${new Date(c.createdAt).toLocaleString()}</small><p>${esc(c.text)}</p><button class="text-button" data-action="comment-like" data-preset="${esc(p.id)}" data-comment="${esc(c.id)}">♥ ${c.likes || 0}</button></div>`).join('') : '<p>No comments yet.</p>'}
-              ${state.user ? `<form id="commentForm" data-preset="${esc(p.id)}"><textarea name="text" maxlength="500" placeholder="Write a comment…" required></textarea><button class="btn btn-primary btn-sm">Comment</button></form>` : ''}
+              ${comments.length ? comments.map(c => `<div class="comment"><button class="comment-user" data-action="profile" data-id="${esc(c.userId)}"><b>${esc(c.userName)}</b></button><small>${new Date(c.createdAt).toLocaleString()}</small><p>${esc(c.text)}</p><button class="text-button" data-action="comment-like" data-preset="${esc(p.id)}" data-comment="${esc(c.id)}">♥ ${c.likes || 0}</button> <button class="text-button" data-action="reply-comment" data-comment="${esc(c.id)}">Reply</button></div>`).join('') : '<p>No comments yet.</p>'}
+              ${state.user ? `<form id="commentForm" data-preset="${esc(p.id)}"><input type="hidden" name="parentId" value=""><textarea name="text" maxlength="500" placeholder="Write a comment…" required></textarea><small id="replyingTo" class="muted"></small><button class="btn btn-primary btn-sm">Comment</button></form>` : ''}
             </div>
           </div>
         </div>`);
@@ -578,117 +579,77 @@
       const shareUrl = `${baseUrl}/preset/${encodeURIComponent(p.id)}/${slug(p.name)}/`;
       const shortUrl = await getOrCreateShortLink(p.id);
       const finalUrl = shortUrl || shareUrl;
-
-      const shareText = `Check out "${p.name}" by ${p.author} on PresetHub!\n${p.description ? p.description.slice(0, 100) + '…' : ''}`;
+      const shareText = `Check out "${p.name}" by ${p.author} on PresetHub!`;
       const encodedUrl = encodeURIComponent(finalUrl);
       const encodedText = encodeURIComponent(shareText);
       const encodedTitle = encodeURIComponent(`${p.name} — PresetHub`);
-      const previewImg = p.previewImage ? (p.previewImage.startsWith('http') ? p.previewImage : baseUrl + p.previewImage) : '';
-
+      const previewImg = assetUrl(p.previewImage);
+      const qr1 = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodedUrl}`;
+      const qr2 = `https://quickchart.io/qr?size=220&text=${encodedUrl}`;
       openModal(`
         <div class="share-panel">
           <div class="share-title"><div><span class="eyebrow">PresetHub</span><h2><i class="fas fa-share-nodes"></i> Share Preset</h2></div><button class="share-close" data-action="close" aria-label="Close"><i class="fas fa-xmark"></i></button></div>
-          <div class="share-preview">
-            ${imgTag(p.previewImage, `${p.name} preview`, 'share-preview-image')}
-            <div>
-              <h3>${esc(p.name)}</h3>
-              <p>by ${esc(p.author)} · ${money(p.price)}</p>
-            </div>
-          </div>
-
+          <div class="share-preview">${imgTag(p.previewImage, `${p.name} preview`, 'share-preview-image')}<div><h3>${esc(p.name)}</h3><p>by ${esc(p.author)} · ${money(p.price)}</p><small>${esc((p.description||'').slice(0,120))}</small></div></div>
           <div class="share-grid">
-            <button class="share-btn whatsapp" data-share-platform="whatsapp" data-url="${encodedUrl}" data-text="${encodedText}">
-              <i class="fab fa-whatsapp"></i><span>WhatsApp</span>
-            </button>
-            <button class="share-btn telegram" data-share-platform="telegram" data-url="${encodedUrl}" data-text="${encodedText}">
-              <i class="fab fa-telegram"></i><span>Telegram</span>
-            </button>
-            <button class="share-btn facebook" data-share-platform="facebook" data-url="${encodedUrl}">
-              <i class="fab fa-facebook"></i><span>Facebook</span>
-            </button>
-            <button class="share-btn twitter" data-share-platform="twitter" data-url="${encodedUrl}" data-text="${encodedText}">
-              <i class="fab fa-x-twitter"></i><span>X</span>
-            </button>
-            <button class="share-btn linkedin" data-share-platform="linkedin" data-url="${encodedUrl}" data-title="${encodedTitle}">
-              <i class="fab fa-linkedin"></i><span>LinkedIn</span>
-            </button>
-            <button class="share-btn reddit" data-share-platform="reddit" data-url="${encodedUrl}" data-title="${encodedTitle}">
-              <i class="fab fa-reddit"></i><span>Reddit</span>
-            </button>
-            <button class="share-btn email" data-share-platform="email" data-url="${encodedUrl}" data-text="${encodedText}" data-title="${encodedTitle}">
-              <i class="fas fa-envelope"></i><span>Email</span>
-            </button>
-            <button class="share-btn native" data-share-platform="native" data-url="${encodedUrl}" data-text="${encodedText}" data-title="${encodedTitle}">
-              <i class="fas fa-share"></i><span>More…</span>
-            </button>
+            <button class="share-btn whatsapp" data-share-platform="whatsapp" data-url="${encodedUrl}" data-text="${encodedText}"><i class="fab fa-whatsapp"></i><span>WhatsApp</span></button>
+            <button class="share-btn telegram" data-share-platform="telegram" data-url="${encodedUrl}" data-text="${encodedText}"><i class="fab fa-telegram"></i><span>Telegram</span></button>
+            <button class="share-btn facebook" data-share-platform="facebook" data-url="${encodedUrl}"><i class="fab fa-facebook"></i><span>Facebook</span></button>
+            <button class="share-btn twitter" data-share-platform="twitter" data-url="${encodedUrl}" data-text="${encodedText}"><i class="fab fa-x-twitter"></i><span>X</span></button>
+            <button class="share-btn linkedin" data-share-platform="linkedin" data-url="${encodedUrl}" data-title="${encodedTitle}"><i class="fab fa-linkedin"></i><span>LinkedIn</span></button>
+            <button class="share-btn native" data-share-platform="native" data-url="${encodedUrl}" data-text="${encodedText}" data-title="${encodedTitle}"><i class="fas fa-share"></i><span>More</span></button>
           </div>
-
-          <div class="share-link-box">
-            <label>Short Link</label>
-            <div class="share-link-input">
-              <input readonly value="${esc(finalUrl)}" onclick="this.select()">
-              <button class="btn btn-primary btn-sm" data-share-copy="${esc(finalUrl)}">Copy</button>
-            </div>
-          </div>
-
-          <div class="share-qr">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodedUrl}" alt="QR Code" loading="lazy">
-            <p>Scan to open on mobile</p>
-          </div>
-
-          <div class="share-footer" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-            ${previewImg ? `<button class="btn btn-outline btn-sm" data-share-copy-image="${esc(previewImg)}" data-share-copy-url="${esc(finalUrl)}"><i class="fas fa-image"></i> Copy Image + Link</button>` : ''}
-          </div>
+          <div class="share-link-box"><label>Short Link</label><div class="share-link-input"><input readonly value="${esc(finalUrl)}" aria-label="Preset share link"><button class="btn btn-primary btn-sm" data-share-copy="${esc(finalUrl)}">Copy</button></div></div>
+          <div class="share-qr"><img class="qr-primary" src="${qr1}" data-qr-fallback="${qr2}" alt="QR code to open ${esc(p.name)}" loading="eager" decoding="async"><p>Scan to open on mobile</p></div>
+          <div class="share-footer"><button class="btn btn-outline btn-sm" data-share-copy-image="${esc(previewImg)}" data-share-copy-url="${esc(finalUrl)}"><i class="fas fa-image"></i> Copy Image + Link</button><button class="btn btn-outline btn-sm" data-share-copy="${esc(finalUrl)}"><i class="fas fa-link"></i> Copy Short Link</button></div>
         </div>`);
-
+      const qr=document.querySelector('.qr-primary'); if(qr) qr.onerror=()=>{qr.onerror=null;qr.src=qr.dataset.qrFallback;};
       trackShare(p.id, 'open_menu');
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function getOrCreateShortLink(presetId) {
-    if (!state.user) return null;
-    try {
-      const r = await api('/share/create', { method: 'POST', body: JSON.stringify({ presetId, platform: 'menu' }) });
-      return r.shortUrl;
-    } catch (_) { return null; }
+    try { const r = await api('/share/create', { method: 'POST', body: JSON.stringify({ presetId, platform: 'menu' }) }); return r.shortUrl; }
+    catch (_) { return null; }
   }
 
   function trackShare(presetId, platform) {
     const headers = new Headers({ 'Content-Type': 'application/json' });
     if (state.token) headers.set('Authorization', `Bearer ${state.token}`);
-    fetch(`${API}/presets/${presetId}/share`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ platform })
-    }).catch(() => {});
+    fetch(`${API}/presets/${presetId}/share`, { method:'POST', headers, body:JSON.stringify({platform}) }).catch(()=>{});
   }
 
   function openSharePlatform(platform, url, text, title) {
-    let link = '';
-    switch (platform) {
-      case 'whatsapp': link = `https://wa.me/?text=${text}%20${url}`; break;
-      case 'telegram': link = `https://t.me/share/url?url=${url}&text=${text}`; break;
-      case 'facebook': link = `https://www.facebook.com/sharer/sharer.php?u=${url}`; break;
-      case 'twitter':  link = `https://twitter.com/intent/tweet?text=${text}&url=${url}`; break;
-      case 'linkedin': link = `https://www.linkedin.com/sharing/share-offsite/?url=${url}`; break;
-      case 'reddit':   link = `https://www.reddit.com/submit?url=${url}&title=${title}`; break;
-      case 'email':    link = `mailto:?subject=${title}&body=${text}%0A%0A${url}`; break;
-      case 'native':
-        if (navigator.share) {
-          navigator.share({
-            title: decodeURIComponent(title || ''),
-            text: decodeURIComponent(text || ''),
-            url: decodeURIComponent(url || '')
-          }).catch(() => {});
-          return true;
-        }
-        return false;
-      default: return false;
+    let link='';
+    switch(platform){
+      case 'whatsapp': link=`https://wa.me/?text=${text}%20${url}`; break;
+      case 'telegram': link=`https://t.me/share/url?url=${url}&text=${text}`; break;
+      case 'facebook': link=`https://www.facebook.com/sharer/sharer.php?u=${url}`; break;
+      case 'twitter': link=`https://twitter.com/intent/tweet?text=${text}&url=${url}`; break;
+      case 'linkedin': link=`https://www.linkedin.com/sharing/share-offsite/?url=${url}`; break;
+      case 'native': if(navigator.share){navigator.share({title:decodeURIComponent(title||''),text:decodeURIComponent(text||''),url:decodeURIComponent(url||'')}).catch(()=>{});return true;} return false;
+      default:return false;
     }
-    if (link) window.open(link, '_blank', 'noopener,width=600,height=600');
+    if(link) window.open(link,'_blank','noopener,width=600,height=600');
     return true;
   }
 
+  async function copyImageAndLink(imageUrl, linkUrl){
+    try{
+      if(navigator.clipboard?.write && window.ClipboardItem && imageUrl){
+        const response=await fetch(imageUrl,{mode:'cors'});
+        const blob=await response.blob();
+        const textBlob=new Blob([`${linkUrl}`],{type:'text/plain'});
+        await navigator.clipboard.write([new ClipboardItem({'text/plain':textBlob,[blob.type]:blob})]);
+        toast('Preview image + link copied');
+      }else{
+        await navigator.clipboard.writeText(`${linkUrl}\n${imageUrl}`);
+        toast('Link + preview image URL copied');
+      }
+    }catch(e){
+      try{await navigator.clipboard.writeText(`${linkUrl}\n${imageUrl}`);toast('Link + image URL copied');}
+      catch(_){toast('Copy failed','error');}
+    }
+  }
   // ============ MY SHARE LINKS ============
   async function showMyShares() {
     if (!requireAuth()) return;
@@ -768,7 +729,7 @@
           <div class="profile-head profile-head-pro">
             <div class="profile-avatar">${u.avatar ? imgTag(u.avatar, `${u.name || 'Creator'} avatar`) : esc((u.name || 'U').charAt(0).toUpperCase())}</div>
             <div class="profile-main"><span class="eyebrow">CREATOR PROFILE</span><h2>${esc(u.name || u.username || 'Creator')}</h2><p class="profile-handle">@${esc(u.username || 'creator')}</p><p class="profile-bio">${esc(u.bio || 'Preset creator on PresetHub.')}</p></div>
-            <div class="profile-actions">${state.user && state.user.id !== u.id ? `<button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}"><i class="fas fa-user-plus"></i> ${following ? 'Following' : 'Follow'}</button>` : `<button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button>`}</div>
+            <div class="profile-actions">${state.user && state.user.id !== u.id ? `<button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}"><i class="fas fa-user-plus"></i> ${following ? 'Following' : 'Follow'}</button>${following ? `<button class="btn btn-outline" data-action="chat" data-id="${esc(u.id)}"><i class="fas fa-message"></i> Message</button>` : ''}` : `<button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button>`}</div>
           </div>
           <div class="profile-stats"><b>${u.totalPresets || 0}<span>Presets</span></b><b>${u.totalDownloads || 0}<span>Downloads</span></b><b>${u.followers || 0}<span>Followers</span></b><b>${u.following || 0}<span>Following</span></b></div>
           <div class="social-row">${Object.entries(u.socialLinks || {}).filter(([,v]) => safeExternal(v) !== '#').map(([k,v]) => `<a class="social-icon" href="${esc(safeExternal(v))}" target="_blank" rel="noopener noreferrer" aria-label="${esc(k)}"><i class="fab ${socialMap[k] || 'fa-link'}"></i><span>${esc(k)}</span></a>`).join('') || '<span class="muted">No social links added yet.</span>'}</div>
@@ -801,8 +762,16 @@
           ${mode === 'signup' ? '<small>At least 8 characters with upper/lowercase and a number.</small>' : ''}
           <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
         </form>
+        ${mode === 'login' ? '<button class="text-button" data-action="forgot-password">Forgot password?</button>' : ''}
         <button class="text-button" data-action="switch-auth" data-mode="${mode === 'login' ? 'signup' : 'login'}">${mode === 'login' ? 'Create account' : 'Already have an account? Log in'}</button>
       </div>`);
+  }
+
+  function openForgotPassword(){
+    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Reset password</h2><p class="muted">Enter your account email. If it exists, PresetHub will send a reset link.</p><form id="forgotForm"><div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div><button class="btn btn-primary" type="submit"><i class="fas fa-envelope"></i> Send reset link</button></form></div>`);
+  }
+  function openResetPassword(token){
+    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}"><div class="form-group"><label>New password</label><input type="password" name="password" minlength="8" required autocomplete="new-password"></div><button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
   }
 
   async function submitAuth(form) {
@@ -1044,6 +1013,19 @@
     } catch (_) { box.hidden = true; }
   }
 
+  // ============ 24H IN-MEMORY CHAT ============
+  let chatTimer = null;
+  async function showChat(userId){
+    if(!requireAuth()) return;
+    try{
+      const r=await api(`/chat/with/${encodeURIComponent(userId)}`);
+      const render=()=>{ const box=$('#chatMessages'); if(!box) return; box.innerHTML=(r.messages||[]).map(m=>`<div class="chat-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('')||'<div class="empty-state">No messages yet.</div>'; box.scrollTop=box.scrollHeight; };
+      openModal(`<div class="chat-panel"><div class="chat-head"><div class="profile-mini">${r.user.avatar?imgTag(r.user.avatar,r.user.name,''):''}<div><b>${esc(r.user.name||r.user.username)}</b><small>@${esc(r.user.username||'user')}</small></div></div></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" data-user="${esc(userId)}" class="chat-form"><input name="text" maxlength="1000" placeholder="Message…" autocomplete="off" required><button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button></form><small class="chat-note">Messages are temporary and automatically expire after 24 hours; they are not stored in MongoDB.</small></div>`);
+      render();
+      if(chatTimer) clearInterval(chatTimer);
+      chatTimer=setInterval(async()=>{try{const n=await api(`/chat/with/${encodeURIComponent(userId)}`);r.messages=n.messages||[];render();}catch(_){}} ,2000);
+    }catch(e){toast(e.message,'error');}
+  }
   // ============ PWA ============
   function installPWA() {
     if (state.installPrompt) {
@@ -1075,10 +1057,10 @@
     await flushPendingProfile();
     await resumeQueuedUploads();
     if (state.syncTimer) clearInterval(state.syncTimer);
-    state.syncTimer = setInterval(() => { if (navigator.onLine && document.visibilityState === 'visible') { refreshPublicData(); prefetchOfflineCatalog(); } }, 120000);
     prefetchOfflineCatalog();
 
     const params = new URLSearchParams(location.search);
+    if (params.get('reset')) openResetPassword(params.get('reset'));
     if (params.get('q')) {
       state.query = params.get('q').trim();
       const input = $('#searchInput'); if (input) input.value = state.query;
@@ -1112,20 +1094,17 @@
 
     // Share copy
     if (e.target.closest('[data-share-copy]')) {
+      e.preventDefault(); e.stopPropagation();
       const btn = e.target.closest('[data-share-copy]');
-      navigator.clipboard.writeText(btn.dataset.shareCopy)
-        .then(() => toast('Link copied!'))
-        .catch(() => toast('Copy failed', 'error'));
+      navigator.clipboard.writeText(btn.dataset.shareCopy).then(() => toast('Link copied!')).catch(() => toast('Copy failed','error'));
       return;
     }
 
     // Share copy image + link
     if (e.target.closest('[data-share-copy-image]')) {
-      const btn = e.target.closest('[data-share-copy-image]');
-      const text = `${btn.dataset.shareCopyUrl}\n${btn.dataset.shareCopyImage}`;
-      navigator.clipboard.writeText(text)
-        .then(() => toast('Link + image URL copied!'))
-        .catch(() => toast('Copy failed', 'error'));
+      e.preventDefault(); e.stopPropagation();
+      const btn=e.target.closest('[data-share-copy-image]');
+      copyImageAndLink(btn.dataset.shareCopyImage,btn.dataset.shareCopyUrl);
       return;
     }
 
@@ -1171,6 +1150,7 @@
     if (action === 'bulk-download') { bulkDownload(); return; }
     if (action === 'clear-selection') { state.selected.clear(); $$('#presetGrid input[data-action=\"select-preset\"]').forEach(x => x.checked = false); updateSelectionUI(); return; }
     if (action === 'comment-like') { likeComment(el.dataset.preset, el.dataset.comment); return; }
+    if (action === 'reply-comment') { const f=$('#commentForm'); if(f){ const h=f.querySelector('input[name=parentId]'); if(h) h.value=el.dataset.comment||''; const r=$('#replyingTo'); if(r) r.textContent='Replying to this comment'; f.querySelector('textarea')?.focus(); } return; }
     if (action === 'view-preset') { showPreset(el.dataset.id); return; }
     if (action === 'download') { downloadPreset(el.dataset.id); return; }
     if (action === 'like') { likePreset(el.dataset.id); return; }
@@ -1178,7 +1158,9 @@
     if (action === 'share-stats') { showShareStats(el.dataset.id); return; }
     if (action === 'profile') { showProfile(el.dataset.id); return; }
     if (action === 'follow') { follow(el.dataset.id); return; }
+    if (action === 'chat') { showChat(el.dataset.id); return; }
     if (action === 'switch-auth') { openAuth(el.dataset.mode); return; }
+    if (action === 'forgot-password') { openForgotPassword(); return; }
     if (action === 'tag-search') { state.query = el.dataset.tag || ''; state.category=''; $('#searchInput').value=state.query; $('#searchSuggestions')?.setAttribute('hidden',''); globalSearch(state.query); loadPresets(); return; }
     if (action === 'retry') { refreshPublicData(); return; }
     if (action === 'category') {
@@ -1209,6 +1191,8 @@
       return;
     }
     if (e.target.id === 'authForm') { e.preventDefault(); submitAuth(e.target); return; }
+    if (e.target.id === 'forgotForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api('/auth/request-reset',{method:'POST',body:JSON.stringify({email:fd.get('email')})}); toast('If the email exists, a reset link has been sent.'); } catch(err){toast(err.message,'error');} return; }
+    if (e.target.id === 'resetForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api('/auth/reset-password',{method:'POST',body:JSON.stringify({token:e.target.dataset.token,password:fd.get('password')})}); toast('Password reset successfully'); closeModal(); openAuth('login'); } catch(err){toast(err.message,'error');} return; }
     if (e.target.id === 'uploadForm') { e.preventDefault(); submitUpload(e.target); return; }
     if (e.target.id === 'bulkUploadForm') { e.preventDefault(); submitBulkUpload(e.target); return; }
     if (e.target.id === 'profileForm') {
@@ -1241,6 +1225,7 @@
     }
     if (e.target.id === 'reviewForm') { e.preventDefault(); submitReview(e.target); return; }
     if (e.target.id === 'commentForm') { e.preventDefault(); submitComment(e.target); return; }
+    if (e.target.id === 'chatForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api(`/chat/with/${e.target.dataset.user}`,{method:'POST',body:JSON.stringify({text:fd.get('text')})}); e.target.reset(); const n=await api(`/chat/with/${e.target.dataset.user}`); const box=$('#chatMessages'); if(box){box.innerHTML=(n.messages||[]).map(m=>`<div class="chat-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('');box.scrollTop=box.scrollHeight;} } catch(err){toast(err.message,'error');} return; }
   });
 
   // ============ SEARCH INPUT ============
@@ -1263,9 +1248,9 @@
   // ============ EXPORTS ============
   window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats };
   window.addEventListener('DOMContentLoaded', bootstrap);
-  window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); });
+  window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); });
   window.addEventListener('focus', () => { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); });
   window.addEventListener('online', () => { setNetworkState(true, 'Back online — syncing latest data…'); resumeQueuedUploads().catch(()=>{}); flushPendingProfile().catch(()=>{}); refreshPublicData(); });
   window.addEventListener('offline', () => setNetworkState(false, 'Network disconnected — showing saved data'));
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeQueuedUploads().catch(()=>{}); });
 })();

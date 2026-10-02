@@ -1,6 +1,6 @@
 const STATIC_CACHE = 'presethub-static-v7';
-const API_CACHE = 'presethub-api-v1';
-const IMAGE_CACHE = 'presethub-images-v1';
+const API_CACHE = 'presethub-api-v2';
+const IMAGE_CACHE = 'presethub-images-v2';
 const CORE = [
   '/', '/index.html', '/manifest.json', '/style.css', '/app.js',
   '/privacy.html', '/terms.html', '/about.html', '/blog.html',
