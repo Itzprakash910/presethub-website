@@ -1,25 +1,10 @@
-# Secrets
-.env
-.env.*
-!.env.example
-
-# Runtime data
-/uploads/
-/backups/
-*.log
-npm-debug.log*
-
-# Local database changes
-/db.json
-/backend/db.json
-
-# OS/editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-
-# Build/cache
 node_modules/
-coverage/
-dist/
+backend/node_modules/
+backend/.env
+.env
+*.log
+.DS_Store
+backend/uploads/
+frontend/uploads/
+backups/
+private_uploads/
