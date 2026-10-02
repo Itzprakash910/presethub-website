@@ -38,14 +38,9 @@ router.post('/:presetId/:commentId/like', auth, async (req, res, next) => {
     const comment = await Comment.findOne({ _id: req.params.commentId, presetId: req.params.presetId });
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
     const i = (comment.likes || []).findIndex(id => id.toString() === req.user.id);
-    const liked = i < 0;
     if (i >= 0) comment.likes.splice(i, 1); else comment.likes.push(req.user.id);
     await comment.save();
-    if (liked && comment.userId.toString() !== req.user.id) {
-      const liker = await User.findById(req.user.id).select('name username').lean();
-      await createNotification(comment.userId, 'comment-like', `${liker?.name || liker?.username || 'Someone'} liked your comment`, `/preset/${comment.presetId}`);
-    }
-    res.json({ liked, likes: comment.likes.length });
+    res.json({ liked: i < 0, likes: comment.likes.length });
   } catch (e) { next(e); }
 });
 

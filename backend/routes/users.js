@@ -4,7 +4,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const auth = require('../middleware/auth');
 const { User, Preset, Download } = require('../models');
-const { uploadAvatar, profileMediaUpload } = require('../middleware/upload');
+const { uploadAvatar } = require('../middleware/upload');
 const { uploadToR2 } = require('../config/r2');
 
 const router = express.Router();
@@ -18,7 +18,7 @@ function cleanSocialLinks(value) {
 }
 
 
-async function createNotification(userId, type, message, link, meta = {}) {
+async function createNotification(userId, type, message, link) {
   if (!mongoose.Types.ObjectId.isValid(userId)) return;
   const exists = await User.findOne({
     _id: userId,
@@ -27,12 +27,12 @@ async function createNotification(userId, type, message, link, meta = {}) {
   if (exists) return;
   await User.updateOne(
     { _id: userId },
-    { $push: { notifications: { $each: [{ type, message, link: link || '/', read: false, createdAt: new Date(), ...meta }], $slice: -200 } } }
+    { $push: { notifications: { type, message, link: link || '/', read: false, createdAt: new Date() } } }
   );
 }
 
 router.get('/', async (req, res) => {
-  const users = await User.find({}).select('name username avatar coverImage followers').lean();
+  const users = await User.find({}).select('name username avatar followers').lean();
   const counts = await Preset.aggregate([
     { $match: { status: 'approved' } },
     { $group: { _id: '$authorId', count: { $sum: 1 } } }
@@ -80,41 +80,16 @@ router.put('/me', auth, async (req, res) => {
 
 router.put('/me/avatar', auth, uploadAvatar, async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const key = `avatars/${uuidv4()}${path.extname(req.file.originalname)}`;
+    if (!req.file) return res.status(400).json({ error: 'No profile image selected' });
+    if (req.file.size > 5 * 1024 * 1024) return res.status(400).json({ error: 'Profile image must be 5MB or smaller' });
+    const key = `avatars/${uuidv4()}${path.extname(req.file.originalname).toLowerCase()}`;
     const url = await uploadToR2(req.file.buffer, key, req.file.mimetype);
+    if (!url) throw new Error('Storage returned no URL');
     await User.updateOne({ _id: req.user.id }, { avatar: url });
-    res.json({ avatar: url, message: 'Avatar updated' });
+    res.json({ success: true, avatar: url, message: 'Profile image updated' });
   } catch (e) {
     console.error('Avatar error:', e);
-    res.status(500).json({ error: 'Avatar upload failed' });
-  }
-});
-
-
-router.post('/me/profile-media', auth, profileMediaUpload, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    const files = req.files || {};
-    const updates = {};
-    if (files.avatar?.[0]) {
-      const f = files.avatar[0];
-      const key = `avatars/${uuidv4()}${path.extname(f.originalname).toLowerCase()}`;
-      updates.avatar = await uploadToR2(f.buffer, key, f.mimetype);
-    }
-    if (files.coverImage?.[0]) {
-      const f = files.coverImage[0];
-      const key = `covers/${uuidv4()}${path.extname(f.originalname).toLowerCase()}`;
-      updates.coverImage = await uploadToR2(f.buffer, key, f.mimetype);
-    }
-    if (!updates.avatar && !updates.coverImage) return res.status(400).json({ error: 'Select an avatar or cover image' });
-    Object.assign(user, updates);
-    await user.save();
-    res.json({ success: true, ...updates, message: 'Profile images updated' });
-  } catch (e) {
-    console.error('Profile media error:', e);
-    res.status(500).json({ error: 'Profile image upload failed' });
+    res.status(500).json({ error: 'Profile image upload failed. Please try again.' });
   }
 });
 
@@ -136,7 +111,7 @@ router.get('/top', async (req, res) => {
 
 router.get('/me/dashboard', auth, async (req, res) => {
   const [user, presets, downloads, unread] = await Promise.all([
-    User.findById(req.user.id).select('name username avatar coverImage followers following subscription notifications').lean(),
+    User.findById(req.user.id).select('name username avatar followers following subscription notifications').lean(),
     Preset.find({ authorId: req.user.id }).sort({ createdAt: -1 }).limit(12).lean(),
     Download.countDocuments({ userId: req.user.id }),
     User.aggregate([
@@ -267,7 +242,7 @@ router.get('/:id/follow-status', auth, async (req, res) => {
 router.get('/:id', async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
-  const user = await User.findById(req.params.id).select('name username avatar coverImage bio socialLinks verified followers following').lean();
+  const user = await User.findById(req.params.id).select('name username avatar bio socialLinks verified followers following').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
   const stats = await Preset.aggregate([
     { $match: { authorId: user._id, status: 'approved' } },
@@ -276,7 +251,7 @@ router.get('/:id', async (req, res) => {
   const s = stats[0] || { count: 0, downloads: 0 };
   res.json({
     id: user._id.toString(), name: user.name, username: user.username,
-    avatar: user.avatar, coverImage: user.coverImage, bio: user.bio, socialLinks: user.socialLinks || {},
+    avatar: user.avatar, bio: user.bio, socialLinks: user.socialLinks || {},
     verified: !!user.verified, totalPresets: s.count, totalDownloads: s.downloads,
     followers: (user.followers || []).length, following: (user.following || []).length
   });

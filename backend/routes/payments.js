@@ -2,8 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
-const { Order, Preset, User } = require('../models');
-const { createNotification } = require('./users');
+const { Order, Preset } = require('../models');
 
 const router = express.Router();
 
@@ -77,16 +76,6 @@ router.post('/verify', auth, async (req, res) => {
     await order.save();
 
     await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: order.amount } });
-    const [buyer, preset] = await Promise.all([
-      User.findById(req.user.id).select('name username').lean(),
-      Preset.findById(order.presetId).select('name authorId').lean()
-    ]);
-    if (preset) {
-      await createNotification(req.user.id, 'purchase', `Payment successful for "${preset.name}"`, `/preset/${preset._id}`);
-      if (preset.authorId?.toString() !== req.user.id) {
-        await createNotification(preset.authorId, 'sale', `${buyer?.name || buyer?.username || 'Someone'} purchased your preset "${preset.name}"`, `/preset/${preset._id}`);
-      }
-    }
 
     res.json({ success: true, message: 'Payment verified' });
   } catch (err) {
