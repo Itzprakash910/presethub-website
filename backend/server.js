@@ -18,8 +18,6 @@ const paymentRoutes = require('./routes/payments');
 const adminRoutes = require('./routes/admin');
 const shareRoutes = require('./routes/share');
 const commentRoutes = require('./routes/comments');
-const messageRoutes = require('./routes/messages');
-const searchRoutes = require('./routes/search');
 const errorHandler = require('./utils/errorHandler');
 const { connectDB } = require('./config/db');
 
@@ -36,6 +34,9 @@ if (!fs.existsSync(frontendRoot)) {
 const uploadsRoot = path.join(projectRoot, 'uploads');
 
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
+const SITE_CREATOR = 'Omprakash (HeyOmii)';
+const SITE_SOCIAL = 'https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn';
+const FONT_AWESOME_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css';
 
 // ============ ENV CHECKS ============
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -103,9 +104,9 @@ function ensureStructure() {
   }
 
   const required = {
-    'robots.txt': `User-agent: *\nAllow: /\nAllow: /assets/\nAllow: /uploads/previews/\nAllow: /uploads/avatars/\nAllow: /uploads/covers/\nDisallow: /api/\nDisallow: /admin\nDisallow: /uploads/presets/\nSitemap: ${SITE_URL}/sitemap.xml\n`,
+    'robots.txt': `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nSitemap: ${SITE_URL}/sitemap.xml\n`,
     'ads.txt': `google.com, ${(process.env.ADSENSE_CLIENT || 'ca-pub-3554311294133493').replace(/^ca-/, '')}, DIRECT, f08c47fec0942fa0\n`,
-    'manifest.json': JSON.stringify({name:'PresetHub – Lightroom Presets Marketplace',short_name:'PresetHub',start_url:'/',scope:'/',display:'standalone',theme_color:'#d4a373',background_color:'#f8f6f2',icons:[{src:'/assets/images/presethub-p-logo.jpg',sizes:'1536x1536',type:'image/jpeg',purpose:'any maskable'}]}, null, 2)
+    'manifest.json': JSON.stringify({name:'PresetHub – Free & Premium Lightroom Presets Marketplace',short_name:'PresetHub',description:'Discover, preview, download and sell free and premium Lightroom presets by creators on PresetHub.',id:'/',start_url:'/',scope:'/',display:'standalone',theme_color:'#d4a373',background_color:'#f8f6f2',lang:'en-IN',dir:'ltr',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png',purpose:'any maskable'},{src:'/assets/icons/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any maskable'}]}, null, 2)
   };
   for (const [name, content] of Object.entries(required)) {
     const file = path.join(frontendRoot, name);
@@ -122,7 +123,7 @@ function ensureStructure() {
     try {
       if (!fs.existsSync(file)) {
         const title = name.replace('.html','').replace(/-/g, ' ');
-        fs.writeFileSync(file, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | PresetHub</title><meta name="robots" content="index,follow"><link rel="stylesheet" href="/style.css"></head><body><main class="container" style="padding:40px 0"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><h1>${title}</h1><p>PresetHub information page.</p></main></body></html>`);
+        fs.writeFileSync(file, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | PresetHub</title><meta name="robots" content="index,follow"><link rel="stylesheet" href="/style.css"></head><body><main class="container" style="padding:40px 0"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-logo-1.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><h1>${title}</h1><p>PresetHub information page.</p></main></body></html>`);
       }
     } catch (err) { console.warn(`⚠️ Cannot create ${file}:`, err.message); }
   }
@@ -212,18 +213,6 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// ============ CANONICAL HOST ============
-// Render still needs to reach /healthz, but normal site traffic is canonicalized.
-app.use((req, res, next) => {
-  if (req.path === '/healthz' || req.path.startsWith('/api/')) return next();
-  const host = String(req.headers.host || '').split(':')[0].toLowerCase();
-  const allowed = new Set(['presethub.site', 'www.presethub.site']);
-  if (process.env.NODE_ENV === 'production' && !allowed.has(host)) {
-    return res.redirect(308, `${SITE_URL}${req.originalUrl}`);
-  }
-  next();
-});
-
 // ============ RATE LIMITING ============
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -247,12 +236,13 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // ============ STATIC FILES ============
-// Public local image uploads. Preset files are intentionally NOT served statically.
-for (const folder of ['previews', 'avatars', 'covers']) {
-  app.use(`/uploads/${folder}`, express.static(path.join(uploadsRoot, folder), {
-    index: false, dotfiles: 'deny', maxAge: '1h', fallthrough: true
-  }));
-}
+// Local uploads (used when R2 not configured)
+app.use('/uploads', express.static(uploadsRoot, {
+  index: false,
+  dotfiles: 'deny',
+  maxAge: '1h',
+  fallthrough: true
+}));
 
 // Frontend static files
 app.use(express.static(frontendRoot, {
@@ -272,36 +262,6 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/share', shareRoutes);
 app.use('/api/comments', commentRoutes);
-app.use('/api/messages', messageRoutes);
-app.use('/api/search', searchRoutes);
-
-// ============ LOCAL PRESET FILE DELIVERY ============
-// Local disk is a fallback only. A short-lived signed token prevents direct public access to preset files.
-app.get('/uploads/presets/:filename', async (req, res, next) => {
-  try {
-    const jwt = require('jsonwebtoken');
-    const { Preset, Order } = require('./models');
-    const token = String(req.query.token || '');
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    if (payload.type !== 'preset-download' || !payload.presetId) return res.status(403).end();
-    const mongoose = require('mongoose');
-    if (!mongoose.Types.ObjectId.isValid(payload.presetId)) return res.status(403).end();
-    const preset = await Preset.findOne({ _id: payload.presetId, status:'approved' }).lean();
-    if (!preset || !preset.fileUrl) return res.status(404).end();
-    if (preset.price > 0 && preset.authorId.toString() !== String(payload.userId)) {
-      const paid = await Order.exists({ presetId:preset._id, userId:payload.userId, status:'paid' });
-      if (!paid) return res.status(403).end();
-    }
-    const safe = path.basename(req.params.filename);
-    const expected = path.basename(String(preset.fileKey || preset.fileUrl).split('/').pop() || '');
-    if (!safe || safe !== expected) return res.status(403).end();
-    const filePath = path.join(uploadsRoot, 'presets', safe);
-    if (!fs.existsSync(filePath)) return res.status(404).end();
-    res.setHeader('Content-Disposition', `attachment; filename="${String(preset.originalName || safe).replace(/["\r\n\\]/g, '_')}"`);
-    res.setHeader('X-Content-Type-Options','nosniff');
-    return res.sendFile(filePath);
-  } catch (e) { return res.status(403).end(); }
-});
 
 // ============ STATIC PAGES ============
 const staticPages = [
@@ -334,6 +294,15 @@ function escHtml(value) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
+function commonSeoHead({ title, description, canonical, image = `${SITE_URL}/assets/images/og-image.png`, type = 'website', keywords = '' }) {
+  const safeTitle = escHtml(title);
+  const safeDescription = escHtml(String(description || '').slice(0, 160));
+  const safeCanonical = escHtml(canonical);
+  const safeImage = escHtml(image);
+  const safeKeywords = escHtml(keywords);
+  return `<meta name="description" content="${safeDescription}"><meta name="keywords" content="${safeKeywords}"><meta name="author" content="${SITE_CREATOR}"><meta name="creator" content="${SITE_CREATOR}"><meta name="publisher" content="PresetHub"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#d4a373"><meta name="application-name" content="PresetHub"><meta property="og:site_name" content="PresetHub"><meta property="og:type" content="${escHtml(type)}"><meta property="og:locale" content="en_IN"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:url" content="${safeCanonical}"><meta property="og:image" content="${safeImage}"><meta property="og:image:secure_url" content="${safeImage}"><meta property="og:image:type" content="image/png"><meta property="og:image:alt" content="PresetHub preview"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}"><meta name="twitter:image" content="${safeImage}"><link rel="canonical" href="${safeCanonical}"><link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon"><link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png"><link rel="apple-touch-icon" href="/assets/icons/icon-192.png"><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin><link rel="preload" href="${FONT_AWESOME_CSS}" as="style" crossorigin><link rel="stylesheet" href="${FONT_AWESOME_CSS}"><link rel="stylesheet" href="/style.css"><link rel="me" href="${SITE_SOCIAL}">`;
+}
+
 function adsenseHead() {
   const client = process.env.ADSENSE_CLIENT || 'ca-pub-3554311294133493';
   return `<meta name="google-adsense-account" content="${escHtml(client)}"><script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${encodeURIComponent(client)}" crossorigin="anonymous"></script>`;
@@ -413,16 +382,13 @@ app.get('/preset/:id/:slug?/', async (req, res, next) => {
     const related = await Preset.find({ status:'approved', category:p.category, _id:{ $ne:p._id } }).sort({ downloads:-1 }).limit(6).select('_id name previewImage category author price').lean();
     const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 ${adsenseHead()}<title>${escHtml(p.name)} Lightroom Preset — ${escHtml(p.category || 'Photo Preset')} | PresetHub</title>
-<meta name="description" content="${escHtml(description)}"><meta name="keywords" content="${escHtml(keywords)}"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><link rel="canonical" href="${canonical}">
-<meta property="og:type" content="article"><meta property="og:site_name" content="PresetHub"><meta property="og:title" content="${escHtml(p.name)} Lightroom Preset | PresetHub"><meta property="og:description" content="${escHtml(description)}"><meta property="og:url" content="${canonical}"><meta property="og:image" content="${escHtml(preview)}"><meta property="og:image:alt" content="${escHtml(p.name)} preset preview">
-<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escHtml(p.name)} Lightroom Preset | PresetHub"><meta name="twitter:description" content="${escHtml(description)}"><meta name="twitter:image" content="${escHtml(preview)}">
-<link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png"><link rel="apple-touch-icon" href="/assets/icons/icon-192.png"><link rel="stylesheet" href="/style.css">
-<script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"Product","name":p.name,"description":description,"image":[preview],"url":canonical,"brand":{"@type":"Brand","name":"PresetHub"},"category":p.category || 'Lightroom Preset',"offers":{"@type":"Offer","priceCurrency":"INR","price":price.toFixed(2),"availability":"https://schema.org/InStock","url":canonical},...(Number(p.avgRating||0)>0?{"aggregateRating":{"@type":"AggregateRating","ratingValue":Number(p.avgRating).toFixed(1),"ratingCount":Math.max((p.reviews||[]).length,1)}}:{})})}</script>
-</head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><div class="seo-breadcrumbs"><a href="/">Home</a><span>/</span><a href="/?q=${encodeURIComponent(p.category || 'Lightroom preset')}">${escHtml(p.category || 'Presets')}</a><span>/</span><span>${escHtml(p.name)}</span></div>
+${commonSeoHead({ title: `${p.name} Lightroom Preset | PresetHub`, description, canonical, image: preview, type: 'article', keywords })}
+<script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"Product","name":p.name,"description":description,"image":[preview],"url":canonical,"brand":{"@type":"Brand","name":"PresetHub"},"creator":{"@type":"Organization","name":"PresetHub","url":"https://presethub.site/","sameAs":["https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"]},"category":p.category || 'Lightroom Preset',"offers":{"@type":"Offer","priceCurrency":"INR","price":price.toFixed(2),"availability":"https://schema.org/InStock","url":canonical},...(Number(p.avgRating||0)>0?{"aggregateRating":{"@type":"AggregateRating","ratingValue":Number(p.avgRating).toFixed(1),"ratingCount":Math.max((p.reviews||[]).length,1)}}:{})})}</script>
+</head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-logo-1.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><div class="seo-breadcrumbs"><a href="/">Home</a><span>/</span><a href="/?q=${encodeURIComponent(p.category || 'Lightroom preset')}">${escHtml(p.category || 'Presets')}</a><span>/</span><span>${escHtml(p.name)}</span></div>
 <section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(preview)}" alt="${escHtml(p.name)} Lightroom preset preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">${escHtml(p.category || 'LIGHTROOM PRESET')}</span><h1>${escHtml(p.name)}</h1><p class="author">By ${escHtml(p.author || 'Creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-price ${price===0?'free':''}">${price===0?'Free':`₹${price.toFixed(2)}`}</div><div class="seo-tags">${(p.tags||[]).slice(0,10).map(t=>`<span>${escHtml(t)}</span>`).join('')}</div><div class="seo-actions"><a class="btn btn-primary" href="/"><i class="fas fa-download"></i> Open &amp; Download</a><a class="btn btn-outline" href="/profile/${p.authorId}/${slugify(author?.username || author?.name || p.author)}/"><i class="fas fa-user"></i> Creator</a></div></div></section>
 <div class="seo-info-grid"><div class="seo-info-card"><b>${Number(p.downloads||0)}</b><span>Downloads</span></div><div class="seo-info-card"><b>${Number(p.views||0)}</b><span>Views</span></div><div class="seo-info-card"><b>${Number(p.avgRating||0).toFixed(1)}</b><span>Rating</span></div></div>
 <section class="seo-related"><div class="profile-section-head"><h2>More ${escHtml(p.category || 'Lightroom')} Presets</h2><a class="btn btn-outline btn-sm" href="/?q=${encodeURIComponent(p.category || '')}">View all</a></div><div class="seo-related-grid">${related.map(r=>`<a class="seo-related-card" href="/preset/${r._id}/${slugify(r.name)}/"><img src="${escHtml(seoAssetUrl(r.previewImage))}" alt="${escHtml(r.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(r.name)}</h3><p>${escHtml(r.author||'Creator')} · ${Number(r.price||0)===0?'Free':`₹${Number(r.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No related presets yet.</p>'}</div></section>
-<footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer></div></main></body></html>`;
+<footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer></div></main></body></html>`;
     res.type('html').send(html);
   } catch (e) { next(e); }
 });
@@ -436,7 +402,7 @@ app.get('/profile/:id/:slug?/', async (req, res, next) => {
     const presets = await Preset.find({ authorId:u._id, status:'approved' }).sort({createdAt:-1}).lean();
     const canonical = `${SITE_URL}/profile/${u._id}/${slugify(u.username || u.name)}/`;
     const avatar = seoAssetUrl(u.avatar); const description=(u.bio || `Lightroom presets by ${u.name || u.username} on PresetHub.`).slice(0,155);
-    const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${adsenseHead()}<title>${escHtml(u.name||u.username)} Presets &amp; Lightroom Presets | PresetHub</title><meta name="description" content="${escHtml(description)}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="${canonical}"><meta property="og:type" content="profile"><meta property="og:title" content="${escHtml(u.name||u.username)} Presets | PresetHub"><meta property="og:description" content="${escHtml(description)}"><meta property="og:url" content="${canonical}"><meta property="og:image" content="${escHtml(avatar)}"><link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png"><link rel="stylesheet" href="/style.css"><script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"ProfilePage","name":u.name||u.username,"url":canonical,"mainEntity":{"@type":"Person","name":u.name||u.username,"image":avatar}})}</script></head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(avatar)}" alt="${escHtml(u.name||'Creator')} profile" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">CREATOR PROFILE</span><h1>${escHtml(u.name||u.username)}</h1><p class="author">@${escHtml(u.username||'creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-info-grid" style="margin:12px 0"><div class="seo-info-card"><b>${presets.length}</b><span>Presets</span></div><div class="seo-info-card"><b>${presets.reduce((a,p)=>a+Number(p.downloads||0),0)}</b><span>Downloads</span></div></div><a class="btn btn-primary" href="/"><i class="fas fa-arrow-left"></i> Open PresetHub</a></div></section><section class="seo-related"><div class="profile-section-head"><h2>Published Presets</h2><span>${presets.length} presets</span></div><div class="seo-related-grid">${presets.map(p=>`<a class="seo-related-card" href="/preset/${p._id}/${slugify(p.name)}/"><img src="${escHtml(seoAssetUrl(p.previewImage))}" alt="${escHtml(p.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(p.name)}</h3><p>${escHtml(p.category||'General')} · ${Number(p.price||0)===0?'Free':`₹${Number(p.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No published presets yet.</p>'}</div></section></div></main></body></html>`;
+    const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${adsenseHead()}<title>${escHtml(u.name||u.username)} Presets &amp; Lightroom Presets | PresetHub</title>${commonSeoHead({ title: `${u.name||u.username} Presets | PresetHub`, description, canonical, image: avatar, type: 'profile', keywords: `${u.name||u.username}, Lightroom presets, preset creator, ${SITE_CREATOR}, PresetHub` })}<script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"ProfilePage","name":u.name||u.username,"url":canonical,"mainEntity":{"@type":"Person","name":u.name||u.username,"image":avatar,"sameAs":(u.socialLinks && Object.values(u.socialLinks).filter(Boolean).slice(0,4)) || []}})}</script></head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-logo-1.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(avatar)}" alt="${escHtml(u.name||'Creator')} profile" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">CREATOR PROFILE</span><h1>${escHtml(u.name||u.username)}</h1><p class="author">@${escHtml(u.username||'creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-info-grid" style="margin:12px 0"><div class="seo-info-card"><b>${presets.length}</b><span>Presets</span></div><div class="seo-info-card"><b>${presets.reduce((a,p)=>a+Number(p.downloads||0),0)}</b><span>Downloads</span></div></div><a class="btn btn-primary" href="/"><i class="fas fa-arrow-left"></i> Open PresetHub</a></div></section><section class="seo-related"><div class="profile-section-head"><h2>Published Presets</h2><span>${presets.length} presets</span></div><div class="seo-related-grid">${presets.map(p=>`<a class="seo-related-card" href="/preset/${p._id}/${slugify(p.name)}/"><img src="${escHtml(seoAssetUrl(p.previewImage))}" alt="${escHtml(p.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(p.name)}</h3><p>${escHtml(p.category||'General')} · ${Number(p.price||0)===0?'Free':`₹${Number(p.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No published presets yet.</p>'}</div></section><footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer></div></main></body></html>`;
     res.type('html').send(html);
   } catch(e){ next(e); }
 });
@@ -463,7 +429,7 @@ app.get('/sitemap.xml', async (req, res, next) => {
 
     const body = urls.map(u => {
       const item = typeof u === 'string' ? { loc: u } : u;
-      const image = item.image ? seoAssetUrl(item.image) : null;
+      const image = item.image ? (String(item.image).startsWith('http') ? item.image : SITE_URL + item.image) : null;
       return `<url><loc>${escHtml(SITE_URL + item.loc)}</loc>${item.lastmod ? `<lastmod>${new Date(item.lastmod).toISOString()}</lastmod>` : ''}${image ? `<image:image xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"><image:loc>${escHtml(image)}</image:loc></image:image>` : ''}</url>`;
     }).join('');
 
@@ -471,13 +437,6 @@ app.get('/sitemap.xml', async (req, res, next) => {
       `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${body}</urlset>`
     );
   } catch (e) { next(e); }
-});
-
-// ============ STATUS / ERROR PAGES ============
-app.get('/status.html', (req, res) => {
-  const p = path.join(frontendRoot, 'status.html');
-  if (fs.existsSync(p)) return res.sendFile(p);
-  return res.status(503).type('html').send('<h1>PresetHub is temporarily unavailable</h1><p>Please try again shortly.</p>');
 });
 
 // ============ 404 FALLBACK ============
@@ -494,13 +453,7 @@ app.get('*', (req, res) => {
 });
 
 // ============ ERROR HANDLER ============
-app.use((err, req, res, next) => {
-  console.error('Unhandled request error:', err);
-  if (req.path.startsWith('/api/')) return errorHandler(err, req, res, next);
-  const p = path.join(frontendRoot, 'status.html');
-  if (fs.existsSync(p)) return res.status(500).sendFile(p);
-  return res.status(500).type('html').send('<h1>PresetHub error</h1><p>Please try again later.</p>');
-});
+app.use(errorHandler);
 
 // ============ STARTUP ============
 (async () => {
