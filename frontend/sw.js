@@ -50,7 +50,7 @@ self.addEventListener('fetch', e => {
   }
 
   // Preview/poster assets must remain visible during temporary network loss.
-  if (u.pathname.startsWith('/uploads/') || /\.(?:png|jpe?g|webp|gif|svg|ico)$/i.test(u.pathname)) {
+  if (u.pathname.startsWith('/media/') || u.pathname.startsWith('/uploads/') || /\.(?:png|jpe?g|webp|gif|svg|ico)$/i.test(u.pathname)) {
     e.respondWith(networkFirst(e.request, IMAGE_CACHE).catch(() => caches.match(e.request)));
     return;
   }
