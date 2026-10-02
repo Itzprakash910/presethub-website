@@ -48,6 +48,8 @@ const UserSchema = new Schema({
     firstName: String, lastName: String, username: String, languageCode: String,
   },
   token: { type: String, default: '' },
+  passwordResetTokenHash: { type: String, default: '' },
+  passwordResetExpires: { type: Date, default: null },
   lastActive: { type: Date, default: Date.now },
   commandsCount: { type: Number, default: 0 },
   lastLogin: { type: Date },
