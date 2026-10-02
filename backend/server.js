@@ -20,6 +20,7 @@ const shareRoutes = require('./routes/share');
 const commentRoutes = require('./routes/comments');
 const errorHandler = require('./utils/errorHandler');
 const { connectDB } = require('./config/db');
+const { startBot, stopBot, getBotStatus } = require('./bot');
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -252,7 +253,8 @@ app.use(express.static(frontendRoot, {
 
 // ============ HEALTH CHECK ============
 app.get('/health', (req, res) => res.status(200).json({ ok: true, service: 'presethub', database: require('mongoose').connection.readyState === 1 ? 'connected' : 'disconnected', time: new Date().toISOString() }));
-app.get('/healthz', (req, res) => res.status(200).json({ ok: true, service: 'presethub', database: require('mongoose').connection.readyState === 1 ? 'connected' : 'disconnected', time: new Date().toISOString() }));
+app.get('/healthz', (req, res) => res.status(200).json({ ok: true, service: 'presethub', database: require('mongoose').connection.readyState === 1 ? 'connected' : 'disconnected', bot: getBotStatus(), time: new Date().toISOString() }));
+app.get('/api/bot/status', (req, res) => res.json({ ...getBotStatus(), time: new Date().toISOString() }));
 
 // ============ API ROUTES ============
 app.use('/api/auth', authRoutes);
@@ -463,7 +465,7 @@ app.use(errorHandler);
     await connectDB();
     await ensureAdminUser();
     await autoPublishLegacyPresets();
-    app.listen(PORT, '0.0.0.0', () => {
+    app.listen(PORT, '0.0.0.0', async () => {
       console.log('');
       console.log('═══════════════════════════════════════');
       console.log(`🚀 PresetHub listening on port ${PORT}`);
@@ -471,6 +473,13 @@ app.use(errorHandler);
       console.log(`📁 Uploads: ${uploadsRoot}`);
       console.log(`☁️  Storage: ${R2_CONFIGURED ? 'Cloudflare R2' : 'Local (files in uploads/)'}`);
       console.log(`🤖 Telegram bot: ${process.env.BOT_TOKEN ? 'configured' : 'not configured'}`);
+      if (process.env.BOT_TOKEN) {
+        const bootTelegram = async () => {
+          const ok = await startBot();
+          if (!ok) setTimeout(bootTelegram, 15000);
+        };
+        bootTelegram().catch(err => console.error('Telegram bot startup failed:', err.message));
+      }
       console.log(`🍃 Database: ${process.env.MONGODB_URI ? 'MongoDB' : 'not configured'}`);
       console.log('═══════════════════════════════════════');
       console.log('');
@@ -482,12 +491,14 @@ app.use(errorHandler);
 })();
 
 // ============ GRACEFUL SHUTDOWN ============
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully');
+  await stopBot('SIGTERM');
   process.exit(0);
 });
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('SIGINT received, shutting down gracefully');
+  await stopBot('SIGINT');
   process.exit(0);
 });
 

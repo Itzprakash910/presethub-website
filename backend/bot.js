@@ -610,23 +610,43 @@ bot.command('mypresets', async (ctx) => {
   }
 });
 
-// ==================== LAUNCH ====================
-console.log('🤖 Starting Telegram Bot...');
-ensureBotDB().then(() => bot.launch())
-  .then(() => {
-    console.log('✅ Telegram bot started successfully!');
-    console.log('📱 Bot username: @presethub_bot');
-    console.log('🔗 Bot link: https://t.me/presethub_bot');
-  })
-  .catch(err => {
-    console.error('❌ Bot launch error:', err);
-    console.log('⚠️  Bot will retry in 5 seconds...');
-    setTimeout(() => {
-      bot.launch().catch(e => console.error('Retry failed:', e));
-    }, 5000);
-  });
+// ==================== LAUNCH / SERVER INTEGRATION ====================
+let botStarted = false;
+let botStarting = false;
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+async function startBot() {
+  if (!BOT_TOKEN) {
+    console.warn('⚠️ Telegram bot disabled: BOT_TOKEN is not configured.');
+    return false;
+  }
+  if (botStarted || botStarting) return botStarted;
+  botStarting = true;
+  try {
+    await ensureBotDB();
+    await bot.launch();
+    botStarted = true;
+    console.log('✅ Telegram bot started in the PresetHub server process.');
+    console.log(`📱 Admin chat configured: ${ADMIN_CHAT_ID ? 'yes' : 'no'}`);
+    return true;
+  } catch (err) {
+    console.error('❌ Telegram bot launch error:', err.message);
+    return false;
+  } finally {
+    botStarting = false;
+  }
+}
 
-module.exports = bot;
+async function stopBot(signal='SIGTERM') {
+  if (!botStarted) return;
+  try { bot.stop(signal); } catch (_) {}
+  botStarted = false;
+}
+
+// Standalone mode remains supported: `node bot.js`. Production uses server.js.
+if (require.main === module) {
+  startBot();
+  process.once('SIGINT', () => stopBot('SIGINT'));
+  process.once('SIGTERM', () => stopBot('SIGTERM'));
+}
+
+module.exports = { bot, startBot, stopBot, getBotStatus: () => ({ configured: !!BOT_TOKEN, started: botStarted }) };
