@@ -1,7 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 
-const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'];
+const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
 const PRESET_EXTS = ['.xmp', '.dng', '.lrtemplate', '.cube', '.3dl', '.look', '.costyle', '.xml', '.json', '.zip'];
 
 const fileFilter = (req, file, cb) => {
@@ -41,14 +41,4 @@ const uploadAvatar = multer({
   limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 10, parts: 12 }
 }).single('avatar');
 
-
-const profileMediaUpload = multer({
-  storage: multer.memoryStorage(),
-  fileFilter,
-  limits: { fileSize: 8 * 1024 * 1024, files: 2, fields: 10, parts: 14 }
-}).fields([
-  { name: 'avatar', maxCount: 1 },
-  { name: 'coverImage', maxCount: 1 }
-]);
-
-module.exports = { uploadFields, bulkUploadFields, uploadAvatar, profileMediaUpload };
+module.exports = { uploadFields, bulkUploadFields, uploadAvatar };
