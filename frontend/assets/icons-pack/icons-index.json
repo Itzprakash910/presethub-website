@@ -1,0 +1,217 @@
+[
+  {
+    "class": "fas fa-arrow-right",
+    "file": "icons/svg/fa-arrow-right.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-bell",
+    "file": "icons/svg/fa-bell.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-bolt",
+    "file": "icons/svg/fa-bolt.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-box-open",
+    "file": "icons/svg/fa-box-open.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-camera",
+    "file": "icons/svg/fa-camera.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-chart-pie",
+    "file": "icons/svg/fa-chart-pie.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-chart-simple",
+    "file": "icons/svg/fa-chart-simple.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-check",
+    "file": "icons/svg/fa-check.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-cloud-arrow-up",
+    "file": "icons/svg/fa-cloud-arrow-up.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-crown",
+    "file": "icons/svg/fa-crown.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-cubes",
+    "file": "icons/svg/fa-cubes.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-download",
+    "file": "icons/svg/fa-download.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-envelope",
+    "file": "icons/svg/fa-envelope.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-eye",
+    "file": "icons/svg/fa-eye.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-globe",
+    "file": "icons/svg/fa-globe.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-hashtag",
+    "file": "icons/svg/fa-hashtag.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-heart",
+    "file": "icons/svg/fa-heart.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-image",
+    "file": "icons/svg/fa-image.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-images",
+    "file": "icons/svg/fa-images.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-layer-group",
+    "file": "icons/svg/fa-layer-group.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-link",
+    "file": "icons/svg/fa-link.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-moon",
+    "file": "icons/svg/fa-moon.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-pen",
+    "file": "icons/svg/fa-pen.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-right-from-bracket",
+    "file": "icons/svg/fa-right-from-bracket.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-search",
+    "file": "icons/svg/fa-search.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-share",
+    "file": "icons/svg/fa-share.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-share-nodes",
+    "file": "icons/svg/fa-share-nodes.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-star",
+    "file": "icons/svg/fa-star.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-sun",
+    "file": "icons/svg/fa-sun.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-trash",
+    "file": "icons/svg/fa-trash.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-upload",
+    "file": "icons/svg/fa-upload.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-user",
+    "file": "icons/svg/fa-user.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-user-plus",
+    "file": "icons/svg/fa-user-plus.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-users",
+    "file": "icons/svg/fa-users.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fas fa-xmark",
+    "file": "icons/svg/fa-xmark.svg",
+    "type": "solid"
+  },
+  {
+    "class": "fab fa-facebook",
+    "file": "icons/svg/fab-facebook.svg",
+    "type": "brand"
+  },
+  {
+    "class": "fab fa-instagram",
+    "file": "icons/svg/fab-instagram.svg",
+    "type": "brand"
+  },
+  {
+    "class": "fab fa-linkedin",
+    "file": "icons/svg/fab-linkedin.svg",
+    "type": "brand"
+  },
+  {
+    "class": "fab fa-reddit",
+    "file": "icons/svg/fab-reddit.svg",
+    "type": "brand"
+  },
+  {
+    "class": "fab fa-telegram",
+    "file": "icons/svg/fab-telegram.svg",
+    "type": "brand"
+  },
+  {
+    "class": "fab fa-whatsapp",
+    "file": "icons/svg/fab-whatsapp.svg",
+    "type": "brand"
+  },
+  {
+    "class": "fab fa-x-twitter",
+    "file": "icons/svg/fab-x-twitter.svg",
+    "type": "brand"
+  },
+  {
+    "class": "fab fa-youtube",
+    "file": "icons/svg/fab-youtube.svg",
+    "type": "brand"
+  }
+]
