@@ -237,15 +237,37 @@ app.use('/api/auth', authLimiter);
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
+// ============ MONGODB GRIDFS MEDIA ============
+// Uploaded presets, posters and profile images are stored in MongoDB GridFS
+// when Cloudflare R2 is not configured. The media route exposes only an
+// opaque GridFS ObjectId, never a filesystem path or directory listing.
+app.get('/media/:id', async (req, res, next) => {
+  try {
+    const mongoose = require('mongoose');
+    const { ObjectId, GridFSBucket } = mongoose.mongo;
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
+    const db = mongoose.connection.db;
+    if (!db) return res.status(503).json({ error: 'Database unavailable' });
+    const bucket = new GridFSBucket(db, { bucketName: 'presethub_media' });
+    const id = new ObjectId(req.params.id);
+    const files = await db.collection('presethub_media.files').find({ _id: id }).limit(1).toArray();
+    if (!files.length) return res.status(404).end();
+    const meta = files[0];
+    res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (req.query.download === '1') {
+      const filename = String(meta.filename || 'download').replace(/[\r\n\"\\]/g, '_');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    }
+    bucket.openDownloadStream(id).on('error', next).pipe(res);
+  } catch (err) { next(err); }
+});
+
 // ============ STATIC FILES ============
-// Local uploads (used when R2 not configured)
-app.use('/uploads', express.static(uploadsRoot, {
-  index: false,
-  dotfiles: 'deny',
-  maxAge: '7d',
-  fallthrough: true,
-  immutable: true
-}));
+// Do not expose server filesystem uploads. New user media is served only through
+// the authenticated application's opaque MongoDB GridFS media URLs.
+app.use('/uploads', (req, res) => res.status(404).end());
 
 // Frontend static files
 app.use(express.static(frontendRoot, {
@@ -355,6 +377,8 @@ function seoAssetUrl(value) {
   if (/^https?:\/\//i.test(v)) return v;
   if (v.startsWith('/')) return `${SITE_URL}${v}`;
   if (v.startsWith('uploads/')) return `${SITE_URL}/${v}`;
+  if (v.startsWith('/media/')) return `${SITE_URL}${v}`;
+  if (v.startsWith('media/')) return `${SITE_URL}/${v}`;
   if (/^(previews|presets|avatars)\//i.test(v)) return `${SITE_URL}/uploads/${v}`;
   return `${SITE_URL}/assets/images/og-image.png`;
 }
