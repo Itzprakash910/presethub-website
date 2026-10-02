@@ -314,26 +314,31 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
 });
 
 // ===== DOWNLOAD =====
-router.post('/:id/download', auth, async (req, res) => {
+router.post('/:id/download', optionalAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
   const preset = await Preset.findOne({ _id: req.params.id, status: 'approved' });
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
-  if (preset.price > 0 && preset.authorId.toString() !== req.user.id) {
-    const paid = await Order.findOne({ presetId: preset._id, userId: req.user.id, status: 'paid' });
-    if (!paid) return res.status(403).json({ error: 'Please purchase this preset first' });
+  if (preset.price > 0) {
+    if (!req.user) return res.status(401).json({ error: 'Please log in to purchase or download paid presets' });
+    if (preset.authorId.toString() === req.user.id) {
+      // Creator can download their own paid preset without purchasing it.
+    } else {
+      const paid = await Order.findOne({ presetId: preset._id, userId: req.user.id, status: 'paid' });
+      if (!paid) return res.status(403).json({ error: 'Please purchase this preset first' });
+    }
   }
 
   preset.downloads = (preset.downloads || 0) + 1;
   await preset.save();
-  await Download.create({ userId: req.user.id, presetId: preset._id });
+  if (req.user) await Download.create({ userId: req.user.id, presetId: preset._id });
 
-  await createNotification(req.user.id, 'download-complete',
+  if (req.user) await createNotification(req.user.id, 'download-complete',
     `Download completed: \"${preset.name}\"`,
     `/preset/${preset._id}/${slugify(preset.name)}/`);
 
-  if (preset.authorId.toString() !== req.user.id) {
+  if (req.user && preset.authorId.toString() !== req.user.id) {
     const user = await User.findById(req.user.id).select('name').lean();
     await createNotification(preset.authorId, 'download',
       `${user?.name || 'Someone'} downloaded your preset "${preset.name}"`,
@@ -386,7 +391,14 @@ router.delete('/:id', auth, async (req, res) => {
   if (preset.authorId.toString() !== req.user.id && req.user.role !== 'admin')
     return res.status(403).json({ error: 'Unauthorized' });
 
-  const keyFromUrl = url => url && url.includes('/') ? url.replace(`${process.env.R2_PUBLIC_URL}/`, '') : null;
+  const keyFromUrl = url => {
+    if (!url) return null;
+    const r2 = String(process.env.R2_PUBLIC_URL || '').replace(/\/+$/, '');
+    if (r2 && String(url).startsWith(r2 + '/')) return String(url).slice(r2.length + 1);
+    const marker = '/uploads/';
+    const idx = String(url).indexOf(marker);
+    return idx >= 0 ? String(url).slice(idx + marker.length) : null;
+  };
   if (preset.fileUrl) await deleteFromR2(keyFromUrl(preset.fileUrl));
   if (preset.previewImage) await deleteFromR2(keyFromUrl(preset.previewImage));
 
