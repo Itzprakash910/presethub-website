@@ -18,6 +18,7 @@ const paymentRoutes = require('./routes/payments');
 const adminRoutes = require('./routes/admin');
 const shareRoutes = require('./routes/share');
 const commentRoutes = require('./routes/comments');
+const chatRoutes = require('./routes/chat');
 const errorHandler = require('./utils/errorHandler');
 const { connectDB } = require('./config/db');
 const { startBot, stopBot, getBotStatus } = require('./bot');
@@ -32,7 +33,7 @@ if (!fs.existsSync(frontendRoot)) {
   projectRoot = __dirname;
   frontendRoot = path.join(projectRoot, 'frontend');
 }
-const uploadsRoot = path.join(projectRoot, 'uploads');
+const uploadsRoot = path.join(process.env.DATA_DIR || path.join(projectRoot, 'uploads'), 'uploads');
 
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
 const SITE_CREATOR = 'Omprakash (HeyOmii)';
@@ -241,8 +242,9 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use('/uploads', express.static(uploadsRoot, {
   index: false,
   dotfiles: 'deny',
-  maxAge: '1h',
-  fallthrough: true
+  maxAge: '7d',
+  fallthrough: true,
+  immutable: true
 }));
 
 // Frontend static files
@@ -265,6 +267,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/share', shareRoutes);
 app.use('/api/comments', commentRoutes);
+app.use('/api/chat', chatRoutes);
 
 // ============ STATIC PAGES ============
 const staticPages = [
@@ -331,32 +334,20 @@ app.get('/s/:code', async (req, res, next) => {
     const { ShortLink, Preset, ShareClick } = require('./models');
     const link = await ShortLink.findOne({ code: req.params.code });
     if (!link) return indexFallback(res);
-
     link.clicks = (link.clicks || 0) + 1;
     link.lastClickAt = new Date();
     await link.save();
-
-    await ShareClick.create({
-      code: link.code,
-      presetId: link.presetId,
-      userId: link.userId,
-      ip: req.ip,
-      userAgent: (req.headers['user-agent'] || '').slice(0, 200)
-    });
-
-    const preset = await Preset.findById(link.presetId);
+    await ShareClick.create({ code: link.code, presetId: link.presetId, userId: link.userId, ip: req.ip, userAgent: (req.headers['user-agent'] || '').slice(0, 200) });
+    const preset = await Preset.findById(link.presetId).lean();
     if (!preset) return indexFallback(res);
-
-    res.cookie('ph_ref', link.code, {
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      httpOnly: false,
-      sameSite: 'lax'
-    });
-
-    return res.redirect(302, `/preset/${preset._id}/${slugify(preset.name)}/?ref=${link.code}`);
+    const canonical = `${SITE_URL}/preset/${preset._id}/${slugify(preset.name)}/`;
+    const preview = seoAssetUrl(preset.previewImage);
+    const description = String(preset.description || `Download ${preset.name} Lightroom preset on PresetHub.`).slice(0,155);
+    const title = `${preset.name} Lightroom Preset | PresetHub`;
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${adsenseHead()}${commonSeoHead({title,description,canonical,image:preview,type:'article',keywords:[preset.name,preset.category,...(preset.tags||[]),'Lightroom preset','PresetHub'].join(', ')})}<meta http-equiv="refresh" content="2;url=${escHtml(canonical)}"><script>setTimeout(()=>location.replace(${JSON.stringify(canonical)}),150);</script></head><body><main class="seo-page"><div class="container seo-shell"><section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(preview)}" alt="${escHtml(preset.name)} preview"></div><div class="seo-copy"><span class="eyebrow">PRESETHUB</span><h1>${escHtml(preset.name)}</h1><p>${escHtml(description)}</p><a class="btn btn-primary" href="${escHtml(canonical)}">Open preset</a></div></section></div></main></body></html>`;
+    res.type('html').send(html);
   } catch (e) { next(e); }
 });
-
 
 function seoAssetUrl(value) {
   const v = String(value || '').trim();
