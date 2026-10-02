@@ -135,7 +135,10 @@
   async function resumeQueuedUploads() {
     if (!state.token) return;
     const rows = await queueAll();
-    for (const row of rows) await processQueuedUpload({ ...row, token: state.token }, true);
+    for (const row of rows) {
+      if (!row?.files?.length) { await queueDelete(row.id); continue; }
+      await processQueuedUpload({ ...row, token: state.token }, true);
+    }
   }
   async function flushPendingProfile() {
     if (!state.token) return;
@@ -268,11 +271,29 @@
   function featuredCard(p) {
     return `<article class="featured-card"><a class="featured-image" href="${presetUrl(p)}"><img src="${esc(assetUrl(p.previewImage))}" alt="${esc(p.name)} preview" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackPreview}'"></a><div class="featured-body"><div class="featured-top"><span class="tag">${esc(p.category || 'General')}</span><span class="price ${Number(p.price||0)===0?'free':''}">${money(p.price)}</span></div><h3>${esc(p.name)}</h3><button class="author-link" data-action="profile" data-id="${esc(p.authorId||'')}">By ${esc(p.author||'Creator')}</button><p>${esc(p.description || 'Lightroom preset')}</p><div class="featured-stats"><span>★ ${Number(p.avgRating||0).toFixed(1)}</span><span>👁 ${p.views||0}</span><span>♥ ${p.likesCount||0}</span><span>💬 ${p.commentsCount||0}</span><span>↗ ${p.shares||0}</span><span>↓ ${p.downloads||0}</span></div><div class="card-actions"><button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}">View details</button><button class="icon-action" data-action="share" data-id="${esc(p.id)}" title="Share"><i class="fas fa-share-nodes"></i></button></div></div></article>`;
   }
+  function updateHeroFeatured(p) {
+    const img=$('#heroFeaturedImage'), link=$('#heroFeaturedLink'), badge=$('#heroFeaturedBadge');
+    if(!img || !p) return;
+    img.src=assetUrl(p.previewImage);
+    img.alt=`${p.name || 'Featured'} Lightroom preset preview`;
+    img.onerror=()=>{ img.onerror=null; img.src=fallbackPreview; };
+    if(link) link.href=presetUrl(p);
+    if(badge) badge.innerHTML=`<i class="fas fa-star" aria-hidden="true"></i> ${esc(p.name || 'Top featured preset')}`;
+  }
+
   async function loadFeatured(force=false) {
     const box=$('#featuredGrid'); if(!box) return;
     const cached=!force ? cacheGet('featured') : null;
     if(cached){ state.featured=cached; box.innerHTML=cached.map(featuredCard).join(''); if(!force) return; }
-    try { const data=await api('/presets/featured?limit=8'); state.featured=data||[]; cacheSet('featured',state.featured); box.innerHTML=state.featured.map(featuredCard).join('') || '<div class="empty-state">No featured presets yet.</div>'; } catch(_){ if(!cached) box.innerHTML='<div class="empty-state">Featured presets will appear here.</div>'; }
+    try {
+      const data=await api('/presets/featured?limit=8');
+      state.featured=data||[]; cacheSet('featured',state.featured);
+      box.innerHTML=state.featured.map(featuredCard).join('') || '<div class="empty-state">No featured presets yet.</div>';
+      updateHeroFeatured(state.featured[0]);
+    } catch(_){
+      if(!cached) box.innerHTML='<div class="empty-state">Featured presets will appear here.</div>';
+      if(cached?.[0]) updateHeroFeatured(cached[0]);
+    }
   }
 
   // ============ LOAD PRESETS ============
@@ -401,13 +422,16 @@
       try { if (Notification.permission === 'default') await Notification.requestPermission(); if (Notification.permission === 'granted') new Notification('PresetHub download complete', { body: name, icon:'/assets/icons/icon-192.png', data:url }); } catch (_) {}
     }
   }
-  async function downloadPreset(id) {
-    if (!requireAuth()) return;
+  async function downloadPreset(id, options = {}) {
+    const skipPayment = Boolean(options.skipPayment);
     let progress;
     try {
       const p = state.currentPreset?.id === id ? state.currentPreset : await api(`/presets/${id}`);
       progress = downloadOverlay(p.name);
-      if (Number(p.price || 0) > 0 && p.authorId !== state.user.id) return startPayment(p);
+      if (Number(p.price || 0) > 0 && !skipPayment) {
+        if (!requireAuth()) return;
+        if (p.authorId !== state.user.id) return startPayment(p);
+      }
       const r = await api(`/presets/${encodeURIComponent(id)}/download`, { method: 'POST' });
       if (!r.downloadUrl) throw new Error('Download file unavailable');
       const a = document.createElement('a'); a.href = r.downloadUrl; a.download = r.originalName || `${slug(p.name)}.xmp`; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
@@ -438,7 +462,7 @@
           try {
             await api('/payments/verify', { method: 'POST', body: JSON.stringify(response) });
             toast('Payment verified. Download now available.');
-            downloadPreset(p.id);
+            downloadPreset(p.id, { skipPayment: true });
           } catch (e) { toast(e.message, 'error'); }
         }
       });
@@ -915,7 +939,8 @@
         const users = (r.users||[]).map(u => `<button class="search-entity user" data-action="profile" data-id="${esc(u.id)}"><span class="search-entity-avatar">${u.avatar?`<img src="${esc(assetUrl(u.avatar))}" alt="">`:esc((u.name||'U').charAt(0).toUpperCase())}</span><span><b>${esc(u.name||u.username||'User')}</b><small>@${esc(u.username||'user')} · ${u.followers||0} followers</small></span></button>`).join('');
         const cats = (r.categories||[]).map(c => `<button class="search-chip" data-action="category" data-category="${esc(c.name)}">Category: ${esc(c.name)} <small>${c.count}</small></button>`).join('');
         const tags = (r.tags||[]).map(t => `<button class="search-chip" data-action="tag-search" data-tag="${esc(t.name)}">#${esc(t.name)} <small>${t.count}</small></button>`).join('');
-        box.innerHTML = `<div class="search-result-head"><div><span class="eyebrow">SEARCH</span><h3>Results for “${esc(q)}”</h3></div><span>${(r.presets||[]).length} presets</span></div>${users?`<div class="search-entity-group"><b>Users</b><div class="search-entity-list">${users}</div></div>`:''}${cats?`<div class="search-entity-group"><b>Categories</b><div class="search-chip-list">${cats}</div></div>`:''}${tags?`<div class="search-entity-group"><b>Tags</b><div class="search-chip-list">${tags}</div></div>`:''}`;
+        const presetResults=(r.presets||[]).slice(0,6).map(p=>`<button class="search-entity preset" data-action="view-preset" data-id="${esc(p.id)}"><span class="search-entity-avatar">${imgTag(p.previewImage,p.name,'')}</span><span><b>${esc(p.name)}</b><small>${esc(p.category||'General')} · ${esc(p.author||'Creator')} · ${money(p.price)}</small></span><i class="fas fa-arrow-right"></i></button>`).join('');
+      box.innerHTML = `<div class="search-result-head"><div><span class="eyebrow">SEARCH</span><h3>Results for “${esc(q)}”</h3></div><span>${(r.presets||[]).length} presets</span></div>${presetResults?`<div class="search-entity-group"><b>Presets</b><div class="search-entity-list">${presetResults}</div></div>`:''}${users?`<div class="search-entity-group"><b>Users</b><div class="search-entity-list">${users}</div></div>`:''}${cats?`<div class="search-entity-group"><b>Categories</b><div class="search-chip-list">${cats}</div></div>`:''}${tags?`<div class="search-entity-group"><b>Tags</b><div class="search-chip-list">${tags}</div></div>`:''}`;
         box.hidden = false;
       }
       return r;
@@ -1152,4 +1177,7 @@
   // ============ EXPORTS ============
   window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats };
   window.addEventListener('DOMContentLoaded', bootstrap);
+  window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); });
+  window.addEventListener('focus', () => { resumeQueuedUploads().catch(()=>{}); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeQueuedUploads().catch(()=>{}); });
 })();

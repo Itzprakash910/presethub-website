@@ -90,13 +90,10 @@
         </div>
       </div>
       <div class="hero-visual">
-        <svg viewBox="0 0 400 260" role="img" aria-label="Before and after photo preview">
-          <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#8a8a8a"/><stop offset="1" stop-color="#d4a373"/></linearGradient></defs>
-          <rect width="400" height="260" rx="16" fill="url(#g)"/>
-          <circle cx="290" cy="80" r="34" fill="#fff4d6" opacity=".9"/>
-          <path d="M0 200 L110 120 L200 190 L290 110 L400 200 V260 H0Z" fill="#3b2f2a" opacity=".75"/>
-        </svg>
-        <div class="hero-badge"><i class="fas fa-bolt" aria-hidden="true"></i> Instant download</div>
+        <a id="heroFeaturedLink" href="#presets" aria-label="Open featured preset">
+          <img id="heroFeaturedImage" src="/assets/images/og-image.png" alt="Featured Lightroom preset preview" decoding="async" fetchpriority="high">
+        </a>
+        <div class="hero-badge" id="heroFeaturedBadge"><i class="fas fa-star" aria-hidden="true"></i> Top featured preset</div>
       </div>
     </div>
   </section>
