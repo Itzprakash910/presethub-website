@@ -30,6 +30,8 @@ function publicAssetUrl(value) {
   if (/^https?:\/\//i.test(v)) return v;
   if (v.startsWith('/')) return `${SITE_URL}${v}`;
   if (v.startsWith('uploads/')) return `${SITE_URL}/${v}`;
+  if (v.startsWith('/media/')) return `${SITE_URL}${v}`;
+  if (v.startsWith('media/')) return `${SITE_URL}/${v}`;
   if (v.startsWith('previews/') || v.startsWith('presets/') || v.startsWith('avatars/')) return `${SITE_URL}/uploads/${v}`;
   return `${SITE_URL}/assets/images/og-image.png`;
 }
