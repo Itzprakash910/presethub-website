@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const projectRoot = path.join(__dirname, '../..');
-const LOCAL_UPLOAD_DIR = path.join(projectRoot, 'uploads');
+const LOCAL_UPLOAD_DIR = path.join(process.env.DATA_DIR || projectRoot, 'uploads');
 const PUBLIC_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
 
 if (!fs.existsSync(LOCAL_UPLOAD_DIR)) fs.mkdirSync(LOCAL_UPLOAD_DIR, { recursive: true });
