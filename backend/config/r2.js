@@ -42,7 +42,7 @@ async function uploadToR2(buffer, key, contentType) {
   const dir = path.dirname(fullPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(fullPath, buffer);
-  return `${PUBLIC_URL}/uploads/${key}`;
+  return `${PUBLIC_URL}/uploads/${String(key).replace(/^\/+/, '')}`;
 }
 
 async function deleteFromR2(key) {
