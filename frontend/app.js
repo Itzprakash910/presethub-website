@@ -22,6 +22,8 @@
     featured: [],
     cacheTTL: 5 * 60 * 1000,
     pendingUploads: new Map(),
+    online: navigator.onLine,
+    syncTimer: null,
   };
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -79,10 +81,43 @@
       });
     } catch (_) { return []; }
   }
+  // Persistent public-data cache: survives reloads and temporary network loss.
+  const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
   const cacheGet = key => {
-    try { const x = JSON.parse(sessionStorage.getItem(`ph:${key}`) || 'null'); return x && (Date.now() - x.t) < state.cacheTTL ? x.v : null; } catch (_) { return null; }
+    try {
+      const x = JSON.parse(localStorage.getItem(`ph:${key}`) || 'null');
+      return x && (Date.now() - x.t) < CACHE_MAX_AGE ? x.v : null;
+    } catch (_) { return null; }
   };
-  const cacheSet = (key, value) => { try { sessionStorage.setItem(`ph:${key}`, JSON.stringify({ t: Date.now(), v: value })); } catch (_) {} };
+  const cacheSet = (key, value) => {
+    try {
+      const raw = JSON.stringify({ t: Date.now(), v: value });
+      if (raw.length > 900000) return;
+      localStorage.setItem(`ph:${key}`, raw);
+    } catch (_) {
+      // Storage can be full; remove only old PresetHub public cache entries.
+      try { Object.keys(localStorage).filter(k => k.startsWith('ph:')).slice(0, 5).forEach(k => localStorage.removeItem(k)); } catch (_) {}
+    }
+  };
+  function cacheableApi(path) {
+    const p = String(path || '');
+    return /^(GET|HEAD)/i.test('GET') && !p.startsWith('/auth/') && !p.startsWith('/admin/') && !p.startsWith('/payments/') && !p.startsWith('/users/me');
+  }
+  function setNetworkState(online, message) {
+    state.online = !!online;
+    let bar = $('#networkStatus');
+    if (!bar) { bar = document.createElement('div'); bar.id = 'networkStatus'; bar.setAttribute('role','status'); bar.setAttribute('aria-live','polite'); document.body.appendChild(bar); }
+    bar.className = online ? 'network-status online' : 'network-status offline';
+    bar.innerHTML = `<i class="fas ${online ? 'fa-cloud-arrow-up' : 'fa-wifi'}"></i><span>${esc(message || (online ? 'Back online — syncing latest data…' : 'You are offline — showing saved PresetHub data'))}</span>`;
+    bar.hidden = false;
+    clearTimeout(setNetworkState.timer);
+    if (online) setNetworkState.timer = setTimeout(() => { if (bar) bar.hidden = true; }, 2800);
+  }
+  function refreshPublicData() {
+    if (!navigator.onLine) return;
+    Promise.allSettled([loadPresets(true, true), loadFeatured(true), loadCategories(true), loadCreators(true)])
+      .then(() => setNetworkState(true, 'Latest data synced'));
+  }
   function uploadProgress(label, percent, icon='fa-cloud-arrow-up') {
     let host = $('#uploadProgress');
     if (!host) { host = document.createElement('div'); host.id = 'uploadProgress'; document.body.appendChild(host); }
@@ -155,34 +190,51 @@
 
   // ============ API HELPER ============
   async function api(path, options = {}) {
+    const method = String(options.method || 'GET').toUpperCase();
     const headers = new Headers(options.headers || {});
     if (state.token) headers.set('Authorization', `Bearer ${state.token}`);
     if (!(options.body instanceof FormData) && options.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
-    const res = await fetch(`${API}${path}`, { ...options, headers });
-    let data = {};
-    try { data = await res.json(); } catch (_) {}
-    if (res.status === 401) {
-      state.user = null; state.token = '';
-      localStorage.removeItem('presethub_token');
-      updateAuthUI();
+    const cacheKey = `api:${method}:${path}`;
+    try {
+      const res = await fetch(`${API}${path}`, { ...options, headers });
+      let data = {};
+      try { data = await res.json(); } catch (_) {}
+      if (res.status === 401) {
+        state.user = null; state.token = '';
+        localStorage.removeItem('presethub_token');
+        updateAuthUI();
+      }
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      if (method === 'GET' && cacheableApi(path)) cacheSet(cacheKey, data);
+      return data;
+    } catch (err) {
+      if (method === 'GET' && cacheableApi(path)) {
+        const cached = cacheGet(cacheKey);
+        if (cached !== null) {
+          setNetworkState(false, 'Network issue — showing saved data');
+          return cached;
+        }
+      }
+      if (!navigator.onLine) setNetworkState(false, 'Offline — saved data is available');
+      throw err;
     }
-    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-    return data;
   }
 
   // ============ TOAST ============
-  function toast(message, type = 'success') {
+  function toast(message, type = 'success', duration = 4200) {
     const box = $('#toastBox') || (() => {
       const x = document.createElement('div'); x.id = 'toastBox'; document.body.appendChild(x); return x;
     })();
     const el = document.createElement('div');
-    el.className = 'toast';
-    el.setAttribute('role', 'status');
-    el.textContent = String(message);
+    el.className = `toast toast-${esc(type)}`;
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    const icons = { success:'fa-circle-check', error:'fa-circle-exclamation', info:'fa-circle-info', warning:'fa-triangle-exclamation' };
+    el.innerHTML = `<i class="fas ${icons[type] || icons.info}"></i><span>${esc(message)}</span><button type="button" aria-label="Close">×</button>`;
+    el.querySelector('button')?.addEventListener('click', () => el.remove());
     box.appendChild(el);
-    setTimeout(() => el.remove(), 3500);
+    setTimeout(() => el.remove(), duration);
   }
 
   // ============ MODAL ============
@@ -284,7 +336,7 @@
   async function loadFeatured(force=false) {
     const box=$('#featuredGrid'); if(!box) return;
     const cached=!force ? cacheGet('featured') : null;
-    if(cached){ state.featured=cached; box.innerHTML=cached.map(featuredCard).join(''); if(!force) return; }
+    if(cached){ state.featured=cached; box.innerHTML=cached.map(featuredCard).join(''); updateHeroFeatured(cached[0]); }
     try {
       const data=await api('/presets/featured?limit=8');
       state.featured=data||[]; cacheSet('featured',state.featured);
@@ -305,7 +357,6 @@
       state.presets = cached.presets || [];
       state.totalPages = cached.totalPages || 1;
       renderPresetGrid(cached);
-      if (!force) return;
     }
     const params = new URLSearchParams({ page: state.page, limit: 24, sort: state.sort });
     if (state.query) params.set('q', state.query);
@@ -320,13 +371,24 @@
       cacheSet(cacheKey, { ...data, presets: state.presets });
       renderPresetGrid(data);
     } catch (e) {
+      const catalog = cacheGet('offline-catalog');
+      if (catalog?.presets?.length && !state.query && !state.category && state.sort === 'newest') {
+        const start = (state.page - 1) * 24;
+        const slice = catalog.presets.slice(start, start + 24);
+        const offlineData = { presets: slice, total: catalog.total, page: state.page, totalPages: Math.ceil(catalog.total / 24), limit: 24 };
+        state.presets = state.page === 1 ? slice : [...state.presets, ...slice];
+        state.totalPages = offlineData.totalPages;
+        renderPresetGrid(offlineData);
+        setNetworkState(false, 'Offline — showing saved preset catalog');
+        return;
+      }
       if (grid) grid.innerHTML = `<div class="empty-state"><h3>Could not load presets</h3><p>${esc(e.message)}</p><button class="btn btn-primary" data-action="retry">Retry</button></div>`;
     }
   }
 
   async function loadCategories() {
     const cached = cacheGet('categories');
-    if (cached) { state.categories=cached; const el=$('#categories'); if(el) el.innerHTML=cached.length ? cached.map(([name,count])=>`<button class="category-card" data-action="category" data-category="${esc(name)}"><div class="icon">✦</div><div class="name">${esc(name)}</div><div class="count">${count} presets</div></button>`).join('') : '<p>No categories yet.</p>'; return; }
+    if (cached) { state.categories=cached; const el=$('#categories'); if(el) el.innerHTML=cached.length ? cached.map(([name,count])=>`<button class="category-card" data-action="category" data-category="${esc(name)}"><div class="icon">✦</div><div class="name">${esc(name)}</div><div class="count">${count} presets</div></button>`).join('') : '<p>No categories yet.</p>'; }
     try {
       const data = await api('/presets?limit=200&sort=newest');
       const counts = {};
@@ -344,9 +406,29 @@
     } catch (_) {}
   }
 
+  async function prefetchOfflineCatalog() {
+    if (!navigator.onLine) return;
+    try {
+      const first = await fetch(`${API}/presets?page=1&limit=50&sort=newest`).then(r => { if (!r.ok) throw new Error('catalog'); return r.json(); });
+      cacheSet('api:GET:/presets?page=1&limit=50&sort=newest', first);
+      const totalPages = Math.min(Number(first.totalPages || 1), 10);
+      const all = [...(first.presets || [])];
+      for (let page = 2; page <= totalPages; page++) {
+        const data = await fetch(`${API}/presets?page=${page}&limit=50&sort=newest`).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (!data) break;
+        cacheSet(`api:GET:/presets?page=${page}&limit=50&sort=newest`, data);
+        cacheSet(`presets:${page}:newest:::`, data);
+        all.push(...(data.presets || []));
+      }
+      cacheSet('offline-catalog', { updatedAt: Date.now(), total: all.length, presets: all });
+      // Ask the service worker to cache preview images in the normal image cache.
+      if (navigator.serviceWorker?.controller) navigator.serviceWorker.controller.postMessage({ type: 'CACHE_IMAGES', urls: all.slice(0, 300).map(x => x.previewImage).filter(Boolean) });
+    } catch (_) {}
+  }
+
   async function loadCreators() {
     const cached = cacheGet('creators');
-    if (cached) { state.creators = cached; const el = $('#creators'); if (el) el.innerHTML = (cached || []).map(u => `<button class="creator-card" data-action="profile" data-id="${esc(u.id)}"><div class="creator-avatar">${u.avatar ? imgTag(u.avatar, u.name || 'Creator', '') : esc((u.name || 'U').charAt(0).toUpperCase())}</div><div class="name">${esc(u.name || u.username || 'Creator')}</div><div class="stats">${u.presetCount || 0} presets · ${u.totalDownloads || 0} downloads</div><div class="followers">${u.followers || 0} followers</div></button>`).join(''); return; }
+    if (cached) { state.creators = cached; const el = $('#creators'); if (el) el.innerHTML = (cached || []).map(u => `<button class="creator-card" data-action="profile" data-id="${esc(u.id)}"><div class="creator-avatar">${u.avatar ? imgTag(u.avatar, u.name || 'Creator', '') : esc((u.name || 'U').charAt(0).toUpperCase())}</div><div class="name">${esc(u.name || u.username || 'Creator')}</div><div class="stats">${u.presetCount || 0} presets · ${u.totalDownloads || 0} downloads</div><div class="followers">${u.followers || 0} followers</div></button>`).join(''); }
     try {
       const creators = await api('/users/top');
       state.creators = creators;
@@ -982,6 +1064,7 @@
     const savedTheme = localStorage.getItem('presethub_theme');
     if (savedTheme === 'dark') document.body.classList.add('dark');
     registerSW();
+    if (!navigator.onLine) setNetworkState(false, 'Offline — loading your saved PresetHub data');
 
     if (state.token) {
       try { const r = await api('/auth/me'); state.user = r.user; } catch (_) {}
@@ -991,6 +1074,9 @@
     await Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured()]);
     await flushPendingProfile();
     await resumeQueuedUploads();
+    if (state.syncTimer) clearInterval(state.syncTimer);
+    state.syncTimer = setInterval(() => { if (navigator.onLine && document.visibilityState === 'visible') { refreshPublicData(); prefetchOfflineCatalog(); } }, 120000);
+    prefetchOfflineCatalog();
 
     const params = new URLSearchParams(location.search);
     if (params.get('q')) {
@@ -1094,7 +1180,7 @@
     if (action === 'follow') { follow(el.dataset.id); return; }
     if (action === 'switch-auth') { openAuth(el.dataset.mode); return; }
     if (action === 'tag-search') { state.query = el.dataset.tag || ''; state.category=''; $('#searchInput').value=state.query; $('#searchSuggestions')?.setAttribute('hidden',''); globalSearch(state.query); loadPresets(); return; }
-    if (action === 'retry') { loadPresets(); return; }
+    if (action === 'retry') { refreshPublicData(); return; }
     if (action === 'category') {
       state.query = ''; state.category = el.dataset.category;
       loadPresets();
@@ -1177,7 +1263,9 @@
   // ============ EXPORTS ============
   window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats };
   window.addEventListener('DOMContentLoaded', bootstrap);
-  window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); });
-  window.addEventListener('focus', () => { resumeQueuedUploads().catch(()=>{}); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeQueuedUploads().catch(()=>{}); });
+  window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); });
+  window.addEventListener('focus', () => { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); });
+  window.addEventListener('online', () => { setNetworkState(true, 'Back online — syncing latest data…'); resumeQueuedUploads().catch(()=>{}); flushPendingProfile().catch(()=>{}); refreshPublicData(); });
+  window.addEventListener('offline', () => setNetworkState(false, 'Network disconnected — showing saved data'));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); } });
 })();
