@@ -99,6 +99,9 @@ PresetSchema.index({ createdAt: -1 });
 PresetSchema.index({ downloads: -1 });
 PresetSchema.index({ status: 1, createdAt: -1 });
 PresetSchema.index({ status: 1, category: 1, downloads: -1 });
+PresetSchema.index({ status: 1, createdAt: -1, _id: -1 });
+PresetSchema.index({ status: 1, downloads: -1, _id: -1 });
+PresetSchema.index({ status: 1, avgRating: -1, _id: -1 });
 
 
 // ========== COMMENT ==========
@@ -168,7 +171,7 @@ const MessageSchema = new Schema({
   receiverId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   text: { type: String, required: true, maxlength: 1000, trim: true },
   readAt: { type: Date, default: null, index: true },
-  expiresAt: { type: Date, required: true, index: true }
+  expiresAt: { type: Date, required: true }
 }, { timestamps: true });
 MessageSchema.index({ senderId: 1, receiverId: 1, createdAt: 1 });
 MessageSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
