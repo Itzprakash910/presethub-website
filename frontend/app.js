@@ -25,6 +25,8 @@
     online: navigator.onLine,
     syncTimer: null,
     messageTimer: null,
+    notificationTimer: null,
+    notificationIds: new Set(),
   };
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -181,7 +183,7 @@
       await queueDelete(record.id);
       state.pendingUploads.delete(record.id);
       hideUploadProgress(700);
-      if (record.kind === 'preset') { toast('Preset uploaded successfully'); await loadPresets(); await loadFeatured(); }
+      if (record.kind === 'preset') { toast('Preset is live now 🎉'); await loadPresets(true, true); await loadFeatured(true); refreshUnreadNotifications(); }
       else { state.user = { ...state.user, avatar: r.avatar }; updateAuthUI(); toast('Profile image updated'); }
       return true;
     } catch (e) {
@@ -311,6 +313,7 @@
       const badge = $('#messageBadge');
       if (badge) badge.hidden = true;
       if (state.messageTimer) { clearInterval(state.messageTimer); state.messageTimer = null; }
+      if (state.notificationTimer) { clearInterval(state.notificationTimer); state.notificationTimer = null; }
     }
   }
 
@@ -812,6 +815,7 @@
             <div class="profile-actions">${state.user && state.user.id !== u.id ? `<button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}"><i class="fas fa-user-plus"></i> ${following ? 'Following' : 'Follow'}</button>${following ? `<button class="btn btn-message profile-message-btn" data-action="chat" data-id="${esc(u.id)}"><i class="fas fa-message" aria-hidden="true"></i><span>Message</span></button>` : ''}` : `<button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button>`}</div>
           </div>
           <div class="profile-stats"><b>${u.totalPresets || 0}<span>Presets</span></b><b>${u.totalDownloads || 0}<span>Downloads</span></b><b>${u.followers || 0}<span>Followers</span></b><b>${u.following || 0}<span>Following</span></b></div>
+          <div class="achievement-row">${(u.achievements || []).map(a => `<span class="achievement-badge" title="${esc(a.label || 'Achievement')}"><i class="fas ${esc(a.icon || 'fa-check')}"></i><b>${esc(a.label || 'Achievement')}</b><small>Verified achievement</small></span>`).join('') || '<span class="muted">Achievements unlock as your community and preset engagement grows.</span>'}</div>
           <div class="social-row">${Object.entries(u.socialLinks || {}).filter(([,v]) => safeExternal(v) !== '#').map(([k,v]) => `<a class="social-icon" href="${esc(safeExternal(v))}" target="_blank" rel="noopener noreferrer" aria-label="${esc(k)}"><i class="fab ${socialMap[k] || 'fa-link'}"></i><span>${esc(k)}</span></a>`).join('') || '<span class="muted">No social links added yet.</span>'}</div>
           <div class="profile-section-head"><h3>Presets by ${esc(u.name || u.username || 'Creator')}</h3><span>${presets.length} published</span></div>
           <div class="mini-preset-grid">${(presets || []).map(presetCard).join('') || '<div class="empty-state"><i class="fas fa-images"></i><p>No presets yet.</p></div>'}</div>
@@ -878,7 +882,7 @@
         <div class="account-panel professional-dashboard">
           <div class="dashboard-head"><div><span class="eyebrow">CREATOR STUDIO</span><h2>Professional Dashboard</h2><p>@${esc(d.user.username || d.user.name || 'creator')}</p></div><button class="btn btn-accent" data-action="upload"><i class="fas fa-cloud-arrow-up"></i> Upload</button></div>
           <div class="dashboard-stats"><div><b>${s.views || 0}</b><span>Views</span></div><div><b>${s.downloads || 0}</b><span>Downloads</span></div><div><b>${s.likes || 0}</b><span>Likes</span></div><div><b>${d.followers || 0}</b><span>Followers</span></div><div><b>${d.unreadNotifications || 0}</b><span>Unread</span></div></div>
-          <div class="account-actions"><button class="btn btn-outline" data-action="my-profile"><i class="fas fa-user"></i> Profile</button><button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button><button class="btn btn-outline" data-action="wishlist-page"><i class="fas fa-heart"></i> Wishlist</button><button class="btn btn-outline" data-action="downloads"><i class="fas fa-download"></i> Downloads</button><button class="btn btn-outline" data-action="notifications"><i class="fas fa-bell"></i> Notifications</button><button class="btn btn-outline" data-action="my-shares"><i class="fas fa-link"></i> Share links</button><button class="btn btn-danger" data-action="logout"><i class="fas fa-right-from-bracket"></i> Log out</button></div>
+          <div class="account-menu-hint"><i class="fas fa-ellipsis-vertical"></i> Profile, settings, notifications, messages, security and account actions are available in the ••• menu.</div>
           <div class="profile-section-head"><h3>Your presets</h3><span>${(d.presets || []).length} uploads</span></div>
           <div class="dashboard-preset-list">${(d.presets || []).map(p => `<div class="dashboard-row"><div class="dashboard-thumb">${imgTag(p.previewImage, p.name, '')}</div><div class="dashboard-row-main"><b>${esc(p.name)}</b><small>${esc(p.status)} · ${p.views || 0} views · ${p.downloads || 0} downloads</small></div><div class="dashboard-row-actions"><button class="icon-action" data-action="view-preset" data-id="${esc(p.id)}" title="View"><i class="fas fa-eye"></i></button><button class="icon-action" data-action="edit-preset" data-id="${esc(p.id)}" title="Edit"><i class="fas fa-pen"></i></button><button class="icon-action danger" data-action="delete-preset" data-id="${esc(p.id)}" title="Delete"><i class="fas fa-trash"></i></button></div></div>`).join('') || '<div class="empty-state"><i class="fas fa-cloud-arrow-up"></i><p>No uploads yet.</p></div>'}</div>
         </div>`);
@@ -902,11 +906,50 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
+  async function requestNotificationPermission() {
+    if (!('Notification' in window)) { toast('This browser does not support notifications', 'info'); return false; }
+    try {
+      const permission = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+      if (permission !== 'granted') { toast('Notifications are blocked in browser settings', 'info'); return false; }
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const reg = await navigator.serviceWorker.ready;
+        const key = await api('/users/push/public-key').catch(() => ({ enabled:false, publicKey:'' }));
+        if (key.enabled && key.publicKey) {
+          const existing = await reg.pushManager.getSubscription();
+          const subscription = existing || await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:base64UrlToUint8Array(key.publicKey) });
+          await api('/users/push/subscribe', { method:'POST', body:JSON.stringify({ subscription }) });
+        }
+      }
+      toast('Notifications enabled 🔔');
+      return true;
+    } catch (e) { toast(e.message || 'Notification permission failed', 'error'); return false; }
+  }
+  function base64UrlToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const raw = atob((base64String + padding).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+  async function refreshUnreadNotifications() {
+    if (!state.user) return;
+    try {
+      const list = await api('/users/me/notifications');
+      const unread = (list || []).filter(n => !n.read);
+      const latest = unread[0];
+      if (latest && !state.notificationIds.has(String(latest._id || latest.id || latest.createdAt))) {
+        state.notificationIds.add(String(latest._id || latest.id || latest.createdAt));
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('PresetHub', { body: latest.message, icon:'/assets/icons/icon-192.png', data:{url:latest.link || '/'} });
+        }
+      }
+      const badge = $('#notificationBadge'); if (badge) { badge.textContent = unread.length > 99 ? '99+' : String(unread.length); badge.hidden = unread.length < 1; }
+    } catch (_) {}
+  }
+
   async function showNotifications() {
     if (!requireAuth()) return;
     try {
       const list = await api('/users/me/notifications');
-      openModal(`<h2>Notifications</h2><div class="notification-list">${(list || []).map(n => `<div class="notification ${n.read ? '' : 'unread'}"><b>${esc(n.type)}</b><p>${esc(n.message)}</p><small>${new Date(n.createdAt).toLocaleString()}</small></div>`).join('') || '<p>No notifications.</p>'}<button class="btn btn-outline" data-action="read-notifications">Mark all read</button></div>`);
+      openModal(`<div class="notifications-panel"><div class="notification-head"><div><span class="eyebrow">PRESETHUB</span><h2>Notifications</h2></div><button class="btn btn-outline btn-sm" data-action="enable-notifications"><i class="fas fa-bell"></i> Enable alerts</button></div><div class="notification-list">${(list || []).map(n => `<button class="notification ${n.read ? '' : 'unread'}" data-action="open-notification" data-link="${esc(n.link || '/')}" data-notification-id="${esc(n._id || n.id || '')}"><span class="notification-icon"><i class="fas ${esc(n.icon || 'fa-bell')}"></i></span><span><b>${esc(n.type)}</b><p>${esc(n.message)}</p><small>${new Date(n.createdAt).toLocaleString()}</small></span></button>`).join('') || '<div class="empty-state"><i class="fas fa-bell-slash"></i><p>No notifications yet.</p></div>'}</div><button class="btn btn-outline" data-action="read-notifications">Mark all read</button></div>`);
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -985,7 +1028,7 @@
     try {
       const r = await api('/presets/bulk', { method: 'POST', body: fd });
       closeModal();
-      toast(`✅ ${r.created} preset(s) ${r.presets?.some(x => x.status === 'pending') ? 'submitted for approval' : 'published'}${r.failed ? `, ${r.failed} failed` : ''}`);
+      toast(`✅ ${r.created} preset(s) ${'published'}${r.failed ? `, ${r.failed} failed` : ''}`);
       loadPresets();
       if (r.failed > 0 && r.errors) {
         console.warn('Bulk upload errors:', r.errors);
@@ -1100,7 +1143,7 @@
 
   // ============ MESSAGES / INBOX ============
   async function refreshUnreadMessages() {
-    if (!state.user || !state.token) return;
+    if (!state.user) return;
     try {
       const r = await api('/chat/unread-count');
       const badge = $('#messageBadge');
@@ -1119,29 +1162,38 @@
         const name = c.user?.name || c.user?.username || 'User';
         const last = c.lastMessage?.text || 'No messages yet';
         const unread = Number(c.unread || 0);
-        return `<button class="message-thread" data-action="chat" data-id="${esc(c.user.id)}" aria-label="Open conversation with ${esc(name)}">
-          <span class="message-thread-avatar">${avatarTag(c.user.avatar, name)}</span>
-          <span class="message-thread-main"><b>${esc(name)}</b><small>@${esc(c.user.username || 'user')}</small><span>${esc(last)}</span></span>
-          <span class="message-thread-meta">${unread ? `<b class="thread-unread">${unread > 99 ? '99+' : unread}</b>` : ''}<small>${c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).toLocaleDateString([], {day:'2-digit',month:'short'}) : ''}</small></span>
-        </button>`;
+        return `<div class="message-thread"><button class="message-profile-link" data-action="profile" data-id="${esc(c.user.id)}" aria-label="Open ${esc(name)} profile">${avatarTag(c.user.avatar, name)}<span><b>${esc(name)}</b><small>@${esc(c.user.username || 'user')}</small></span></button><button class="message-thread-open" data-action="chat" data-id="${esc(c.user.id)}" aria-label="Open conversation with ${esc(name)}"><span class="message-thread-main"><span>${esc(last)}</span></span><span class="message-thread-meta">${unread ? `<b class="thread-unread">${unread > 99 ? '99+' : unread}</b>` : ''}<small>${c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).toLocaleDateString([], {day:'2-digit',month:'short'}) : ''}</small></span></button></div>`;
       }).join('');
       openModal(`<div class="messages-inbox"><div class="messages-inbox-head"><div><span class="eyebrow">PRESETHUB MESSAGES</span><h2>Messages</h2><p>Creators और users के साथ आपकी बातचीत यहाँ दिखाई देगी।</p></div><div class="messages-head-actions"><button class="icon-action" data-action="refresh-messages" title="Refresh messages" aria-label="Refresh messages"><i class="fas fa-rotate"></i></button><button class="icon-action" data-action="close" title="Close" aria-label="Close messages"><i class="fas fa-xmark"></i></button></div></div><div class="message-thread-list">${list || `<div class="empty-state"><i class="fas fa-message"></i><h3>अभी कोई message नहीं</h3><p>किसी creator को follow करके message भेजें।</p></div>`}</div></div>`);
       refreshUnreadMessages();
     } catch (e) { toast(e.message, 'error'); }
   }
 
+
+  function changePasswordModal() {
+    if (!requireAuth()) return;
+    openModal(`<div class="security-panel"><span class="eyebrow">ACCOUNT SECURITY</span><h2>Change password</h2><form id="changePasswordForm"><div class="form-group"><label>Current password</label><input name="currentPassword" type="password" autocomplete="current-password" required></div><div class="form-group"><label>New password</label><input name="newPassword" type="password" minlength="8" autocomplete="new-password" required></div><div class="form-group"><label>Confirm new password</label><input name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></div><button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Change password</button></form></div>`);
+  }
+  async function deleteAccountModal() {
+    if (!requireAuth()) return;
+    openModal(`<div class="danger-panel"><span class="eyebrow">PERMANENT ACTION</span><h2>Delete your account</h2><p>This permanently removes your profile, published presets, messages, comments, downloads, shares and account data. This cannot be undone.</p><form id="deleteAccountForm"><div class="form-group"><label>Enter your password to confirm</label><input name="password" type="password" autocomplete="current-password" required></div><label class="danger-confirm"><input name="confirm" type="checkbox" required> I understand that this deletion is permanent.</label><button class="btn btn-danger" type="submit"><i class="fas fa-user-xmark"></i> Permanently delete account</button></form></div>`);
+  }
+  async function showMessageProfile(userId) {
+    try { closeModal(); await showProfile(userId); } catch (e) { toast(e.message, 'error'); }
+  }
   function openSiteMenu() {
     const u = state.user;
-    // Account actions live in the avatar/dashboard. Keep the global overflow menu
-    // for site-level navigation so the same buttons are not rendered twice.
     const items = u ? [
-      ['fa-download','Install PresetHub','install'], ['fa-moon','Theme','theme'],
-      ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq']
+      ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-pen','Edit Profile','edit-profile'],
+      ['fa-heart','Wishlist','wishlist-page'], ['fa-download','Downloads','downloads'], ['fa-bell','Notifications','notifications'],
+      ['fa-message','Messages','messages'], ['fa-link','Share Links','my-shares'], ['fa-key','Change Password','change-password'],
+      ['fa-shield-halved','Enable Notifications','enable-notifications'], ['fa-moon','Theme','theme'],
+      ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq'], ['fa-right-from-bracket','Log out','logout'], ['fa-user-xmark','Delete Account','delete-account']
     ] : [
-      ['fa-download','Install PresetHub','install'], ['fa-moon','Theme','theme'], ['fa-right-to-bracket','Log in','login'], ['fa-user-plus','Create Account','signup'], ['fa-message','Contact / Message','site-contact'],
-      ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq']
+      ['fa-download','Install PresetHub','install'], ['fa-moon','Theme','theme'], ['fa-right-to-bracket','Log in','login'], ['fa-user-plus','Create Account','signup'],
+      ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq'], ['fa-envelope','Contact','site-contact']
     ];
-    openModal(`<div class="site-menu"><div class="site-menu-head"><img class="site-menu-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub P logo"><div><span class="eyebrow">PRESETHUB</span><h2>${u ? esc(u.name || u.username || 'Account') : 'Welcome'}</h2><small>${u ? '@'+esc(u.username || 'user') : 'Explore presets and creators'}</small></div></div><div class="site-menu-grid">${items.map(([icon,label,action])=>`<button class="site-menu-item" data-action="${action}"><i class="fas ${icon}"></i><span>${label}</span></button>`).join('')}</div></div>`);
+    openModal(`<div class="site-menu"><div class="site-menu-head"><img class="site-menu-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub P logo"><div><span class="eyebrow">PRESETHUB</span><h2>${u ? esc(u.name || u.username || 'Account') : 'Welcome'}</h2><small>${u ? '@'+esc(u.username || 'user') : 'Explore presets and creators'}</small></div></div><div class="site-menu-grid">${items.map(([icon,label,action])=>`<button class="site-menu-item" data-action="${action}"><i class="fas ${icon}" aria-hidden="true"></i><span>${label}</span></button>`).join('')}</div></div>`);
   }
 
   function showSettingsMenu() {
@@ -1167,6 +1219,7 @@
     cancelExit();
     allowExitNavigation = true;
     if (destination) window.location.href=destination;
+    else { try { history.go(-1); } catch (_) { window.location.href='/'; } }
   }
 
   // ============ CHAT / MESSAGING ============
@@ -1176,7 +1229,7 @@
     try{
       const r=await api(`/chat/with/${encodeURIComponent(userId)}`);
       const render=()=>{ const box=$('#chatMessages'); if(!box) return; box.innerHTML=(r.messages||[]).map(m=>`<div class="chat-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('')||'<div class="empty-state">No messages yet.</div>'; box.scrollTop=box.scrollHeight; };
-      openModal(`<div class="chat-panel"><div class="chat-head"><div class="profile-mini">${avatarTag(r.user.avatar,r.user.name)}<div><b>${esc(r.user.name||r.user.username)}</b><small>@${esc(r.user.username||'user')}</small></div></div></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" data-user="${esc(userId)}" class="chat-form"><input name="text" maxlength="1000" placeholder="Message…" autocomplete="off" required><button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button></form><small class="chat-note">Messages are stored securely in MongoDB and automatically expire after 24 hours.</small></div>`);
+      openModal(`<div class="chat-panel"><div class="chat-head"><button class="chat-profile-link" data-action="profile" data-id="${esc(userId)}"><div class="profile-mini">${avatarTag(r.user.avatar,r.user.name)}<div><b>${esc(r.user.name||r.user.username)}</b><small>@${esc(r.user.username||'user')} · ${Number(r.user.followers||0)} followers</small></div></div></button><button class="icon-action" data-action="close" aria-label="Close chat"><i class="fas fa-xmark"></i></button></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" data-user="${esc(userId)}" class="chat-form"><input name="text" maxlength="1000" placeholder="Message…" autocomplete="off" required><button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button></form><small class="chat-note">Messages are stored securely in MongoDB and automatically expire after 24 hours.</small></div>`);
       render();
       if(chatTimer) clearInterval(chatTimer);
       chatTimer=setInterval(async()=>{try{const n=await api(`/chat/with/${encodeURIComponent(userId)}`);r.messages=n.messages||[];render();}catch(_){}} ,2000);
@@ -1209,6 +1262,7 @@
     const savedTheme = localStorage.getItem('presethub_theme');
     if (savedTheme === 'dark') document.body.classList.add('dark');
     registerSW();
+    installExitGuard();
     if (!navigator.onLine) setNetworkState(false, 'Offline — loading your saved PresetHub data');
 
     // v2.9 uses an HttpOnly auth cookie. Remove the legacy client-side token if an older
@@ -1224,6 +1278,9 @@
     await Promise.allSettled([authPromise, publicPromise]);
     updateAuthUI();
     if (state.user) {
+      refreshUnreadNotifications();
+      if (state.notificationTimer) clearInterval(state.notificationTimer);
+      state.notificationTimer = setInterval(refreshUnreadNotifications, 30000);
       refreshUnreadMessages();
       if (state.messageTimer) clearInterval(state.messageTimer);
       state.messageTimer = setInterval(refreshUnreadMessages, 15000);
@@ -1284,6 +1341,17 @@
     if (allowExitNavigation) return;
     e.preventDefault();
     e.returnValue = '';
+  });
+  let exitGuardPushed = false;
+  function installExitGuard() {
+    if (exitGuardPushed) return;
+    exitGuardPushed = true;
+    try { history.pushState({ presetHubExitGuard:true }, '', location.href); } catch (_) {}
+  }
+  window.addEventListener('popstate', () => {
+    if (allowExitNavigation) return;
+    try { history.pushState({ presetHubExitGuard:true }, '', location.href); } catch (_) {}
+    requestExit(null);
   });
   document.addEventListener('click', e => {
     const link = e.target.closest('a[href]');
@@ -1356,6 +1424,8 @@
     }
     if (action === 'downloads') { showDownloads(); return; }
     if (action === 'notifications') { showNotifications(); return; }
+    if (action === 'enable-notifications') { requestNotificationPermission(); return; }
+    if (action === 'open-notification') { const nid=el.dataset.notificationId; if(nid) api(`/users/notifications/read/${encodeURIComponent(nid)}`, {method:'POST'}).catch(()=>{}); const link=el.dataset.link||'/'; closeModal(); if(link.startsWith('/')) { if(link.startsWith('/profile/')) showProfile(link.split('/')[2]); else if(link.startsWith('/preset/')) showPreset(link.split('/')[2]); else if(link==='/'||link.startsWith('/?')) location.href=link; else requestExit(link); } return; }
     if (action === 'read-notifications') {
       if (requireAuth()) {
         await api('/users/notifications/read-all', { method: 'POST' });
@@ -1365,6 +1435,8 @@
     }
     if (action === 'my-profile') { showProfile(state.user.id); return; }
     if (action === 'edit-profile') { editProfileModal(); return; }
+    if (action === 'change-password') { changePasswordModal(); return; }
+    if (action === 'delete-account') { deleteAccountModal(); return; }
     if (action === 'edit-preset') { editPreset(el.dataset.id); return; }
     if (action === 'delete-preset') { deletePreset(el.dataset.id); return; }
     if (action === 'my-shares') { showMyShares(); return; }
@@ -1441,6 +1513,19 @@
     if (e.target.id === 'resetForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api('/auth/reset-password',{method:'POST',body:JSON.stringify({token:e.target.dataset.token,password:fd.get('password')})}); toast('Password reset successfully'); closeModal(); openAuth('login'); } catch(err){toast(err.message,'error');} return; }
     if (e.target.id === 'uploadForm') { e.preventDefault(); submitUpload(e.target); return; }
     if (e.target.id === 'bulkUploadForm') { e.preventDefault(); submitBulkUpload(e.target); return; }
+    if (e.target.id === 'changePasswordForm') {
+      e.preventDefault(); const form=e.target; const d=Object.fromEntries(new FormData(form).entries());
+      if (d.newPassword !== d.confirmPassword) return toast('New passwords do not match','error');
+      try { await api('/auth/change-password',{method:'PUT',body:JSON.stringify({currentPassword:d.currentPassword,newPassword:d.newPassword})}); closeModal(); toast('Password changed successfully 🔐'); } catch(err){ toast(err.message,'error'); }
+      return;
+    }
+    if (e.target.id === 'deleteAccountForm') {
+      e.preventDefault(); const d=Object.fromEntries(new FormData(e.target).entries());
+      if (d.confirm !== 'on') return toast('Please confirm permanent deletion','error');
+      if (!window.confirm('Delete your PresetHub account permanently? This cannot be undone.')) return;
+      try { await api('/auth/account',{method:'DELETE',body:JSON.stringify({password:d.password})}); state.user=null; state.token=''; closeModal(); updateAuthUI(); toast('Your account has been permanently deleted.'); setTimeout(()=>location.href='/',700); } catch(err){ toast(err.message,'error'); }
+      return;
+    }
     if (e.target.id === 'profileForm') {
       e.preventDefault();
       if (!requireAuth()) return;

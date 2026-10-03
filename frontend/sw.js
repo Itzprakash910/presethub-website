@@ -1,11 +1,11 @@
-const STATIC_CACHE = 'presethub-static-v11';
+const STATIC_CACHE = 'presethub-static-v12';
 const API_CACHE = 'presethub-api-v5';
 const IMAGE_CACHE = 'presethub-images-v5';
 const CORE = [
-  '/', '/index.html', '/manifest.json', '/style.css?v=2.9.2', '/app.js?v=2.9.2',
+  '/', '/index.html', '/manifest.json', '/icons.css?v=2.9.3', '/style.css?v=2.9.3', '/app.js?v=2.9.3',
   '/privacy.html', '/terms.html', '/about.html', '/blog.html',
   '/creator-program.html', '/faq.html', '/contact.html',
-  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=2.9.2', '/cookie-consent.js?v=2.9.2', '/status.js?v=2.9.2', '/download-app.js?v=2.9.2'
+  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=2.9.2', '/cookie-consent.js?v=2.9.2', '/status.js?v=2.9.3', '/download-app.js?v=2.9.2'
 ];
 
 self.addEventListener('install', e => e.waitUntil(
@@ -75,5 +75,34 @@ self.addEventListener('message', e => {
         if (res.ok || res.type === 'opaque') await cache.put(req, res.clone());
       } catch (_) {}
     }));
+  })());
+});
+
+
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = { body: event.data?.text?.() || 'You have a new PresetHub notification.' }; }
+  const title = data.title || 'PresetHub';
+  const options = {
+    body: data.body || 'You have a new notification.',
+    icon: data.icon || '/assets/icons/icon-192.png',
+    badge: data.badge || '/assets/icons/icon-192.png',
+    data: data.data || { url: '/' },
+    vibrate: [120, 60, 120],
+    tag: data.tag || 'presethub-notification',
+    renotify: true
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = event.notification.data?.url || '/';
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type:'window', includeUncontrolled:true });
+    for (const client of clients) {
+      if ('focus' in client) { await client.focus(); if ('navigate' in client) await client.navigate(target); return; }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(target);
   })());
 });

@@ -35,16 +35,15 @@
     <meta name="twitter:image:alt" content="PresetHub – Lightroom Presets Marketplace">
     <link rel="canonical" href="https://presethub.site/">
     <link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon">
-    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap">
   <link rel="me" href="https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn">
   <script type="application/ld+json">
   {"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://presethub.site/#website","name":"PresetHub","alternateName":"Preset Hub","url":"https://presethub.site/","potentialAction":{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://presethub.site/?q={search_term_string}"},"query-input":"required name=search_term_string"}},{"@type":"Organization","@id":"https://presethub.site/#organization","name":"PresetHub","url":"https://presethub.site/","logo":"https://presethub.site/assets/icons/icon-512.png","sameAs":["https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"]},{"@type":"Person","@id":"https://presethub.site/#omprakash","name":"Omprakash","alternateName":"HeyOmii","url":"https://presethub.site/","sameAs":["https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"]},{"@type":"WebPage","@id":"https://presethub.site/#webpage","url":"https://presethub.site/","name":"PresetHub – Free & Premium Lightroom Presets Marketplace","description":"Discover, preview, download and sell Lightroom presets on PresetHub. Search by preset name, creator, category or tag and find free and premium Lightroom presets.","isPartOf":{"@id":"https://presethub.site/#website"},"publisher":{"@id":"https://presethub.site/#organization"}}]}
   </script>
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/style.css?v=2.9.1">
-  <link rel="stylesheet" href="/cookie-consent.css?v=2.9.1">
+  <link rel="stylesheet" href="/icons.css?v=2.9.3">
+  <link rel="stylesheet" href="/style.css?v=2.9.3">
+  <link rel="stylesheet" href="/cookie-consent.css?v=2.9.3">
 </head>
 <body>
 <a class="skip-link" href="#presets">Skip to presets</a>
@@ -69,6 +68,9 @@
         <a class="btn btn-outline btn-sm hidden" id="adminLink" href="/admin.html">Admin</a>
         <button class="icon-btn message-btn" id="messageButton" data-action="messages" title="Messages" aria-label="Messages">
           <i class="fas fa-message" aria-hidden="true"></i><span class="unread-badge" id="messageBadge" hidden>0</span>
+        </button>
+        <button class="icon-btn message-btn" id="notificationButton" data-action="notifications" title="Notifications" aria-label="Notifications">
+          <i class="fas fa-bell" aria-hidden="true"></i><span class="unread-badge" id="notificationBadge" hidden>0</span>
         </button>
         <button class="user-avatar" id="avatar" data-action="account" title="मेरा अकाउंट" aria-label="My account"></button>
       </div>
@@ -167,7 +169,7 @@
   <div class="modal"><button class="close" data-action="close" aria-label="Close">×</button><div id="modalBody"></div></div>
 </div>
 <div id="toastBox" aria-live="polite"></div>
-<script src="/app.js?v=2.9.1"></script>
-<script src="/cookie-consent.js?v=2.9.1" defer></script>
+<script src="/app.js?v=2.9.3"></script>
+<script src="/cookie-consent.js?v=2.9.3" defer></script>
 </body>
 </html>
