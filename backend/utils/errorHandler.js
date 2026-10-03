@@ -1,6 +1,18 @@
 const errorHandler = (err, req, res, next) => {
   console.error('❌ Error:', err.stack);
 
+  if (err?.code === 11000) {
+    const fields = Object.keys(err.keyPattern || err.keyValue || {});
+    const field = fields[0] || 'record';
+    const messages = {
+      email: 'An account with this email already exists.',
+      username: 'That username is already in use.',
+      uploadId: 'This upload has already been processed.',
+      code: 'This share link code already exists.'
+    };
+    console.warn('⚠️ MongoDB duplicate-key conflict:', { field, index: err?.index || undefined });
+    return res.status(409).json({ error: messages[field] || 'This record already exists.', code: 'DUPLICATE_KEY', field });
+  }
   if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large. Single preset uploads max 100MB; profile images max 5MB.' });
   if (err.code === 'LIMIT_UNEXPECTED_FILE') return res.status(400).json({ error: 'Unexpected file field.' });
   if (err.message && /Only JPG|Unsupported preset format|File type/i.test(err.message)) return res.status(400).json({ error: err.message });
