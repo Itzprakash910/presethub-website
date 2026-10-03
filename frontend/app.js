@@ -1,4 +1,4 @@
-/* PresetHub Frontend — production client v2.0 */
+/* PresetHub Frontend — production client v2.8.0 */
 (() => {
   'use strict';
 
@@ -36,7 +36,23 @@
   const profileUrl = u => `/profile/${encodeURIComponent(u.id)}/${slug(u.username || u.name)}/`;
   const safeExternal = v => /^(https?:\/\/|mailto:)/i.test(String(v || '')) ? String(v) : '#';
   const fallbackPreview = `${location.origin}/assets/images/og-image.png`;
-  const assetUrl = v => { const x = String(v || '').trim(); if (!x) return fallbackPreview; if (/^https?:\/\//i.test(x)) return x; if (x.startsWith('/')) return `${location.origin}${x}`; if (x.startsWith('uploads/')) return `${location.origin}/${x}`; if (/^media\//i.test(x)) return `${location.origin}/${x}`; if (/^(previews|presets|avatars)\//i.test(x)) return `${location.origin}/uploads/${x}`; return fallbackPreview; };
+  const fallbackLogo = `${location.origin}/assets/images/presethub-p-logo.jpg`;
+  const assetUrl = v => {
+    const x = String(v || '').trim();
+    if (!x) return fallbackPreview;
+    if (/^https?:\/\//i.test(x)) return x;
+    if (x.startsWith('/')) return `${location.origin}${x}`;
+    if (/^media\//i.test(x)) return `${location.origin}/${x}`;
+    // Old filesystem media URLs are intentionally not served by the backend.
+    // Keep the safe fallback instead of rendering a broken-image icon.
+    if (x.startsWith('uploads/') || /^(previews|presets|avatars)\//i.test(x)) return fallbackPreview;
+    return fallbackPreview;
+  };
+  const avatarTag = (src, name, cls='') => {
+    const initial = esc(String(name || 'U').trim().charAt(0).toUpperCase() || 'U');
+    if (!src) return `<span class="avatar-fallback ${cls}" aria-hidden="true">${initial}</span>`;
+    return `<span class="avatar-shell ${cls}"><img src="${esc(assetUrl(src))}" alt="${esc(name || 'User')} profile photo" loading="lazy" decoding="async" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.hidden=false"><span class="avatar-fallback" hidden aria-hidden="true">${initial}</span></span>`;
+  };
   const imgTag = (src, alt, cls='') => `<img class="${cls}" src="${esc(assetUrl(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackPreview}'">`;
 
   // ============ PERSISTENT CLIENT QUEUE / CACHE ============
@@ -1095,13 +1111,13 @@
         const name = c.user?.name || c.user?.username || 'User';
         const last = c.lastMessage?.text || 'No messages yet';
         const unread = Number(c.unread || 0);
-        return `<button class="message-thread" data-action="chat" data-id="${esc(c.user.id)}">
-          <span class="message-thread-avatar">${c.user.avatar ? imgTag(c.user.avatar, name, '') : esc(name.charAt(0).toUpperCase())}</span>
+        return `<button class="message-thread" data-action="chat" data-id="${esc(c.user.id)}" aria-label="Open conversation with ${esc(name)}">
+          <span class="message-thread-avatar">${avatarTag(c.user.avatar, name)}</span>
           <span class="message-thread-main"><b>${esc(name)}</b><small>@${esc(c.user.username || 'user')}</small><span>${esc(last)}</span></span>
           <span class="message-thread-meta">${unread ? `<b class="thread-unread">${unread > 99 ? '99+' : unread}</b>` : ''}<small>${c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).toLocaleDateString([], {day:'2-digit',month:'short'}) : ''}</small></span>
         </button>`;
       }).join('');
-      openModal(`<div class="messages-inbox"><div class="messages-inbox-head"><div><span class="eyebrow">PRESETHUB MESSAGES</span><h2>Messages</h2><p>Creators और users के साथ आपकी बातचीत यहाँ दिखाई देगी।</p></div><button class="icon-action" data-action="refresh-messages" title="Refresh"><i class="fas fa-rotate"></i></button></div><div class="message-thread-list">${list || `<div class="empty-state"><i class="fas fa-message"></i><h3>अभी कोई message नहीं</h3><p>किसी creator को follow करके message भेजें।</p></div>`}</div></div>`);
+      openModal(`<div class="messages-inbox"><div class="messages-inbox-head"><div><span class="eyebrow">PRESETHUB MESSAGES</span><h2>Messages</h2><p>Creators और users के साथ आपकी बातचीत यहाँ दिखाई देगी।</p></div><div class="messages-head-actions"><button class="icon-action" data-action="refresh-messages" title="Refresh messages" aria-label="Refresh messages"><i class="fas fa-rotate"></i></button><button class="icon-action" data-action="close" title="Close" aria-label="Close messages"><i class="fas fa-xmark"></i></button></div></div><div class="message-thread-list">${list || `<div class="empty-state"><i class="fas fa-message"></i><h3>अभी कोई message नहीं</h3><p>किसी creator को follow करके message भेजें।</p></div>`}</div></div>`);
       refreshUnreadMessages();
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -1111,13 +1127,18 @@
     const items = u ? [
       ['fa-user','My Profile','my-profile'], ['fa-chart-line','My Dashboard','account'], ['fa-message','Messages','messages'],
       ['fa-heart','My Wishlist','wishlist-page'], ['fa-download','My Downloads','downloads'], ['fa-bell','Notifications','notifications'],
-      ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-gear','Settings / Theme','theme'], ['fa-circle-info','About PresetHub','site-about'],
+      ['fa-download','Install PresetHub','install'], ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-moon','Theme','theme'], ['fa-gear','Settings','settings'], ['fa-circle-info','About PresetHub','site-about'],
       ['fa-right-from-bracket','Log out','logout']
     ] : [
-      ['fa-right-to-bracket','Log in','login'], ['fa-user-plus','Create Account','signup'], ['fa-message','Contact / Message','site-contact'],
+      ['fa-download','Install PresetHub','install'], ['fa-moon','Theme','theme'], ['fa-right-to-bracket','Log in','login'], ['fa-user-plus','Create Account','signup'], ['fa-message','Contact / Message','site-contact'],
       ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq'], ['fa-moon','Theme','theme']
     ];
     openModal(`<div class="site-menu"><div class="site-menu-head"><img class="site-menu-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub P logo"><div><span class="eyebrow">PRESETHUB</span><h2>${u ? esc(u.name || u.username || 'Account') : 'Welcome'}</h2><small>${u ? '@'+esc(u.username || 'user') : 'Explore presets and creators'}</small></div></div><div class="site-menu-grid">${items.map(([icon,label,action])=>`<button class="site-menu-item" data-action="${action}"><i class="fas ${icon}"></i><span>${label}</span></button>`).join('')}</div></div>`);
+  }
+
+  function showSettingsMenu() {
+    if (!requireAuth()) return;
+    openModal(`<div class="settings-menu"><span class="eyebrow">PRESETHUB SETTINGS</span><h2>Settings</h2><div class="settings-menu-grid"><button class="menu-action" data-action="edit-profile"><i class="fas fa-user-pen"></i><span>Edit profile</span></button><button class="menu-action" data-action="theme"><i class="fas fa-moon"></i><span>Theme</span></button><button class="menu-action" data-action="notifications"><i class="fas fa-bell"></i><span>Notifications</span></button><button class="menu-action" data-action="messages"><i class="fas fa-message"></i><span>Messages</span></button></div></div>`);
   }
 
   function requestExit(destination = null) {
@@ -1147,7 +1168,7 @@
     try{
       const r=await api(`/chat/with/${encodeURIComponent(userId)}`);
       const render=()=>{ const box=$('#chatMessages'); if(!box) return; box.innerHTML=(r.messages||[]).map(m=>`<div class="chat-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('')||'<div class="empty-state">No messages yet.</div>'; box.scrollTop=box.scrollHeight; };
-      openModal(`<div class="chat-panel"><div class="chat-head"><div class="profile-mini">${r.user.avatar?imgTag(r.user.avatar,r.user.name,''):''}<div><b>${esc(r.user.name||r.user.username)}</b><small>@${esc(r.user.username||'user')}</small></div></div></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" data-user="${esc(userId)}" class="chat-form"><input name="text" maxlength="1000" placeholder="Message…" autocomplete="off" required><button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button></form><small class="chat-note">Messages are stored securely in MongoDB and automatically expire after 24 hours.</small></div>`);
+      openModal(`<div class="chat-panel"><div class="chat-head"><div class="profile-mini">${avatarTag(r.user.avatar,r.user.name)}<div><b>${esc(r.user.name||r.user.username)}</b><small>@${esc(r.user.username||'user')}</small></div></div></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" data-user="${esc(userId)}" class="chat-form"><input name="text" maxlength="1000" placeholder="Message…" autocomplete="off" required><button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button></form><small class="chat-note">Messages are stored securely in MongoDB and automatically expire after 24 hours.</small></div>`);
       render();
       if(chatTimer) clearInterval(chatTimer);
       chatTimer=setInterval(async()=>{try{const n=await api(`/chat/with/${encodeURIComponent(userId)}`);r.messages=n.messages||[];render();}catch(_){}} ,2000);
@@ -1164,7 +1185,14 @@
   }
 
   function registerSW() {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js?v=2.8.0', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (sessionStorage.getItem('ph-sw-refreshed') === '1') return;
+        sessionStorage.setItem('ph-sw-refreshed', '1');
+        window.location.reload();
+      });
+    }
     window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); state.installPrompt = e; });
   }
 
@@ -1343,6 +1371,7 @@
       return;
     }
     if (action === 'install') { installPWA(); return; }
+    if (action === 'settings') { showSettingsMenu(); return; }
     if (action === 'theme') {
       document.body.classList.toggle('dark');
       localStorage.setItem('presethub_theme', document.body.classList.contains('dark') ? 'dark' : 'light');
