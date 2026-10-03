@@ -1,5 +1,10 @@
 node_modules/
+backend/node_modules/
+backend/.env
 .env
 *.log
 .DS_Store
-backend/data/
+backend/uploads/
+frontend/uploads/
+backups/
+private_uploads/

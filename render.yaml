@@ -42,5 +42,7 @@ services:
         value: presethub-files
       - key: R2_PUBLIC_URL
         sync: false
+      - key: AUTO_APPROVE_UPLOADS
+        value: 'false'
       - key: API_BASE
         value: https://presethub.site/api
