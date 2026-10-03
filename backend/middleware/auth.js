@@ -1,172 +1,37 @@
 const jwt = require('jsonwebtoken');
-const { User } = require('../models');
-const mongoose = require('mongoose');
+const { getDB } = require('../config/db');
 
-const JWT_SECRET = process.env.JWT_SECRET;
+function getToken(req) {
+  const h = req.headers.authorization || '';
+  if (!h.startsWith('Bearer ')) return null;
+  return h.slice(7);
+}
 
-const authenticate = async (req, res, next) => {
+async function auth(req, res, next) {
   try {
-    const authHeader = req.header('Authorization');
-
-    if (!authHeader) {
-      return res.status(401).json({
-        error: 'Access denied. No token provided.'
-      });
-    }
-
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.substring(7)
-      : authHeader;
-
-    if (!token || token === 'null' || token === 'undefined' || token.length < 10) {
-      return res.status(401).json({
-        error: 'Access denied. Invalid token format.'
-      });
-    }
-
-    let decoded;
-
-    try {
-      decoded = jwt.verify(token, JWT_SECRET);
-    } catch (err) {
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({
-          error: 'Token expired.',
-          code: 'TOKEN_EXPIRED'
-        });
-      }
-
-      if (err.name === 'JsonWebTokenError') {
-        return res.status(401).json({
-          error: 'Invalid token.',
-          code: 'INVALID_TOKEN'
-        });
-      }
-
-      throw err;
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(decoded.id)) {
-      return res.status(401).json({
-        error: 'Invalid user ID.'
-      });
-    }
-
-    const user = await User.findById(decoded.id)
-      .select('role status')
-      .lean();
-
-    if (!user) {
-      return res.status(401).json({
-        error: 'User no longer exists.'
-      });
-    }
-
-    if (user.status === 'blocked' || user.status === 'deactivated') {
-      return res.status(403).json({
-        error: 'Account is blocked or deactivated.'
-      });
-    }
-
-    // Update activity without waiting for DB write.
-    User.updateOne(
-      { _id: decoded.id },
-      {
-        $set: {
-          lastActive: new Date()
-        },
-        $inc: {
-          commandsCount: 1
-        }
-      }
-    ).catch(err => {
-      console.warn('Activity update failed:', err.message);
-    });
-
-    req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      role: user.role
-    };
-
-    req.token = token;
-
+    const token = getToken(req);
+    if (!token) return res.status(401).json({ error: 'Login required' });
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const db = await getDB();
+    const user = db.data.users.find(u => u.id === payload.id);
+    if (!user) return res.status(401).json({ error: 'Session expired' });
+    req.user = user;
     next();
+  } catch (_) { return res.status(401).json({ error: 'Invalid or expired session' }); }
+}
 
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-
-    return res.status(500).json({
-      error: 'Authentication error.'
-    });
-  }
-};
-
-
-const optionalAuth = async (req, res, next) => {
+function optionalAuth(req, _res, next) {
+  const token = getToken(req);
+  if (!token) return next();
   try {
-    const authHeader = req.header('Authorization');
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    getDB().then(db => { req.user = db.data.users.find(u => u.id === payload.id) || null; next(); }).catch(() => next());
+  } catch (_) { next(); }
+}
 
-    if (!authHeader) {
-      return next();
-    }
-
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.substring(7)
-      : authHeader;
-
-    if (!token || token.length < 10) {
-      return next();
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    if (!mongoose.Types.ObjectId.isValid(decoded.id)) {
-      return next();
-    }
-
-    req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      role: decoded.role
-    };
-
-    // Activity update for optional authenticated users.
-    User.updateOne(
-      { _id: decoded.id },
-      { $set: { lastActive: new Date() } }
-    ).catch(() => {});
-
-  } catch (_) {}
-
+function adminOnly(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   next();
-};
+}
 
-
-const authorize = (...roles) => (req, res, next) => {
-
-  if (!req.user) {
-    return res.status(401).json({
-      error: 'Authentication required'
-    });
-  }
-
-  if (!roles.includes(req.user.role)) {
-    return res.status(403).json({
-      error: 'Access denied.'
-    });
-  }
-
-  next();
-};
-
-
-const isAdmin = authorize('admin');
-
-
-module.exports = authenticate;
-module.exports.authenticate = authenticate;
-module.exports.optionalAuth = optionalAuth;
-module.exports.authorize = authorize;
-module.exports.isAdmin = isAdmin;
-module.exports.JWT_SECRET = JWT_SECRET;
+module.exports = { auth, optionalAuth, adminOnly };
