@@ -6,7 +6,7 @@ const auth = require('../middleware/auth');
 const { optionalAuth } = require('../middleware/auth');
 const { Preset, User, Download, Share, Order } = require('../models');
 const { uploadFields, bulkUploadFields } = require('../middleware/upload');
-const { uploadToR2, deleteFromR2, getStoredFileStream } = require('../config/r2');
+const { uploadToMongo, deleteFromMongo, getStoredFileStream } = require('../config/mongoStorage');
 const jwt = require('jsonwebtoken');
 const { validate, presetValidation } = require('../utils/validators');
 const { createNotification } = require('./users');
@@ -158,12 +158,12 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
         const previewFile = previewMap[fileBase] || previewFiles[i];
 
         const fileKey = `presets/${uuidv4()}${path.extname(file.originalname)}`;
-        const fileUrl = await uploadToR2(file.buffer, fileKey, file.mimetype);
+        const fileUrl = await uploadToMongo(file.buffer, fileKey, file.mimetype, { kind: 'preset', presetUpload: true });
 
         let previewImage = '';
         if (previewFile) {
           const pKey = `previews/${uuidv4()}${path.extname(previewFile.originalname)}`;
-          previewImage = await uploadToR2(previewFile.buffer, pKey, previewFile.mimetype);
+          previewImage = await uploadToMongo(previewFile.buffer, pKey, previewFile.mimetype, { kind: 'preview' });
           delete previewMap[fileBase];
         }
 
@@ -287,11 +287,11 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
 
     if (file) {
       fileStorageKey = `presets/${uuidv4()}${path.extname(file.originalname).toLowerCase()}`;
-      fileUrl = await uploadToR2(file.buffer, fileStorageKey, file.mimetype);
+      fileUrl = await uploadToMongo(file.buffer, fileStorageKey, file.mimetype, { kind: 'preset' });
     }
     if (preview) {
       previewStorageKey = `previews/${uuidv4()}${path.extname(preview.originalname).toLowerCase()}`;
-      previewImage = await uploadToR2(preview.buffer, previewStorageKey, preview.mimetype);
+      previewImage = await uploadToMongo(preview.buffer, previewStorageKey, preview.mimetype, { kind: 'preview' });
     }
 
     const preset = await Preset.create({
@@ -431,14 +431,14 @@ router.delete('/:id', auth, async (req, res) => {
 
   const keyFromUrl = url => {
     if (!url) return null;
-    const r2 = String(process.env.R2_PUBLIC_URL || '').replace(/\/+$/, '');
-    if (r2 && String(url).startsWith(r2 + '/')) return String(url).slice(r2.length + 1);
+    const match = String(url).match(/\/media\/([a-f0-9]{24})(?:$|\?)/i);
+    if (match) return match[0];
     const marker = '/uploads/';
     const idx = String(url).indexOf(marker);
     return idx >= 0 ? String(url).slice(idx + marker.length) : null;
   };
-  if (preset.fileUrl) await deleteFromR2(keyFromUrl(preset.fileUrl));
-  if (preset.previewImage) await deleteFromR2(keyFromUrl(preset.previewImage));
+  if (preset.fileUrl) await deleteFromMongo(keyFromUrl(preset.fileUrl));
+  if (preset.previewImage) await deleteFromMongo(keyFromUrl(preset.previewImage));
 
   await Preset.deleteOne({ _id: preset._id });
   res.json({ success: true });
@@ -464,14 +464,14 @@ router.put('/:id', auth, uploadFields, async (req, res) => {
     if (file) {
       const key = `presets/${uuidv4()}${path.extname(file.originalname).toLowerCase()}`;
       preset.fileStorageKey = key;
-      preset.fileUrl = await uploadToR2(file.buffer, key, file.mimetype);
+      preset.fileUrl = await uploadToMongo(file.buffer, key, file.mimetype, { kind: 'preset' });
       preset.size = file.size;
       preset.originalName = file.originalname;
     }
     if (preview) {
       const key = `previews/${uuidv4()}${path.extname(preview.originalname).toLowerCase()}`;
       preset.previewStorageKey = key;
-      preset.previewImage = await uploadToR2(preview.buffer, key, preview.mimetype);
+      preset.previewImage = await uploadToMongo(preview.buffer, key, preview.mimetype, { kind: 'preview' });
     }
     await preset.save();
     res.json({ ...toPublicPreset(preset.toObject()), fileUrl: preset.fileUrl, originalName: preset.originalName });

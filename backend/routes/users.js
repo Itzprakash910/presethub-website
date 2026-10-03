@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const auth = require('../middleware/auth');
 const { User, Preset, Download } = require('../models');
 const { uploadAvatar } = require('../middleware/upload');
-const { uploadToR2 } = require('../config/r2');
+const { uploadToMongo } = require('../config/mongoStorage');
 
 const router = express.Router();
 function cleanSocialLinks(value) {
@@ -83,7 +83,7 @@ router.put('/me/avatar', auth, uploadAvatar, async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No profile image selected' });
     if (req.file.size > 5 * 1024 * 1024) return res.status(400).json({ error: 'Profile image must be 5MB or smaller' });
     const key = `avatars/${uuidv4()}${path.extname(req.file.originalname).toLowerCase()}`;
-    const url = await uploadToR2(req.file.buffer, key, req.file.mimetype);
+    const url = await uploadToMongo(req.file.buffer, key, req.file.mimetype, { kind: 'avatar', userId: req.user.id });
     if (!url) throw new Error('Storage returned no URL');
     await User.updateOne({ _id: req.user.id }, { avatar: url });
     res.json({ success: true, avatar: url, message: 'Profile image updated' });
