@@ -7,16 +7,16 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
+    const cookieToken = req.cookies?.ph_auth || '';
+    const token = authHeader
+      ? (authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader)
+      : cookieToken;
 
-    if (!authHeader) {
+    if (!token) {
       return res.status(401).json({
         error: 'Access denied. No token provided.'
       });
     }
-
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.substring(7)
-      : authHeader;
 
     if (!token || token === 'null' || token === 'undefined' || token.length < 10) {
       return res.status(401).json({
@@ -90,6 +90,15 @@ const authenticate = async (req, res, next) => {
     };
 
     req.token = token;
+    if (req.cookies?.ph_auth !== token && typeof res.cookie === 'function') {
+      res.cookie('ph_auth', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/'
+      });
+    }
 
     next();
 
@@ -106,14 +115,9 @@ const authenticate = async (req, res, next) => {
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
-
-    if (!authHeader) {
-      return next();
-    }
-
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.substring(7)
-      : authHeader;
+    const token = authHeader
+      ? (authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader)
+      : (req.cookies?.ph_auth || '');
 
     if (!token || token.length < 10) {
       return next();
