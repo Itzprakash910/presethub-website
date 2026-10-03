@@ -32,16 +32,6 @@ services:
         sync: false
       - key: ADMIN_CHAT_ID
         sync: false
-      - key: R2_ACCOUNT_ID
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: R2_BUCKET_NAME
-        value: presethub-files
-      - key: R2_PUBLIC_URL
-        sync: false
       - key: AUTO_APPROVE_UPLOADS
         value: 'false'
       - key: API_BASE
