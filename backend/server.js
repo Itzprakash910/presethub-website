@@ -39,7 +39,7 @@ if (!fs.existsSync(frontendRoot)) {
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
 const SITE_CREATOR = 'Omprakash (HeyOmii)';
 const SITE_SOCIAL = 'https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn';
-const FONT_AWESOME_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css';
+const ICONS_CSS = '/icons.css?v=2.9.3';
 
 // ============ ENV CHECKS ============
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -75,7 +75,7 @@ async function ensureAdminUser() {
   }
 }
 
-async function autoPublishLegacyPresets_DISABLED() {
+async function autoPublishPendingPresets() {
   try {
     const { Preset } = require('./models');
     const result = await Preset.updateMany(
@@ -121,11 +121,11 @@ function ensureStructure() {
         {src:'/assets/icons/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any maskable'}
       ],
       shortcuts:[
-        {name:'Upload Preset',short_name:'Upload',description:'Upload a new Lightroom preset',url:'/?action=upload',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png'}]},
-        {name:'Profile',short_name:'Profile',description:'Open your PresetHub profile',url:'/?action=profile',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png'}]},
-        {name:'Messages',short_name:'Messages',description:'Open your messages',url:'/?action=messages',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png'}]},
-        {name:'Notifications',short_name:'Notifications',description:'View your notifications',url:'/?action=notifications',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png'}]},
-        {name:'Logout',short_name:'Logout',description:'Log out of PresetHub',url:'/?action=logout',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png'}]}
+        {name:'Upload Preset',short_name:'Upload',description:'Upload a new Lightroom preset',url:'/?action=upload',icons:[{src:'/assets/icons-pack/png/fa-upload.png',sizes:'64x64',type:'image/png'}]},
+        {name:'Profile',short_name:'Profile',description:'Open your PresetHub profile',url:'/?action=profile',icons:[{src:'/assets/icons-pack/png/fa-user.png',sizes:'64x64',type:'image/png'}]},
+        {name:'Messages',short_name:'Messages',description:'Open your messages',url:'/?action=messages',icons:[{src:'/assets/icons-pack/svg/fa-message.svg',sizes:'64x64',type:'image/svg+xml'}]},
+        {name:'Notifications',short_name:'Notifications',description:'View your notifications',url:'/?action=notifications',icons:[{src:'/assets/icons-pack/png/fa-bell.png',sizes:'64x64',type:'image/png'}]},
+        {name:'Logout',short_name:'Logout',description:'Log out of PresetHub',url:'/?action=logout',icons:[{src:'/assets/icons-pack/png/fa-right-from-bracket.png',sizes:'64x64',type:'image/png'}]}
       ]
     }, null, 2)
   };
@@ -179,14 +179,10 @@ app.use(helmet({
         "'self'",
         "'unsafe-inline'",
         "https://fonts.googleapis.com",
-        "https://cdnjs.cloudflare.com",
-        "https://use.fontawesome.com"
       ],
       fontSrc: [
         "'self'",
         "https://fonts.gstatic.com",
-        "https://cdnjs.cloudflare.com",
-        "https://use.fontawesome.com"
       ],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       connectSrc: [
@@ -390,7 +386,7 @@ function commonSeoHead({ title, description, canonical, image = `${SITE_URL}/ass
   const safeCanonical = escHtml(canonical);
   const safeImage = escHtml(image);
   const safeKeywords = escHtml(keywords);
-  return `<meta name="description" content="${safeDescription}"><meta name="keywords" content="${safeKeywords}"><meta name="author" content="${SITE_CREATOR}"><meta name="creator" content="${SITE_CREATOR}"><meta name="publisher" content="PresetHub"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#d4a373"><meta name="application-name" content="PresetHub"><meta property="og:site_name" content="PresetHub"><meta property="og:type" content="${escHtml(type)}"><meta property="og:locale" content="en_IN"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:url" content="${safeCanonical}"><meta property="og:image" content="${safeImage}"><meta property="og:image:secure_url" content="${safeImage}"><meta property="og:image:type" content="image/png"><meta property="og:image:alt" content="PresetHub preview"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}"><meta name="twitter:image" content="${safeImage}"><link rel="canonical" href="${safeCanonical}"><link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon"><link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png"><link rel="apple-touch-icon" href="/assets/icons/icon-192.png"><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin><link rel="preload" href="${FONT_AWESOME_CSS}" as="style" crossorigin><link rel="stylesheet" href="${FONT_AWESOME_CSS}" onerror="this.onerror=null;this.href='https://use.fontawesome.com/releases/v6.5.1/css/all.css'"><link rel="stylesheet" href="/style.css?v=2.9.1"><link rel="stylesheet" href="/cookie-consent.css?v=2.9.1"><link rel="me" href="${SITE_SOCIAL}">`;
+  return `<meta name="description" content="${safeDescription}"><meta name="keywords" content="${safeKeywords}"><meta name="author" content="${SITE_CREATOR}"><meta name="creator" content="${SITE_CREATOR}"><meta name="publisher" content="PresetHub"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#d4a373"><meta name="application-name" content="PresetHub"><meta property="og:site_name" content="PresetHub"><meta property="og:type" content="${escHtml(type)}"><meta property="og:locale" content="en_IN"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:url" content="${safeCanonical}"><meta property="og:image" content="${safeImage}"><meta property="og:image:secure_url" content="${safeImage}"><meta property="og:image:type" content="image/png"><meta property="og:image:alt" content="PresetHub preview"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}"><meta name="twitter:image" content="${safeImage}"><link rel="canonical" href="${safeCanonical}"><link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon"><link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png"><link rel="apple-touch-icon" href="/assets/icons/icon-192.png"><link rel="stylesheet" href="${ICONS_CSS}"><link rel="stylesheet" href="/style.css?v=2.9.3"><link rel="stylesheet" href="/cookie-consent.css?v=2.9.3"><link rel="me" href="${SITE_SOCIAL}">`;
 }
 
 function adsenseHead() {
@@ -541,7 +537,7 @@ app.use(errorHandler);
   try {
     await connectDB();
     await ensureAdminUser();
-    if (process.env.AUTO_PUBLISH_LEGACY === 'true') await autoPublishLegacyPresets_DISABLED();
+    await autoPublishPendingPresets();
     app.listen(PORT, '0.0.0.0', async () => {
       console.log('');
       console.log('═══════════════════════════════════════');
