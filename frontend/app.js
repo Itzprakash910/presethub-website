@@ -1194,7 +1194,7 @@
 
   function registerSW() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=2.9.1', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
+      navigator.serviceWorker.register('/sw.js?v=2.9.2', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (sessionStorage.getItem('ph-sw-refreshed') === '1') return;
         sessionStorage.setItem('ph-sw-refreshed', '1');
@@ -1243,8 +1243,36 @@
     }
     if (params.get('action') === 'search') $('#searchInput')?.focus();
     if (params.get('action') === 'wishlist') showWishlist();
-    if (params.get('action') === 'upload') openUpload();
-    if (params.get('action') === 'profile') openAccount();
+
+    // PWA launcher shortcuts. Authentication is resolved above before these actions
+    // run, so private shortcuts safely open login when the user is signed out.
+    const shortcutAction = params.get('action');
+    if (shortcutAction === 'upload') {
+      if (state.user) openUpload();
+      else openAuth('login');
+    }
+    if (shortcutAction === 'profile') {
+      if (state.user) openAccount();
+      else openAuth('login');
+    }
+    if (shortcutAction === 'messages') {
+      if (state.user) showMessagesInbox();
+      else openAuth('login');
+    }
+    if (shortcutAction === 'notifications') {
+      if (state.user) showNotifications();
+      else openAuth('login');
+    }
+    if (shortcutAction === 'logout') {
+      if (state.user) {
+        try { await api('/auth/logout', { method: 'POST' }); } catch (_) {}
+        state.token = '';
+        state.user = null;
+        try { localStorage.removeItem('presethub_token'); } catch (_) {}
+        updateAuthUI();
+        toast('Logged out');
+      }
+    }
   }
 
   // ============ EXIT / NAVIGATION GUARD ============

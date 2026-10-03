@@ -1,11 +1,11 @@
-const STATIC_CACHE = 'presethub-static-v10';
+const STATIC_CACHE = 'presethub-static-v11';
 const API_CACHE = 'presethub-api-v5';
 const IMAGE_CACHE = 'presethub-images-v5';
 const CORE = [
-  '/', '/index.html', '/manifest.json', '/style.css?v=2.9.1', '/app.js?v=2.9.1',
+  '/', '/index.html', '/manifest.json', '/style.css?v=2.9.2', '/app.js?v=2.9.2',
   '/privacy.html', '/terms.html', '/about.html', '/blog.html',
   '/creator-program.html', '/faq.html', '/contact.html',
-  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=2.9.1', '/cookie-consent.js?v=2.9.1', '/status.js?v=2.9.1', '/download-app.js?v=2.9.1'
+  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=2.9.2', '/cookie-consent.js?v=2.9.2', '/status.js?v=2.9.2', '/download-app.js?v=2.9.2'
 ];
 
 self.addEventListener('install', e => e.waitUntil(
