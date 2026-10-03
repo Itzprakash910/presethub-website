@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const { GridFSBucket, ObjectId } = mongoose.mongo;
 
 // PresetHub storage is MongoDB-only. Binary files (preset packages, preview
-// posters and profile images) are stored in MongoDB GridFS. Cloudflare R2 is
-// intentionally not used or required.
+// posters and profile images) are stored in MongoDB GridFS.
 const PUBLIC_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
 const BUCKET_NAME = 'presethub_media';
 
