@@ -1,4 +1,4 @@
-/* PresetHub Frontend — production client v2.9.0 */
+/* PresetHub Frontend — production client v2.9.1 */
 (() => {
   'use strict';
 
@@ -637,8 +637,8 @@
       const encodedText = encodeURIComponent(shareText);
       const encodedTitle = encodeURIComponent(`${p.name} — PresetHub`);
       const previewImg = assetUrl(p.previewImage);
-      const qr1 = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodedUrl}`;
-      const qr2 = `https://quickchart.io/qr?size=220&text=${encodedUrl}`;
+      // Proxy QR generation through PresetHub so browser CSP/ad-blockers do not break the image.
+      const qr1 = `${API}/share/qr?url=${encodedUrl}`;
       openModal(`
         <div class="share-panel">
           <div class="share-title"><div><span class="eyebrow">PresetHub</span><h2><i class="fas fa-share-nodes"></i> Share Preset</h2></div><button class="share-close" data-action="close" aria-label="Close"><i class="fas fa-xmark"></i></button></div>
@@ -652,10 +652,11 @@
             <button class="share-btn native" data-share-platform="native" data-url="${encodedUrl}" data-text="${encodedText}" data-title="${encodedTitle}"><i class="fas fa-share"></i><span>More</span></button>
           </div>
           <div class="share-link-box"><label>Short Link</label><div class="share-link-input"><input readonly value="${esc(finalUrl)}" aria-label="Preset share link"><button class="btn btn-primary btn-sm" data-share-copy="${esc(finalUrl)}">Copy</button></div></div>
-          <div class="share-qr"><img class="qr-primary" src="${qr1}" data-qr-fallback="${qr2}" alt="QR code to open ${esc(p.name)}" loading="eager" decoding="async"><p>Scan to open on mobile</p></div>
+          <div class="share-qr"><img class="qr-primary" src="${qr1}" alt="QR code to open ${esc(p.name)}" loading="eager" decoding="async" referrerpolicy="no-referrer"><p>Scan to open on mobile</p><small class="qr-status" hidden>QR image is temporarily unavailable.</small></div>
           <div class="share-footer"><button class="btn btn-outline btn-sm" data-share-copy-image="${esc(previewImg)}" data-share-copy-url="${esc(finalUrl)}"><i class="fas fa-image"></i> Copy Image + Link</button><button class="btn btn-outline btn-sm" data-share-copy="${esc(finalUrl)}"><i class="fas fa-link"></i> Copy Short Link</button></div>
         </div>`);
-      const qr=document.querySelector('.qr-primary'); if(qr) qr.onerror=()=>{qr.onerror=null;qr.src=qr.dataset.qrFallback;};
+      const qr=document.querySelector('.qr-primary');
+       if(qr) qr.onerror=()=>{ qr.onerror=null; const status=qr.parentElement?.querySelector('.qr-status'); if(status) status.hidden=false; };
       trackShare(p.id, 'open_menu');
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -770,7 +771,6 @@
   async function openCreatorMenu(id) {
     try {
       const u = await api(`/users/${encodeURIComponent(id)}`);
-      const own = state.user && String(state.user.id) === String(u.id);
       const profileLink = profileUrl(u);
       openModal(`<div class="creator-action-menu">
         <div class="creator-menu-head">
@@ -778,13 +778,7 @@
           <div><span class="eyebrow">CREATOR</span><h2>${esc(u.name || u.username || 'Creator')}</h2><small>@${esc(u.username || 'creator')}</small></div>
         </div>
         <div class="creator-menu-grid">
-          <button class="menu-action" data-action="profile" data-id="${esc(u.id)}"><i class="fas fa-user"></i><span>View Profile</span></button>
-          <button class="menu-action" data-action="share-profile" data-id="${esc(u.id)}"><i class="fas fa-share-nodes"></i><span>Share Profile link</span></button>
-          <button class="menu-action" data-action="invite-referral" data-id="${esc(u.id)}"><i class="fas fa-user-group"></i><span>Invite / Refer Friends</span></button>
-          <button class="menu-action" data-action="download-profile" data-id="${esc(u.id)}"><i class="fas fa-download"></i><span>Download Presets</span></button>
-          <button class="menu-action" data-action="profile-wishlist" data-id="${esc(u.id)}"><i class="far fa-heart"></i><span>My Wishlist</span></button>
-          ${own ? `<button class="menu-action" data-action="edit-profile"><i class="fas fa-pen"></i><span>Edit Profile</span></button>` : `<button class="menu-action" data-action="follow" data-id="${esc(u.id)}"><i class="fas fa-user-plus"></i><span>Follow / Unfollow</span></button>`}
-          ${!own ? `<button class="menu-action" data-action="chat" data-id="${esc(u.id)}"><i class="fas fa-message"></i><span>Message Creator</span></button>` : ''}
+          <button class="menu-action" data-action="share-profile" data-id="${esc(u.id)}"><i class="fas fa-share-nodes"></i><span>Share Profile Link</span></button>
           <button class="menu-action" data-action="copy-link" data-link="${esc(profileLink)}"><i class="fas fa-link"></i><span>Copy Profile Link</span></button>
         </div>
       </div>`);
@@ -991,7 +985,7 @@
     try {
       const r = await api('/presets/bulk', { method: 'POST', body: fd });
       closeModal();
-      toast(`✅ ${r.created} preset(s) published${r.failed ? `, ${r.failed} failed` : ''}`);
+      toast(`✅ ${r.created} preset(s) ${r.presets?.some(x => x.status === 'pending') ? 'submitted for approval' : 'published'}${r.failed ? `, ${r.failed} failed` : ''}`);
       loadPresets();
       if (r.failed > 0 && r.errors) {
         console.warn('Bulk upload errors:', r.errors);
@@ -1138,14 +1132,14 @@
 
   function openSiteMenu() {
     const u = state.user;
+    // Account actions live in the avatar/dashboard. Keep the global overflow menu
+    // for site-level navigation so the same buttons are not rendered twice.
     const items = u ? [
-      ['fa-user','My Profile','my-profile'], ['fa-chart-line','My Dashboard','account'], ['fa-message','Messages','messages'],
-      ['fa-heart','My Wishlist','wishlist-page'], ['fa-download','My Downloads','downloads'], ['fa-bell','Notifications','notifications'],
-      ['fa-download','Install PresetHub','install'], ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-moon','Theme','theme'], ['fa-gear','Settings','settings'], ['fa-circle-info','About PresetHub','site-about'],
-      ['fa-right-from-bracket','Log out','logout']
+      ['fa-download','Install PresetHub','install'], ['fa-moon','Theme','theme'],
+      ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq']
     ] : [
       ['fa-download','Install PresetHub','install'], ['fa-moon','Theme','theme'], ['fa-right-to-bracket','Log in','login'], ['fa-user-plus','Create Account','signup'], ['fa-message','Contact / Message','site-contact'],
-      ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq'], ['fa-moon','Theme','theme']
+      ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq']
     ];
     openModal(`<div class="site-menu"><div class="site-menu-head"><img class="site-menu-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub P logo"><div><span class="eyebrow">PRESETHUB</span><h2>${u ? esc(u.name || u.username || 'Account') : 'Welcome'}</h2><small>${u ? '@'+esc(u.username || 'user') : 'Explore presets and creators'}</small></div></div><div class="site-menu-grid">${items.map(([icon,label,action])=>`<button class="site-menu-item" data-action="${action}"><i class="fas ${icon}"></i><span>${label}</span></button>`).join('')}</div></div>`);
   }
@@ -1200,7 +1194,7 @@
 
   function registerSW() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=2.9.0', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
+      navigator.serviceWorker.register('/sw.js?v=2.9.1', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (sessionStorage.getItem('ph-sw-refreshed') === '1') return;
         sessionStorage.setItem('ph-sw-refreshed', '1');

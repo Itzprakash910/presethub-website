@@ -1229,3 +1229,11 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
   .message-thread{grid-template-columns:46px minmax(0,1fr) auto;padding:10px}
   .message-thread-avatar{width:46px;height:46px}
 }
+
+/* v2.9.1 UI cleanup: keep PresetHub brand and overflow menu visually separated. */
+.brand-cluster{gap:18px}
+.nav-menu-btn{margin-left:2px}
+.creator-menu-grid,.site-menu-grid{gap:12px}
+@media(max-width:760px){.brand-cluster{gap:13px}.nav-menu-btn{margin-left:1px}}
+
+.share-qr .qr-status{display:block;margin-top:8px;color:var(--muted);font-size:.75rem}
