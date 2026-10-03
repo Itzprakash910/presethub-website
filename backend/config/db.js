@@ -19,11 +19,24 @@ async function connectDB() {
   connectionPromise = mongoose.connect(uri, {
     serverSelectionTimeoutMS: 15000,
     socketTimeoutMS: 45000,
-    maxPoolSize: 10,
+    maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE || 20),
+    minPoolSize: Number(process.env.MONGO_MIN_POOL_SIZE || 2),
+    maxIdleTimeMS: 30000,
     retryWrites: true,
-  }).then(() => {
+    retryReads: true,
+    heartbeatFrequencyMS: 10000,
+  }).then(async () => {
     isConnected = true;
     console.log('✅ MongoDB connected:', mongoose.connection.host);
+    mongoose.connection.on('error', err => console.error('❌ MongoDB runtime error:', err.message));
+    mongoose.connection.on('disconnected', () => {
+      isConnected = false;
+      console.warn('⚠️ MongoDB disconnected; Mongoose will retry.');
+    });
+    mongoose.connection.on('reconnected', () => {
+      isConnected = true;
+      console.log('✅ MongoDB reconnected');
+    });
     return mongoose.connection;
   }).catch(err => {
     connectionPromise = null;
