@@ -33,6 +33,12 @@ services:
       - key: ADMIN_CHAT_ID
         sync: false
       - key: AUTO_APPROVE_UPLOADS
-        value: 'false'
+        value: 'true'
+      - key: VAPID_SUBJECT
+        value: mailto:admin@presethub.site
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
       - key: API_BASE
         value: https://presethub.site/api
