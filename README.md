@@ -1,37 +1,40 @@
-# PresetHub — production-ready MongoDB preset marketplace
+# PresetHub – Lightroom Presets Marketplace
 
-PresetHub is a mobile-first Lightroom preset marketplace with:
-- MongoDB persistence via Mongoose
-- optional Cloudflare R2 object storage (local uploads fallback)
-- signup/login, profiles, follow, wishlist, notifications
-- single and bulk preset upload (up to 20 per batch)
-- preview, views, likes, reviews and comments
-- multi-select + bulk download
-- paid presets with Razorpay verification hooks
-- creator dashboard and admin dashboard
-- SEO-friendly server-rendered preset/profile pages, sitemap and robots.txt
-- PWA install/offline shell
-- Google AdSense publisher integration with Auto Ads support
-- security headers, rate limits, upload validation and centralized errors
+PresetHub is a Node.js + Express + vanilla-JS PWA for discovering, previewing, uploading and downloading Lightroom presets.
 
-## Production setup
-1. Copy `backend/.env.example` to `.env` and fill secrets.
-2. Set `MONGODB_URI`, `JWT_SECRET` (32+ random chars), `CLIENT_URL`.
-3. For durable uploaded files on Render, configure Cloudflare R2 variables.
-4. Set your real AdSense publisher and enable Auto Ads in the AdSense dashboard. Do not invent ad slot IDs.
-5. Deploy the `backend` directory as the service root. `render.yaml` is included.
-6. After DNS/HTTPS is live, submit `https://presethub.site/sitemap.xml` in Google Search Console.
+## Final QA highlights
+- Responsive 4/3/2-column preset cards with stable poster/DP fallbacks.
+- Public preset data uses stale-while-revalidate caching so previously loaded public data remains visible offline.
+- Private preset files are **not** served as static `/uploads` files; downloads go through the authenticated API.
+- Uploads use random filenames and file-size/type limits. Preview images and avatars are public only.
+- Search suggestions use a compact Instagram-style bordered result list with backdrop blur.
+- Selected-download toolbar stays hidden until at least one preset is selected.
+- Creator cards include a three-dot action menu.
+- Share sheet supports QR, short preset link, native share and image+link copy fallback.
+- Preset URLs generate server-side Open Graph/Twitter metadata for social previews.
+- Google AdSense publisher metadata/script and `ads.txt` are included.
+- Telegram bot can run in the same Node process as the website when `BOT_TOKEN` is configured.
+- Admin routes are server-authorized; frontend admin pages are `noindex,nofollow`.
 
-## Important SEO note
-The project creates a dedicated crawlable URL for each approved preset and includes it in the sitemap. This improves discoverability, but no software can guarantee a #1 Google ranking.
+## Security
+Never put JWT secrets, Telegram bot tokens, Razorpay secrets, admin passwords or database files in the public ZIP/repository. Browser-delivered HTML/CSS/JS can never be made secret; security comes from protecting server routes, secrets and private files.
 
+## Local setup
+```bash
+npm install
+cp backend/.env.example backend/.env
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+# put the generated value into JWT_SECRET
+cd backend && npm install
+npm run create-admin
+npm start
+```
 
-## v2.3 final integration
-- Telegram bot now runs inside the same `npm start` web-server process when `BOT_TOKEN` is configured; no second service is required.
-- Upload queues resume on page return/focus/visibility changes using IndexedDB.
-- Profile poster/avatar upload uses the same resumable queue.
-- Free preset downloads can start without login; paid presets require login and successful payment (creator-owned paid presets remain downloadable by the creator).
-- Home hero uses the first preset returned by the weighted Featured ranking, so it is a real high-engagement preset rather than a placeholder illustration.
-- Search results show presets, users, categories and tags.
-- The supplied PresetHub icon/logo/social pack is included under `frontend/assets/*-pack`.
-- No Telegram token, MongoDB URI, Razorpay secret or R2 secret is bundled in the ZIP; configure them as deployment secrets.
+## Production
+Use HTTPS and a persistent volume such as `/data`. Set `DATA_DIR=/data`. Keep one replica when using the included JSON storage. For high concurrency, migrate the data layer to MongoDB/Postgres before scaling horizontally.
+
+## Telegram bot
+The bot starts automatically with the website process when `BOT_TOKEN` is present. Commands are registered through Telegram's command menu. If the token is blank, the website still runs normally.
+
+## AdSense
+The frontend contains the publisher ID `ca-pub-3554311294133493`, the standard AdSense loader and `frontend/ads.txt`. AdSense approval/account settings are still controlled by Google.
