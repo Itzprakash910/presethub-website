@@ -21,6 +21,7 @@ const commentRoutes = require('./routes/comments');
 const chatRoutes = require('./routes/chat');
 const errorHandler = require('./utils/errorHandler');
 const { connectDB } = require('./config/db');
+const { GridFSBucket, ObjectId } = require('mongoose').mongo;
 const { startBot, stopBot, getBotStatus } = require('./bot');
 
 const app = express();
@@ -33,7 +34,6 @@ if (!fs.existsSync(frontendRoot)) {
   projectRoot = __dirname;
   frontendRoot = path.join(projectRoot, 'frontend');
 }
-const uploadsRoot = path.join(process.env.DATA_DIR || path.join(projectRoot, 'uploads'), 'uploads');
 
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
 const SITE_CREATOR = 'Omprakash (HeyOmii)';
@@ -49,7 +49,6 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   console.warn('⚠️  JWT_SECRET short — dev only');
 }
 
-const R2_CONFIGURED = !!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET_NAME && process.env.R2_PUBLIC_URL);
 async function ensureAdminUser() {
   if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) return;
   if (String(process.env.ADMIN_PASSWORD).length < 12) {
@@ -91,12 +90,7 @@ async function autoPublishLegacyPresets_DISABLED() {
 
 // ============ ENSURE FOLDERS ============
 function ensureStructure() {
-  const dirs = [
-    uploadsRoot,
-    path.join(uploadsRoot, 'previews'),
-    path.join(uploadsRoot, 'avatars'),
-    path.join(projectRoot, 'backups')
-  ];
+  const dirs = [path.join(projectRoot, 'backups')];
   for (const dir of dirs) {
     try {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -175,8 +169,6 @@ app.use(helmet({
         "https://*.google.com",
         "https://*.googlesyndication.com",
         "https://*.doubleclick.net",
-        "https://*.r2.cloudflarestorage.com",
-        process.env.R2_PUBLIC_URL || ''
       ].filter(Boolean),
       frameSrc: [
         "'self'",
@@ -241,39 +233,50 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // ============ MONGODB GRIDFS MEDIA ============
-// Uploaded presets, posters and profile images are stored in MongoDB GridFS
-// when Cloudflare R2 is not configured. The media route exposes only an
-// opaque GridFS ObjectId, never a filesystem path or directory listing.
-app.get('/media/:id', async (req, res, next) => {
+// ALL user-uploaded binary data is stored in MongoDB GridFS. There is no
+// Cloudflare R2 dependency and no public filesystem upload directory.
+app.get('/media/:id', require('./middleware/auth').optionalAuth, async (req, res, next) => {
   try {
     const mongoose = require('mongoose');
-    const { ObjectId, GridFSBucket } = mongoose.mongo;
+    const { Preset, Order } = require('./models');
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
     const db = mongoose.connection.db;
     if (!db) return res.status(503).json({ error: 'Database unavailable' });
-    const bucket = new GridFSBucket(db, { bucketName: 'presethub_media' });
-    const id = new ObjectId(req.params.id);
-    const files = await db.collection('presethub_media.files').find({ _id: id }).limit(1).toArray();
-    if (!files.length) return res.status(404).end();
-    const meta = files[0];
+    const id = new mongoose.Types.ObjectId(req.params.id);
+    const bucket = new mongoose.mongo.GridFSBucket(db, { bucketName: 'presethub_media' });
+    const meta = await db.collection('presethub_media.files').findOne({ _id: id });
+    if (!meta) return res.status(404).end();
+
+    const kind = String(meta.metadata?.kind || 'legacy');
+    if (kind === 'preset') {
+      // Preset binaries are never public. Access is checked against MongoDB.
+      const mediaUrl = `${SITE_URL}/media/${id.toString()}`;
+      const preset = await Preset.findOne({
+        $or: [{ fileUrl: mediaUrl }, { fileUrl: { $regex: `${id.toString()}$` } }]
+      }).select('_id authorId price status fileUrl originalName').lean();
+      if (!preset || preset.status !== 'approved') return res.status(404).end();
+      const isOwner = req.user && String(preset.authorId) === String(req.user.id);
+      const isAdmin = req.user?.role === 'admin';
+      if (!isOwner && !isAdmin && Number(preset.price || 0) > 0) {
+        if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+        const paid = await Order.exists({ presetId: preset._id, userId: req.user.id, status: 'paid' });
+        if (!paid) return res.status(403).json({ error: 'Purchase required' });
+      }
+    }
+
     res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Cache-Control', kind === 'preset' ? 'private, no-store' : 'public, max-age=31536000, immutable');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (req.query.download === '1') {
-      const filename = String(meta.filename || 'download').replace(/[\r\n\"\\]/g, '_');
+      const filename = String(meta.filename || 'download').replace(/[\r\n"\\]/g, '_');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     }
     bucket.openDownloadStream(id).on('error', next).pipe(res);
   } catch (err) { next(err); }
 });
 
-// ============ STATIC FILES ============
-// Do not expose server filesystem uploads. New user media is served only through
-// the authenticated application's opaque MongoDB GridFS media URLs.
-// Legacy/demo media: only public preview/avatar folders are exposed. Preset files remain blocked.
-const legacyUploadRoot = path.join(projectRoot, 'uploads');
-app.use('/uploads/previews', express.static(path.join(legacyUploadRoot, 'previews'), { dotfiles: 'deny', immutable: true, maxAge: '7d' }));
-app.use('/uploads/avatars', express.static(path.join(legacyUploadRoot, 'avatars'), { dotfiles: 'deny', immutable: true, maxAge: '7d' }));
+// Legacy filesystem uploads are intentionally not served. Existing old URLs
+// must be migrated to GridFS instead of becoming an accidental public folder.
 app.use('/uploads', (req, res) => res.status(404).end());
 
 // Frontend static files
@@ -472,7 +475,7 @@ app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'API endpoint not found' });
   }
-  // Note: /uploads handled by static middleware; if reaches here, file not found
+  // /uploads is intentionally disabled; user media lives in MongoDB GridFS.
   if (req.path.startsWith('/uploads/')) {
     return res.status(404).end();
   }
@@ -494,8 +497,7 @@ app.use(errorHandler);
       console.log('═══════════════════════════════════════');
       console.log(`🚀 PresetHub listening on port ${PORT}`);
       console.log(`🌐 Site: ${SITE_URL}`);
-      console.log(`📁 Uploads: ${uploadsRoot}`);
-      console.log(`☁️  Storage: ${R2_CONFIGURED ? 'Cloudflare R2' : 'Local (files in uploads/)'}`);
+      console.log('🗄️  Storage: MongoDB GridFS (presethub_media)');
       console.log(`🤖 Telegram bot: ${process.env.BOT_TOKEN ? 'configured' : 'not configured'}`);
       if (process.env.BOT_TOKEN) {
         const bootTelegram = async () => {
