@@ -8,24 +8,24 @@ const router = express.Router();
 
 function validId(id) { return mongoose.Types.ObjectId.isValid(id); }
 function safeMessage(m) {
-  return { id: m._id.toString(), senderId: m.senderId.toString(), recipientId: m.recipientId.toString(), text: m.text, readAt: m.readAt, createdAt: m.createdAt };
+  return { id: m._id.toString(), senderId: m.senderId.toString(), receiverId: m.receiverId.toString(), text: m.text, readAt: m.readAt, createdAt: m.createdAt };
 }
 
 router.get('/unread-count', auth, async (req, res, next) => {
   try {
-    const count = await Message.countDocuments({ recipientId: req.user.id, readAt: null });
+    const count = await Message.countDocuments({ receiverId: req.user.id, readAt: null });
     res.json({ count });
   } catch (e) { next(e); }
 });
 
 router.get('/conversations', auth, async (req, res, next) => {
   try {
-    const messages = await Message.find({ $or: [{ senderId: req.user.id }, { recipientId: req.user.id }] })
+    const messages = await Message.find({ $or: [{ senderId: req.user.id }, { receiverId: req.user.id }] })
       .sort({ createdAt: -1 }).limit(500).lean();
     const partnerIds = [];
     const seen = new Set();
     for (const m of messages) {
-      const id = (m.senderId.toString() === req.user.id ? m.recipientId : m.senderId).toString();
+      const id = (m.senderId.toString() === req.user.id ? m.receiverId : m.senderId).toString();
       if (!seen.has(id)) { seen.add(id); partnerIds.push(id); }
     }
     const users = await User.find({ _id: { $in: partnerIds } }).select('name username avatar').lean();
@@ -33,10 +33,10 @@ router.get('/conversations', auth, async (req, res, next) => {
     const result = [];
     for (const id of partnerIds) {
       const last = messages.find(m => {
-        const a=m.senderId.toString(), b=m.recipientId.toString();
+        const a=m.senderId.toString(), b=m.receiverId.toString();
         return (a===req.user.id && b===id) || (a===id && b===req.user.id);
       });
-      const unread = messages.filter(m => m.senderId.toString()===id && m.recipientId.toString()===req.user.id && !m.readAt).length;
+      const unread = messages.filter(m => m.senderId.toString()===id && m.receiverId.toString()===req.user.id && !m.readAt).length;
       const u=userMap[id];
       if (u) result.push({ user:{id, name:u.name, username:u.username, avatar:u.avatar}, lastMessage:last ? safeMessage(last) : null, unread });
     }
@@ -50,10 +50,10 @@ router.get('/thread/:userId', auth, async (req, res, next) => {
     const other = await User.findById(req.params.userId).select('name username avatar').lean();
     if (!other) return res.status(404).json({ error: 'User not found' });
     const messages = await Message.find({ $or: [
-      { senderId: req.user.id, recipientId: req.params.userId },
-      { senderId: req.params.userId, recipientId: req.user.id }
+      { senderId: req.user.id, receiverId: req.params.userId },
+      { senderId: req.params.userId, receiverId: req.user.id }
     ] }).sort({ createdAt: 1 }).limit(200).lean();
-    await Message.updateMany({ senderId:req.params.userId, recipientId:req.user.id, readAt:null }, { $set:{ readAt:new Date() } });
+    await Message.updateMany({ senderId:req.params.userId, receiverId:req.user.id, readAt:null }, { $set:{ readAt:new Date() } });
     res.json({ user:{id:other._id.toString(),name:other.name,username:other.username,avatar:other.avatar}, messages:messages.map(safeMessage) });
   } catch (e) { next(e); }
 });
@@ -72,7 +72,7 @@ router.post('/send', auth, async (req, res, next) => {
     if (!sender || !recipient) return res.status(404).json({ error:'User not found' });
     const follows = (sender.following || []).some(id => id.toString() === recipientId);
     if (!follows) return res.status(403).json({ error:'Follow this creator first to send a message' });
-    const message = await Message.create({ senderId:req.user.id, recipientId, text });
+    const message = await Message.create({ senderId:req.user.id, receiverId:recipientId, text, expiresAt:new Date(Date.now()+24*60*60*1000) });
     await createNotification(recipientId, 'message', `${sender.name || sender.username || 'Someone'} sent you a message`, `/profile/${req.user.id}`);
     res.status(201).json({ success:true, message:safeMessage(message) });
   } catch (e) { next(e); }
@@ -81,7 +81,7 @@ router.post('/send', auth, async (req, res, next) => {
 router.post('/read/:userId', auth, async (req, res, next) => {
   try {
     if (!validId(req.params.userId)) return res.status(400).json({ error:'Invalid user ID' });
-    await Message.updateMany({ senderId:req.params.userId, recipientId:req.user.id, readAt:null }, { $set:{ readAt:new Date() } });
+    await Message.updateMany({ senderId:req.params.userId, receiverId:req.user.id, readAt:null }, { $set:{ readAt:new Date() } });
     res.json({ success:true });
   } catch (e) { next(e); }
 });
