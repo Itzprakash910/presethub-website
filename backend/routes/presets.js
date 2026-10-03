@@ -145,7 +145,7 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
       previewMap[base] = p;
     }
 
-    const batchId = Date.now();
+    const batchId = String(req.body.batchId || `batch-${Date.now()}-${uuidv4()}`).slice(0, 120);
     const created = [], failed = [];
 
     for (let i = 0; i < presetFiles.length; i++) {
@@ -154,6 +154,13 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
         const fileBase = path.basename(file.originalname, path.extname(file.originalname)).toLowerCase();
         const displayName = path.basename(file.originalname, path.extname(file.originalname))
           .replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100) || 'Untitled Preset';
+        const uploadId = `${batchId}:${i}`;
+
+        const existing = await Preset.findOne({ uploadId }).lean();
+        if (existing) {
+          created.push({ id: existing._id.toString(), name: existing.name, hasPreview: !!existing.previewImage, resumed: true });
+          continue;
+        }
 
         const previewFile = previewMap[fileBase] || previewFiles[i];
 
@@ -178,8 +185,9 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
           fileUrl, previewImage,
           size: file.size,
           originalName: file.originalname,
-          status: 'approved',
-          bulkUploadBatch: batchId
+          status: process.env.AUTO_APPROVE_UPLOADS === 'true' ? 'approved' : 'pending',
+          bulkUploadBatch: batchId,
+          uploadId
         });
 
         created.push({ id: preset._id.toString(), name: preset.name, hasPreview: !!previewImage });
@@ -312,6 +320,17 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
     res.status(201).json({ ...toPublicPreset(preset.toObject()), fileUrl: preset.fileUrl, originalName: preset.originalName });
   } catch (err) {
     console.error('Upload error:', err);
+    if (err?.code === 11000 && req.body?.uploadId) {
+      const existing = await Preset.findOne({ uploadId: String(req.body.uploadId).trim().slice(0, 100) }).lean().catch(() => null);
+      if (existing) {
+        await Promise.all([
+          fileStorageKey ? deleteFromMongo(fileStorageKey).catch(() => {}) : Promise.resolve(),
+          previewStorageKey ? deleteFromMongo(previewStorageKey).catch(() => {}) : Promise.resolve()
+        ]);
+        return res.status(200).json({ ...toPublicPreset(existing), fileUrl: existing.fileUrl, originalName: existing.originalName, resumed: true });
+      }
+    }
+    if (err?.code === 11000) return res.status(409).json({ error: 'This upload was already processed.', code: 'DUPLICATE_KEY' });
     res.status(500).json({ error: 'Upload failed' });
   }
 });
@@ -334,14 +353,22 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
 
   if (!preset.fileUrl) return res.status(404).json({ error: 'Preset file missing' });
 
-  preset.downloads = (preset.downloads || 0) + 1;
-  await preset.save();
+  let counted = true;
   if (req.user) {
-    await Download.create({ userId: req.user.id, presetId: preset._id });
-    if (preset.authorId.toString() !== req.user.id) {
+    const existingDownload = await Download.exists({ userId: req.user.id, presetId: preset._id });
+    counted = !existingDownload;
+    if (counted) {
+      try { await Download.create({ userId: req.user.id, presetId: preset._id }); }
+      catch (e) { if (e?.code === 11000) counted = false; else throw e; }
+    }
+    if (counted && preset.authorId.toString() !== req.user.id) {
       const user = await User.findById(req.user.id).select('name').lean();
       await createNotification(preset.authorId, 'download', `${user?.name || 'Someone'} downloaded your preset "${preset.name}"`, `/preset/${preset._id}`);
     }
+  }
+  if (counted) {
+    const fresh = await Preset.findByIdAndUpdate(preset._id, { $inc: { downloads: 1 } }, { new: true, projection: { downloads: 1 } }).lean();
+    preset.downloads = fresh?.downloads || preset.downloads || 0;
   }
 
   const token = jwt.sign(
@@ -415,8 +442,21 @@ router.post('/bulk-download', auth, async (req, res) => {
     downloads.push({ id: p._id.toString(), name: p.name, url: `${SITE_URL}/api/presets/${p._id}/file?token=${encodeURIComponent(token)}`, filename: safeFilename(p.originalName || `${slugify(p.name)}.xmp`) });
   }
   if (!downloads.length) return res.status(403).json({ error: 'No downloadable presets in selection', skipped });
-  await Promise.all(downloads.map(d => Download.create({ userId: req.user.id, presetId: d.id })));
-  await Preset.updateMany({ _id: { $in: downloads.map(d => d.id) } }, { $inc: { downloads: 1 } });
+  const uniqueDownloads = [];
+  for (const d of downloads) {
+    const exists = await Download.exists({ userId: req.user.id, presetId: d.id });
+    if (!exists) {
+      try {
+        await Download.create({ userId: req.user.id, presetId: d.id });
+        uniqueDownloads.push(d.id);
+      } catch (e) {
+        if (e?.code !== 11000) throw e;
+      }
+    }
+  }
+  if (uniqueDownloads.length) {
+    await Preset.updateMany({ _id: { $in: uniqueDownloads } }, { $inc: { downloads: 1 } });
+  }
   res.json({ success: true, downloads, skipped, count: downloads.length });
 });
 
@@ -485,86 +525,76 @@ router.put('/:id', auth, uploadFields, async (req, res) => {
 router.post('/:id/ad-impression', optionalAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
-  const preset = await Preset.findById(req.params.id);
+  const preset = await Preset.findById(req.params.id).select('authorId adImpressions').lean();
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
   if (req.user && preset.authorId.toString() === req.user.id)
     return res.json({ success: true, message: 'Author view not counted' });
-  preset.adImpressions = (preset.adImpressions || 0) + 1;
-  await preset.save();
-  res.json({ success: true, impressions: preset.adImpressions });
+  const fresh = await Preset.findByIdAndUpdate(req.params.id, { $inc: { adImpressions: 1 } }, { new: true, projection: { adImpressions: 1 } }).lean();
+  res.json({ success: true, impressions: fresh?.adImpressions || 0 });
 });
 
 router.post('/:id/view', optionalAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
-  const preset = await Preset.findById(req.params.id);
+  const preset = await Preset.findById(req.params.id).select('name authorId views').lean();
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
-  preset.views = (preset.views || 0) + 1;
-  await preset.save();
+  const fresh = await Preset.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } }, { new: true, projection: { name: 1, authorId: 1, views: 1 } }).lean();
   const milestones = [50,100,150,200,250,500,1000,2000,5000,10000];
-  if (milestones.includes(preset.views) && preset.authorId) {
-    await createNotification(preset.authorId, 'views-milestone', `🎉 Your preset "${preset.name}" reached ${preset.views} views!`, `/preset/${preset._id}/${slugify(preset.name)}/`);
+  const views = Number(fresh?.views || 0);
+  if (milestones.includes(views) && fresh?.authorId) {
+    await createNotification(fresh.authorId, 'views-milestone', `🎉 Your preset "${fresh.name}" reached ${views} views!`, `/preset/${fresh._id}/${slugify(fresh.name)}/`);
   }
-  res.json({ views: preset.views, milestone: milestones.includes(preset.views) ? preset.views : null });
+  res.json({ views, milestone: milestones.includes(views) ? views : null });
 });
 
-router.post('/:id/like', auth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id))
-    return res.status(400).json({ error: 'Invalid ID' });
-  const preset = await Preset.findById(req.params.id);
-  if (!preset) return res.status(404).json({ error: 'Preset not found' });
+router.post('/:id/like', auth, async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+    const preset = await Preset.findById(req.params.id).select('name authorId likes').lean();
+    if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
-  const idx = preset.likes.findIndex(id => id.toString() === req.user.id);
-  let liked = false;
-
-  if (idx === -1) {
-    preset.likes.push(req.user.id);
-    liked = true;
-    if (preset.authorId.toString() !== req.user.id) {
+    const userId = new mongoose.Types.ObjectId(req.user.id);
+    const alreadyLiked = (preset.likes || []).some(id => id.toString() === req.user.id);
+    const update = alreadyLiked ? { $pull: { likes: userId } } : { $addToSet: { likes: userId } };
+    await Preset.updateOne({ _id: preset._id }, update);
+    const fresh = await Preset.findById(preset._id).select('likes').lean();
+    if (!alreadyLiked && preset.authorId.toString() !== req.user.id) {
       const user = await User.findById(req.user.id).select('name').lean();
       await createNotification(preset.authorId, 'like',
-        `${user?.name || 'Someone'} liked your preset "${preset.name}"`,
-        `/preset/${preset._id}`);
+        `${user?.name || 'Someone'} liked your preset "${preset.name}"`, `/preset/${preset._id}`);
     }
-  } else {
-    preset.likes.splice(idx, 1);
-  }
-  await preset.save();
-  res.json({ likes: preset.likes.length, liked });
+    res.json({ likes: fresh?.likes?.length || 0, liked: !alreadyLiked });
+  } catch (e) { next(e); }
 });
 
 // ===== SHARE =====
-router.post('/:id/share', optionalAuth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id))
-    return res.status(400).json({ error: 'Invalid ID' });
-  const preset = await Preset.findById(req.params.id);
-  if (!preset) return res.status(404).json({ error: 'Preset not found' });
+router.post('/:id/share', optionalAuth, async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+    const preset = await Preset.findById(req.params.id).select('name authorId shares').lean();
+    if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
-  const { platform = 'unknown' } = req.body || {};
-  preset.shares = (preset.shares || 0) + 1;
+    const { platform = 'unknown' } = req.body || {};
+    const safePlatform = String(platform).toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40) || 'unknown';
+    const inc = { shares: 1 };
+    inc[`shareStats.${safePlatform}`] = 1;
+    const fresh = await Preset.findByIdAndUpdate(preset._id, { $inc: inc }, { new: true, projection: { shares: 1 } }).lean();
 
-  // Handle shareStats as Map or Object
-  const statsObj = preset.shareStats instanceof Map ? Object.fromEntries(preset.shareStats) : (preset.shareStats || {});
-  statsObj[platform] = (statsObj[platform] || 0) + 1;
-  preset.shareStats = statsObj;
-  preset.markModified('shareStats');
-  await preset.save();
-
-  if (req.user) {
-    await Share.create({ presetId: preset._id, userId: req.user.id, platform });
-    if (preset.authorId.toString() !== req.user.id) {
-      const user = await User.findById(req.user.id).select('name').lean();
-      await createNotification(preset.authorId, 'share',
-        `${user?.name || 'Someone'} shared "${preset.name}" on ${platform}`,
-        `/preset/${preset._id}`);
+    if (req.user) {
+      await Share.create({ presetId: preset._id, userId: req.user.id, platform: safePlatform });
+      if (preset.authorId.toString() !== req.user.id) {
+        const user = await User.findById(req.user.id).select('name').lean();
+        await createNotification(preset.authorId, 'share',
+          `${user?.name || 'Someone'} shared "${preset.name}" on ${safePlatform}`, `/preset/${preset._id}`);
+      }
     }
-  }
-
-  res.json({
-    success: true, shares: preset.shares, platform,
-    shareUrl: `${SITE_URL}/preset/${preset._id}/${slugify(preset.name)}/`
-  });
+    res.json({
+      success: true, shares: fresh?.shares || 0, platform: safePlatform,
+      shareUrl: `${SITE_URL}/preset/${preset._id}/${slugify(preset.name)}/`
+    });
+  } catch (e) { next(e); }
 });
+
 
 // ===== SHARE STATS =====
 router.get('/:id/share-stats', auth, async (req, res) => {

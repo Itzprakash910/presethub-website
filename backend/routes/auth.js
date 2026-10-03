@@ -25,6 +25,17 @@ const authLimiter = rateLimit({
 });
 router.use(authLimiter);
 
+
+function setAuthCookie(res, token) {
+  res.cookie('ph_auth', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: '/'
+  });
+}
+
 function generateUniqueUsername(email, existing) {
   let base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
   if (base.length < 3) base = base.padEnd(3, '0');
@@ -76,8 +87,9 @@ router.post('/signup', validate(signupValidation), async (req, res) => {
 
     const token = jwt.sign({ id: user._id.toString(), email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
+    setAuthCookie(res, token);
     res.status(201).json({
-      success: true, token,
+      success: true,
       user: {
         id: user._id.toString(), name: user.name, email: user.email,
         role: user.role, username: user.username, avatar: user.avatar,
@@ -86,6 +98,10 @@ router.post('/signup', validate(signupValidation), async (req, res) => {
     });
   } catch (e) {
     console.error('Signup error:', e);
+    if (e?.code === 11000) {
+      const field = Object.keys(e.keyPattern || e.keyValue || {})[0] || 'account';
+      return res.status(409).json({ error: field === 'email' ? 'User already exists' : 'Username already in use', code: 'DUPLICATE_KEY', field });
+    }
     res.status(500).json({ error: 'Signup failed' });
   }
 });
@@ -106,8 +122,9 @@ router.post('/login', validate(loginValidation), async (req, res) => {
 
     const token = jwt.sign({ id: user._id.toString(), email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
+    setAuthCookie(res, token);
     res.json({
-      success: true, token,
+      success: true,
       user: {
         id: user._id.toString(), name: user.name, email: user.email,
         role: user.role, username: user.username, avatar: user.avatar,
@@ -207,10 +224,14 @@ router.post('/reset-password', async (req, res) => {
     res.json({success:true,message:'Password reset successfully'});
   } catch(e){ res.status(500).json({error:'Password reset failed'}); }
 });
-router.post('/logout', auth, (req, res) => res.json({ success: true }));
+router.post('/logout', auth, (req, res) => {
+  res.clearCookie('ph_auth', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' });
+  res.json({ success: true });
+});
 router.post('/refresh-token', auth, async (req, res) => {
   const token = jwt.sign({ id: req.user.id, email: req.user.email, role: req.user.role }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ success: true, token });
+  setAuthCookie(res, token);
+  res.json({ success: true });
 });
 
 module.exports = router;

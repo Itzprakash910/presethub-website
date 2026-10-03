@@ -69,13 +69,17 @@ router.post('/verify', auth, async (req, res) => {
     const order = await Order.findById(razorpay_order_id);
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (order.userId.toString() !== req.user.id) return res.status(403).json({ error: 'Unauthorized' });
+    if (order.status === 'paid') {
+      return res.json({ success: true, message: 'Payment already verified' });
+    }
 
-    order.status = 'paid';
-    order.paymentId = razorpay_payment_id;
-    order.paidAt = new Date();
-    await order.save();
-
-    await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: order.amount } });
+    const result = await Order.updateOne(
+      { _id: order._id, status: { $ne: 'paid' } },
+      { $set: { status: 'paid', paymentId: razorpay_payment_id, paidAt: new Date() } }
+    );
+    if (result.modifiedCount) {
+      await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: order.amount } });
+    }
 
     res.json({ success: true, message: 'Payment verified' });
   } catch (err) {
@@ -95,10 +99,14 @@ router.post('/webhook', express.json({ type: 'application/json' }), async (req, 
     const event = req.body?.event;
     const payment = req.body?.payload?.payment?.entity;
     if (event === 'payment.captured' && payment?.order_id) {
-      await Order.updateOne(
+      const result = await Order.updateOne(
         { _id: payment.order_id, status: { $ne: 'paid' } },
-        { status: 'paid', paymentId: payment.id, paidAt: new Date() }
+        { $set: { status: 'paid', paymentId: payment.id, paidAt: new Date() } }
       );
+      if (result.modifiedCount) {
+        const order = await Order.findById(payment.order_id).select('presetId amount').lean();
+        if (order) await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: order.amount } });
+      }
     }
     res.json({ received: true });
   } catch (err) { console.error('Webhook error:', err); res.status(500).end(); }

@@ -41,12 +41,13 @@ router.post('/:presetId', auth, async (req, res, next) => {
 router.post('/:presetId/:commentId/like', auth, async (req, res, next) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.presetId) || !mongoose.Types.ObjectId.isValid(req.params.commentId)) return res.status(400).json({ error: 'Invalid ID' });
-    const comment = await Comment.findOne({ _id: req.params.commentId, presetId: req.params.presetId });
+    const comment = await Comment.findOne({ _id: req.params.commentId, presetId: req.params.presetId }).select('likes').lean();
     if (!comment) return res.status(404).json({ error: 'Comment not found' });
-    const i = (comment.likes || []).findIndex(id => id.toString() === req.user.id);
-    if (i >= 0) comment.likes.splice(i, 1); else comment.likes.push(req.user.id);
-    await comment.save();
-    res.json({ liked: i < 0, likes: comment.likes.length });
+    const liked = (comment.likes || []).some(id => id.toString() === req.user.id);
+    const uid = new mongoose.Types.ObjectId(req.user.id);
+    await Comment.updateOne({ _id: comment._id }, liked ? { $pull: { likes: uid } } : { $addToSet: { likes: uid } });
+    const fresh = await Comment.findById(comment._id).select('likes').lean();
+    res.json({ liked: !liked, likes: fresh?.likes?.length || 0 });
   } catch (e) { next(e); }
 });
 

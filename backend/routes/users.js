@@ -20,15 +20,11 @@ function cleanSocialLinks(value) {
 
 async function createNotification(userId, type, message, link) {
   if (!mongoose.Types.ObjectId.isValid(userId)) return;
-  const exists = await User.findOne({
-    _id: userId,
-    notifications: { $elemMatch: { message, type, read: false } }
-  }).lean();
-  if (exists) return;
-  await User.updateOne(
-    { _id: userId },
-    { $push: { notifications: { type, message, link: link || '/', read: false, createdAt: new Date() } } }
+  const result = await User.updateOne(
+    { _id: userId, notifications: { $not: { $elemMatch: { message, type, read: false } } } },
+    { $push: { notifications: { $each: [{ type, message, link: link || '/', read: false, createdAt: new Date() }], $slice: -200 } } }
   );
+  return result.modifiedCount > 0;
 }
 
 router.get('/', async (req, res) => {
@@ -144,14 +140,14 @@ router.get('/me/downloads', auth, async (req, res) => {
 router.post('/me/wishlist/:presetId', auth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.presetId))
     return res.status(400).json({ error: 'Invalid ID' });
-  const user = await User.findById(req.user.id);
+  const user = await User.findById(req.user.id).select('wishlist').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const idx = user.wishlist.findIndex(id => id.toString() === req.params.presetId);
-  if (idx === -1) user.wishlist.push(req.params.presetId);
-  else user.wishlist.splice(idx, 1);
-  await user.save();
-  res.json({ wishlist: user.wishlist.map(id => id.toString()) });
+  const exists = (user.wishlist || []).some(id => id.toString() === req.params.presetId);
+  if (exists) await User.updateOne({ _id: user._id }, { $pull: { wishlist: new mongoose.Types.ObjectId(req.params.presetId) } });
+  else await User.updateOne({ _id: user._id }, { $addToSet: { wishlist: new mongoose.Types.ObjectId(req.params.presetId) } });
+  const fresh = await User.findById(user._id).select('wishlist').lean();
+  res.json({ wishlist: (fresh?.wishlist || []).map(id => id.toString()) });
 });
 
 router.get('/me/wishlist/presets', auth, async (req, res) => {
@@ -205,10 +201,19 @@ router.post('/referrals/generate', auth, async (req, res) => {
   if (!user.referral.code) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let code = '';
-    for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+    for (let attempt = 0; attempt < 8; attempt++) {
+      code = '';
+      for (let i = 0; i < 8; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+      if (!(await User.exists({ 'referral.code': code }))) break;
+    }
     user.referral.code = code;
   }
-  await user.save();
+  try {
+    await user.save();
+  } catch (e) {
+    if (e?.code === 11000) return res.status(409).json({ error: 'Could not generate a unique referral code. Please retry.', code: 'DUPLICATE_KEY' });
+    throw e;
+  }
   res.json({ referralCode: user.referral.code });
 });
 
@@ -273,32 +278,36 @@ router.get('/:id/presets', async (req, res) => {
   })));
 });
 
-router.post('/:id/follow', auth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id))
-    return res.status(400).json({ error: 'Invalid ID' });
-  if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot follow self' });
+router.post('/:id/follow', auth, async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+    if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot follow self' });
 
-  const [target, current] = await Promise.all([
-    User.findById(req.params.id),
-    User.findById(req.user.id)
-  ]);
-  if (!target || !current) return res.status(404).json({ error: 'User not found' });
+    const [target, current] = await Promise.all([
+      User.findById(req.params.id).select('name username followers').lean(),
+      User.findById(req.user.id).select('name username following').lean()
+    ]);
+    if (!target || !current) return res.status(404).json({ error: 'User not found' });
 
-  const following = target.followers.some(id => id.toString() === current._id.toString());
+    const following = (target.followers || []).some(id => id.toString() === req.user.id);
+    if (following) {
+      await Promise.all([
+        User.updateOne({ _id: target._id }, { $pull: { followers: current._id } }),
+        User.updateOne({ _id: current._id }, { $pull: { following: target._id } })
+      ]);
+      const fresh = await User.findById(target._id).select('followers').lean();
+      return res.json({ following: false, followersCount: fresh?.followers?.length || 0 });
+    }
 
-  if (following) {
-    target.followers = target.followers.filter(id => id.toString() !== current._id.toString());
-    current.following = current.following.filter(id => id.toString() !== target._id.toString());
-    await Promise.all([target.save(), current.save()]);
-    return res.json({ following: false, followersCount: target.followers.length });
-  }
-
-  target.followers.push(current._id);
-  current.following.push(target._id);
-  await Promise.all([target.save(), current.save()]);
-  await createNotification(target._id, 'follow', `${current.name} started following you!`, `/profile/${current._id}`);
-  res.json({ following: true, followersCount: target.followers.length });
-});
+    await Promise.all([
+      User.updateOne({ _id: target._id }, { $addToSet: { followers: current._id } }),
+      User.updateOne({ _id: current._id }, { $addToSet: { following: target._id } })
+    ]);
+    await createNotification(target._id, 'follow', `${current.name || current.username || 'Someone'} started following you!`, `/profile/${current._id}`);
+    const fresh = await User.findById(target._id).select('followers').lean();
+    res.json({ following: true, followersCount: fresh?.followers?.length || 0 });
+  } catch (e) { next(e); }
+});;
 
 router.get('/:id/earnings', auth, async (req, res) => {
   if (req.user.id !== req.params.id && req.user.role !== 'admin')
