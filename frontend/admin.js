@@ -3,21 +3,29 @@
   const API = location.origin + '/api';
   const $ = s => document.querySelector(s);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let token = localStorage.getItem('presethub_token') || '';
+  let token = '';
   let busy = false;
 
+  function csrfToken() {
+    const match = document.cookie.match(/(?:^|; )ph_csrf=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
   function authHeaders(opts = {}) {
     const h = new Headers(opts.headers || {});
     if (token) h.set('Authorization', `Bearer ${token}`);
+    const method = String(opts.method || 'GET').toUpperCase();
+    if (!['GET','HEAD','OPTIONS'].includes(method)) {
+      const csrf = csrfToken();
+      if (csrf) h.set('X-CSRF-Token', csrf);
+    }
     if (opts.body && !(opts.body instanceof FormData) && !h.has('Content-Type')) h.set('Content-Type', 'application/json');
     return h;
   }
   async function api(path, opts = {}) {
-    const r = await fetch(API + path, { ...opts, headers: authHeaders(opts) });
+    const r = await fetch(API + path, { ...opts, headers: authHeaders(opts), credentials: 'same-origin' });
     const d = await r.json().catch(() => ({}));
     if (r.status === 401 || r.status === 403) {
       token = '';
-      localStorage.removeItem('presethub_token');
       throw new Error(r.status === 403 ? 'Admin access required' : 'Admin login required');
     }
     if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);

@@ -1,11 +1,11 @@
-/* PresetHub Frontend — production client v2.8.0 */
+/* PresetHub Frontend — production client v2.9.0 */
 (() => {
   'use strict';
 
   const API = `${location.origin}/api`;
   const state = {
     user: null,
-    token: localStorage.getItem('presethub_token') || '',
+    token: '',
     presets: [],
     categories: [],
     category: '',
@@ -48,6 +48,11 @@
     if (x.startsWith('uploads/') || /^(previews|presets|avatars)\//i.test(x)) return fallbackPreview;
     return fallbackPreview;
   };
+  function csrfToken() {
+    const match = document.cookie.match(/(?:^|; )ph_csrf=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
   const avatarTag = (src, name, cls='') => {
     const initial = esc(String(name || 'U').trim().charAt(0).toUpperCase() || 'U');
     if (!src) return `<span class="avatar-fallback ${cls}" aria-hidden="true">${initial}</span>`;
@@ -155,6 +160,9 @@
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open(method, `${API}${path}`);
+      xhr.withCredentials = true;
+      const csrf = csrfToken();
+      if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress((e.loaded / e.total) * 100); };
       xhr.onload = () => { let data={}; try{data=JSON.parse(xhr.responseText||'{}')}catch(_){}; if(xhr.status>=200&&xhr.status<300) resolve(data); else { const err=new Error(data.error||`Request failed (${xhr.status})`); err.status=xhr.status; reject(err); } };
@@ -164,7 +172,7 @@
     });
   }
   async function processQueuedUpload(record, announce=true) {
-    if (!state.token || (record.token && record.token !== state.token)) return false;
+    if (!state.user) return false;
     if (state.pendingUploads.has(record.id)) return false;
     state.pendingUploads.set(record.id, true);
     try {
@@ -185,7 +193,7 @@
     }
   }
   async function resumeQueuedUploads() {
-    if (!state.token) return;
+    if (!state.user) return;
     const rows = await queueAll();
     for (const row of rows) {
       if (!row?.files?.length) { await queueDelete(row.id); continue; }
@@ -193,7 +201,7 @@
     }
   }
   async function flushPendingProfile() {
-    if (!state.token) return;
+    if (!state.user) return;
     try {
       const raw = localStorage.getItem('presethub_pending_profile');
       if (!raw) return;
@@ -215,7 +223,11 @@
     }
     const cacheKey = `api:${method}:${path}`;
     try {
-      const res = await fetch(`${API}${path}`, { ...options, headers });
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+        const csrf = csrfToken();
+        if (csrf) headers.set('X-CSRF-Token', csrf);
+      }
+      const res = await fetch(`${API}${path}`, { ...options, headers, credentials: 'same-origin' });
       let data = {};
       try { data = await res.json(); } catch (_) {}
       if (res.status === 401) {
@@ -399,7 +411,7 @@
     if (state.price) params.set('price', state.price);
     if (state.category) params.set('category', state.category);
     const grid = $('#presetGrid');
-    if (grid && reset) grid.innerHTML = '<div class="skeleton" style="height:280px"></div>'.repeat(4);
+    if (grid && reset && !cached) grid.innerHTML = '<div class="skeleton" style="height:280px"></div>'.repeat(4);
     try {
       const data = await api(`/presets?${params.toString()}`);
       state.presets = reset ? data.presets : [...state.presets, ...data.presets];
@@ -426,10 +438,7 @@
     const cached = cacheGet('categories');
     if (cached) { state.categories=cached; const el=$('#categories'); if(el) el.innerHTML=cached.length ? cached.map(([name,count])=>`<button class="category-card" data-action="category" data-category="${esc(name)}"><div class="icon">✦</div><div class="name">${esc(name)}</div><div class="count">${count} presets</div></button>`).join('') : '<p>No categories yet.</p>'; }
     try {
-      const data = await api('/presets?limit=200&sort=newest');
-      const counts = {};
-      (data.presets || []).forEach(p => counts[p.category || 'General'] = (counts[p.category || 'General'] || 0) + 1);
-      const cats = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      const cats = await api('/presets/categories');
       state.categories = cats;
       cacheSet('categories', cats);
       const el = $('#categories');
@@ -856,8 +865,9 @@
     const data = Object.fromEntries(new FormData(form).entries());
     try {
       const r = await api(`/auth/${mode}`, { method: 'POST', body: JSON.stringify(data) });
-      state.token = r.token; state.user = r.user;
-      localStorage.setItem('presethub_token', state.token);
+      state.token = '';
+      localStorage.removeItem('presethub_token');
+      state.user = r.user;
       updateAuthUI(); closeModal();
       toast(mode === 'login' ? 'Logged in' : 'Account created');
       await loadPresets();
@@ -952,7 +962,7 @@
   }
 
   async function submitUpload(form) {
-    if (!state.token) return requireAuth();
+    if (!state.user) return requireAuth();
     const fd = new FormData(form);
     const tags = String(fd.get('tags') || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 10);
     fd.delete('tags'); tags.forEach(t => fd.append('tags', t));
@@ -973,6 +983,10 @@
     const origText = btn.textContent;
     btn.disabled = true;
     btn.textContent = `Uploading ${files.length} preset(s)…`;
+
+    const batchId = form.dataset.batchId || makeId();
+    form.dataset.batchId = batchId;
+    fd.set('batchId', batchId);
 
     try {
       const r = await api('/presets/bulk', { method: 'POST', body: fd });
@@ -1186,7 +1200,7 @@
 
   function registerSW() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=2.8.0', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
+      navigator.serviceWorker.register('/sw.js?v=2.9.0', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (sessionStorage.getItem('ph-sw-refreshed') === '1') return;
         sessionStorage.setItem('ph-sw-refreshed', '1');
@@ -1203,17 +1217,23 @@
     registerSW();
     if (!navigator.onLine) setNetworkState(false, 'Offline — loading your saved PresetHub data');
 
-    if (state.token) {
+    // v2.9 uses an HttpOnly auth cookie. Remove the legacy client-side token if an older
+    // deployment left one behind; it is never read or sent by the new client.
+    try { localStorage.removeItem('presethub_token'); } catch (_) {}
+    const authPromise = (async () => {
       try { const r = await api('/auth/me'); state.user = r.user; } catch (_) {}
-    }
+    })();
+
+
+    // Public catalog starts immediately; authentication no longer blocks first paint.
+    const publicPromise = Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured()]);
+    await Promise.allSettled([authPromise, publicPromise]);
     updateAuthUI();
     if (state.user) {
       refreshUnreadMessages();
       if (state.messageTimer) clearInterval(state.messageTimer);
       state.messageTimer = setInterval(refreshUnreadMessages, 15000);
     }
-
-    await Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured()]);
     await flushPendingProfile();
     await resumeQueuedUploads();
     if (state.syncTimer) clearInterval(state.syncTimer);
@@ -1301,6 +1321,7 @@
     if (action === 'signup') { openAuth('signup'); return; }
     if (action === 'account') { openAccount(); return; }
     if (action === 'logout') {
+      try { await api('/auth/logout', { method: 'POST' }); } catch (_) {}
       state.token = ''; state.user = null;
       localStorage.removeItem('presethub_token');
       updateAuthUI(); closeModal(); toast('Logged out');

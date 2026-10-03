@@ -1,11 +1,11 @@
-const STATIC_CACHE = 'presethub-static-v8';
-const API_CACHE = 'presethub-api-v3';
-const IMAGE_CACHE = 'presethub-images-v3';
+const STATIC_CACHE = 'presethub-static-v9';
+const API_CACHE = 'presethub-api-v4';
+const IMAGE_CACHE = 'presethub-images-v4';
 const CORE = [
   '/', '/index.html', '/manifest.json', '/style.css?v=2.8.0', '/app.js?v=2.8.0',
   '/privacy.html', '/terms.html', '/about.html', '/blog.html',
   '/creator-program.html', '/faq.html', '/contact.html',
-  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/download-app.js?v=2.8.0'
+  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=2.9.0', '/cookie-consent.js?v=2.9.0', '/status.js?v=2.9.0', '/download-app.js?v=2.9.0'
 ];
 
 self.addEventListener('install', e => e.waitUntil(
@@ -42,9 +42,9 @@ self.addEventListener('fetch', e => {
   if (u.pathname.startsWith('/admin')) return;
 
   // Public API responses are cached after the first successful online load.
-  if (u.origin === location.origin && u.pathname.startsWith('/api/') &&
+  if (u.origin === self.location.origin && u.pathname.startsWith('/api/') &&
       !u.pathname.startsWith('/api/auth/') && !u.pathname.startsWith('/api/admin/') &&
-      !u.pathname.startsWith('/api/payments/') && !u.pathname.startsWith('/api/users/me')) {
+      !u.pathname.startsWith('/api/payments/') && !u.pathname.startsWith('/api/users/me') && !u.pathname.startsWith('/api/chat/') && !u.pathname.startsWith('/api/share/me')) {
     e.respondWith(networkFirst(e.request, API_CACHE).catch(() => caches.match('/')));
     return;
   }
