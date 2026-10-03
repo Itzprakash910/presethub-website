@@ -24,6 +24,7 @@
     pendingUploads: new Map(),
     online: navigator.onLine,
     syncTimer: null,
+    messageTimer: null,
   };
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -101,7 +102,7 @@
   };
   function cacheableApi(path) {
     const p = String(path || '');
-    return !p.startsWith('/auth/') && !p.startsWith('/admin/') && !p.startsWith('/payments/') && !p.startsWith('/users/me');
+    return !p.startsWith('/auth/') && !p.startsWith('/admin/') && !p.startsWith('/payments/') && !p.startsWith('/users/me') && !p.startsWith('/chat/');
   }
   function setNetworkState(online, message) {
     state.online = !!online;
@@ -271,9 +272,17 @@
         }
       }
       if (admin) admin.classList.toggle('hidden', state.user.role !== 'admin');
+      const msg = $('#messageButton');
+      if (msg) msg.hidden = false;
+      refreshUnreadMessages();
     } else {
       if (auth) auth.style.display = 'flex';
       if (user) user.style.display = 'none';
+      const msg = $('#messageButton');
+      if (msg) msg.hidden = true;
+      const badge = $('#messageBadge');
+      if (badge) badge.hidden = true;
+      if (state.messageTimer) { clearInterval(state.messageTimer); state.messageTimer = null; }
     }
   }
 
@@ -512,7 +521,7 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
-  // ============ DOWNLOAD (R2 SUPPORT) ============
+  // ============ DOWNLOAD (SECURE MONGODB STORAGE) ============
   function downloadOverlay(name='Preset') {
     const old = document.getElementById('downloadProgress'); if (old) old.remove();
     const el = document.createElement('div'); el.id='downloadProgress'; el.innerHTML=`<div class="download-progress-card"><div class="download-spinner"><i class="fas fa-download"></i></div><div><strong>Preparing download</strong><span>${esc(name)}</span><div class="progress-line"><i></i></div></div></div>`; document.body.appendChild(el);
@@ -1065,14 +1074,80 @@
     } catch (_) { box.hidden = true; }
   }
 
-  // ============ 24H IN-MEMORY CHAT ============
+  // ============ MESSAGES / INBOX ============
+  async function refreshUnreadMessages() {
+    if (!state.user || !state.token) return;
+    try {
+      const r = await api('/chat/unread-count');
+      const badge = $('#messageBadge');
+      if (!badge) return;
+      const count = Number(r.count || 0);
+      badge.textContent = count > 99 ? '99+' : String(count);
+      badge.hidden = count < 1;
+    } catch (_) {}
+  }
+
+  async function showMessagesInbox() {
+    if (!requireAuth()) return;
+    try {
+      const rows = await api('/chat/conversations');
+      const list = (rows || []).map(c => {
+        const name = c.user?.name || c.user?.username || 'User';
+        const last = c.lastMessage?.text || 'No messages yet';
+        const unread = Number(c.unread || 0);
+        return `<button class="message-thread" data-action="chat" data-id="${esc(c.user.id)}">
+          <span class="message-thread-avatar">${c.user.avatar ? imgTag(c.user.avatar, name, '') : esc(name.charAt(0).toUpperCase())}</span>
+          <span class="message-thread-main"><b>${esc(name)}</b><small>@${esc(c.user.username || 'user')}</small><span>${esc(last)}</span></span>
+          <span class="message-thread-meta">${unread ? `<b class="thread-unread">${unread > 99 ? '99+' : unread}</b>` : ''}<small>${c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).toLocaleDateString([], {day:'2-digit',month:'short'}) : ''}</small></span>
+        </button>`;
+      }).join('');
+      openModal(`<div class="messages-inbox"><div class="messages-inbox-head"><div><span class="eyebrow">PRESETHUB MESSAGES</span><h2>Messages</h2><p>Creators और users के साथ आपकी बातचीत यहाँ दिखाई देगी।</p></div><button class="icon-action" data-action="refresh-messages" title="Refresh"><i class="fas fa-rotate"></i></button></div><div class="message-thread-list">${list || `<div class="empty-state"><i class="fas fa-message"></i><h3>अभी कोई message नहीं</h3><p>किसी creator को follow करके message भेजें।</p></div>`}</div></div>`);
+      refreshUnreadMessages();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function openSiteMenu() {
+    const u = state.user;
+    const items = u ? [
+      ['fa-user','My Profile','my-profile'], ['fa-chart-line','My Dashboard','account'], ['fa-message','Messages','messages'],
+      ['fa-heart','My Wishlist','wishlist-page'], ['fa-download','My Downloads','downloads'], ['fa-bell','Notifications','notifications'],
+      ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-gear','Settings / Theme','theme'], ['fa-circle-info','About PresetHub','site-about'],
+      ['fa-right-from-bracket','Log out','logout']
+    ] : [
+      ['fa-right-to-bracket','Log in','login'], ['fa-user-plus','Create Account','signup'], ['fa-message','Contact / Message','site-contact'],
+      ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq'], ['fa-moon','Theme','theme']
+    ];
+    openModal(`<div class="site-menu"><div class="site-menu-head"><img class="site-menu-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub P logo"><div><span class="eyebrow">PRESETHUB</span><h2>${u ? esc(u.name || u.username || 'Account') : 'Welcome'}</h2><small>${u ? '@'+esc(u.username || 'user') : 'Explore presets and creators'}</small></div></div><div class="site-menu-grid">${items.map(([icon,label,action])=>`<button class="site-menu-item" data-action="${action}"><i class="fas ${icon}"></i><span>${label}</span></button>`).join('')}</div></div>`);
+  }
+
+  function requestExit(destination = null) {
+    const box = $('#exitConfirm');
+    if (!box) return false;
+    state.exitDestination = destination;
+    box.hidden = false;
+    document.body.style.overflow = 'hidden';
+    return true;
+  }
+  function cancelExit() {
+    const box=$('#exitConfirm'); if(box) box.hidden=true;
+    state.exitDestination=null;
+    if (!$('#overlay')?.classList.contains('active')) document.body.style.overflow='';
+  }
+  function confirmExit() {
+    const destination=state.exitDestination;
+    cancelExit();
+    allowExitNavigation = true;
+    if (destination) window.location.href=destination;
+  }
+
+  // ============ CHAT / MESSAGING ============
   let chatTimer = null;
   async function showChat(userId){
     if(!requireAuth()) return;
     try{
       const r=await api(`/chat/with/${encodeURIComponent(userId)}`);
       const render=()=>{ const box=$('#chatMessages'); if(!box) return; box.innerHTML=(r.messages||[]).map(m=>`<div class="chat-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('')||'<div class="empty-state">No messages yet.</div>'; box.scrollTop=box.scrollHeight; };
-      openModal(`<div class="chat-panel"><div class="chat-head"><div class="profile-mini">${r.user.avatar?imgTag(r.user.avatar,r.user.name,''):''}<div><b>${esc(r.user.name||r.user.username)}</b><small>@${esc(r.user.username||'user')}</small></div></div></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" data-user="${esc(userId)}" class="chat-form"><input name="text" maxlength="1000" placeholder="Message…" autocomplete="off" required><button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button></form><small class="chat-note">Messages are temporary and automatically expire after 24 hours; they are not stored in MongoDB.</small></div>`);
+      openModal(`<div class="chat-panel"><div class="chat-head"><div class="profile-mini">${r.user.avatar?imgTag(r.user.avatar,r.user.name,''):''}<div><b>${esc(r.user.name||r.user.username)}</b><small>@${esc(r.user.username||'user')}</small></div></div></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" data-user="${esc(userId)}" class="chat-form"><input name="text" maxlength="1000" placeholder="Message…" autocomplete="off" required><button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button></form><small class="chat-note">Messages are stored securely in MongoDB and automatically expire after 24 hours.</small></div>`);
       render();
       if(chatTimer) clearInterval(chatTimer);
       chatTimer=setInterval(async()=>{try{const n=await api(`/chat/with/${encodeURIComponent(userId)}`);r.messages=n.messages||[];render();}catch(_){}} ,2000);
@@ -1104,6 +1179,11 @@
       try { const r = await api('/auth/me'); state.user = r.user; } catch (_) {}
     }
     updateAuthUI();
+    if (state.user) {
+      refreshUnreadMessages();
+      if (state.messageTimer) clearInterval(state.messageTimer);
+      state.messageTimer = setInterval(refreshUnreadMessages, 15000);
+    }
 
     await Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured()]);
     await flushPendingProfile();
@@ -1124,6 +1204,29 @@
     if (params.get('action') === 'upload') openUpload();
     if (params.get('action') === 'profile') openAccount();
   }
+
+  // ============ EXIT / NAVIGATION GUARD ============
+  // Browsers do not allow a custom message when closing a tab/app, so beforeunload
+  // uses the browser's native confirmation. Internal/external link clicks get the
+  // PresetHub branded confirmation modal below.
+  let allowExitNavigation = false;
+  window.addEventListener('beforeunload', e => {
+    if (allowExitNavigation) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+  document.addEventListener('click', e => {
+    const link = e.target.closest('a[href]');
+    if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#') || href.startsWith('javascript:') || link.dataset.noExitConfirm !== undefined) return;
+    let url;
+    try { url = new URL(href, location.href); } catch (_) { return; }
+    if (url.origin !== location.origin) {
+      e.preventDefault();
+      requestExit(url.href);
+    }
+  }, true);
 
   // ============ GLOBAL CLICK HANDLER ============
   document.addEventListener('click', async e => {
@@ -1209,6 +1312,14 @@
     if (action === 'share') { sharePreset(el.dataset.id); return; }
     if (action === 'share-stats') { showShareStats(el.dataset.id); return; }
     if (action === 'creator-menu') { openCreatorMenu(el.dataset.id); return; }
+    if (action === 'site-menu') { openSiteMenu(); return; }
+    if (action === 'messages') { showMessagesInbox(); return; }
+    if (action === 'refresh-messages') { showMessagesInbox(); return; }
+    if (action === 'cancel-exit') { cancelExit(); return; }
+    if (action === 'confirm-exit') { confirmExit(); return; }
+    if (action === 'site-about') { requestExit('/about.html'); return; }
+    if (action === 'site-contact') { requestExit('/contact.html'); return; }
+    if (action === 'site-faq') { requestExit('/faq.html'); return; }
     if (action === 'share-profile') { shareProfile(el.dataset.id); return; }
     if (action === 'invite-referral') {
       const url = `${location.origin}${profileUrl({id: el.dataset.id, username: ''})}`;
@@ -1288,7 +1399,7 @@
     }
     if (e.target.id === 'reviewForm') { e.preventDefault(); submitReview(e.target); return; }
     if (e.target.id === 'commentForm') { e.preventDefault(); submitComment(e.target); return; }
-    if (e.target.id === 'chatForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api(`/chat/with/${e.target.dataset.user}`,{method:'POST',body:JSON.stringify({text:fd.get('text')})}); e.target.reset(); const n=await api(`/chat/with/${e.target.dataset.user}`); const box=$('#chatMessages'); if(box){box.innerHTML=(n.messages||[]).map(m=>`<div class="chat-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('');box.scrollTop=box.scrollHeight;} } catch(err){toast(err.message,'error');} return; }
+    if (e.target.id === 'chatForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api(`/chat/with/${e.target.dataset.user}`,{method:'POST',body:JSON.stringify({text:fd.get('text')})}); e.target.reset(); await refreshUnreadMessages(); const n=await api(`/chat/with/${e.target.dataset.user}`); const box=$('#chatMessages'); if(box){box.innerHTML=(n.messages||[]).map(m=>`<div class="chat-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('');box.scrollTop=box.scrollHeight;} } catch(err){toast(err.message,'error');} return; }
   });
 
   // ============ SEARCH INPUT ============
@@ -1309,7 +1420,7 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
   // ============ EXPORTS ============
-  window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats };
+  window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats, showMessagesInbox, openSiteMenu };
   window.addEventListener('DOMContentLoaded', bootstrap);
   window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); });
   window.addEventListener('focus', () => { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); });

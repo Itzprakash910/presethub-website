@@ -52,7 +52,10 @@
 
 <header>
   <div class="container nav">
-    <a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-logo-1.jpg" alt="PresetHub logo">Preset<span>Hub</span></a>
+    <div class="brand-cluster">
+      <a class="logo" href="/" aria-label="PresetHub home"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub P logo">Preset<span>Hub</span></a>
+      <button class="icon-btn nav-menu-btn" data-action="site-menu" aria-label="Open PresetHub menu" title="PresetHub menu"><i class="fas fa-ellipsis-vertical" aria-hidden="true"></i></button>
+    </div>
     <form class="nav-search" id="searchForm" role="search" autocomplete="off">
       <input id="searchInput" type="search" placeholder="प्रीसेट, क्रिएटर या टैग खोजें…" aria-label="Search presets" maxlength="100">
       <button type="submit"><i class="fas fa-search" aria-hidden="true"></i> खोजें</button>
@@ -68,6 +71,9 @@
       <div id="userSection">
         <a class="btn btn-outline btn-sm hidden" id="adminLink" href="/admin.html">Admin</a>
         <button class="btn btn-accent btn-sm" data-action="upload"><i class="fas fa-upload" aria-hidden="true"></i> अपलोड</button>
+        <button class="icon-btn message-btn" id="messageButton" data-action="messages" title="Messages" aria-label="Messages">
+          <i class="fas fa-message" aria-hidden="true"></i><span class="unread-badge" id="messageBadge" hidden>0</span>
+        </button>
         <button class="user-avatar" id="avatar" data-action="account" title="मेरा अकाउंट" aria-label="My account"></button>
       </div>
     </div>
@@ -134,9 +140,12 @@
 <footer class="site-footer">
   <div class="container footer-grid">
     <div class="footer-brand">
-      <a class="logo" href="/" aria-label="PresetHub home">Preset<span>Hub</span></a>
+      <a class="logo footer-logo" href="/" aria-label="PresetHub home"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub P logo">Preset<span>Hub</span></a>
       <p>Discover, preview, download and share Lightroom presets from creators around the world.</p>
-      <div class="footer-social"><a href="https://www.instagram.com/heyomii_____08/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><i class="fab fa-instagram"></i></a><a href="/contact.html" aria-label="Contact"><i class="fas fa-envelope"></i></a></div>
+      <div class="footer-social" aria-label="PresetHub social and contact links">
+        <a href="https://www.instagram.com/heyomii_____08/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" title="Instagram"><i class="fab fa-instagram"></i></a>
+        <a href="/contact.html" aria-label="Message PresetHub" title="Message PresetHub"><i class="fas fa-message"></i></a>
+      </div>
     </div>
     <div class="footer-col"><h4>Explore</h4><ul><li><a href="/#presets">All Presets</a></li><li><a href="/#categories">Categories</a></li><li><a href="/#creators">Top Creators</a></li><li><a href="/creator-program.html">Creator Program</a></li></ul></div>
     <div class="footer-col"><h4>Help</h4><ul><li><a href="/faq.html">FAQ</a></li><li><a href="/download-guide.html">Download Guide</a></li><li><a href="/lightroom-guide.html">Lightroom Guide</a></li><li><a href="/contact.html">Contact</a></li></ul></div>
@@ -144,6 +153,19 @@
   </div>
   <div class="container footer-bottom"><span>© PresetHub</span><span>Made for photographers <i class="fas fa-camera" aria-hidden="true"></i></span><span>Website by <a href="https://www.instagram.com/heyomii_____08/" target="_blank" rel="noopener noreferrer">@HeyOmii</a></span></div>
 </footer>
+
+<div class="exit-confirm-overlay" id="exitConfirm" hidden role="dialog" aria-modal="true" aria-labelledby="exitConfirmTitle">
+  <div class="exit-confirm-card">
+    <div class="exit-confirm-icon"><i class="fas fa-arrow-right-from-bracket" aria-hidden="true"></i></div>
+    <span class="eyebrow">PRESETHUB</span>
+    <h2 id="exitConfirmTitle">क्या आप बाहर निकलना चाहते हैं?</h2>
+    <p>आप PresetHub से बाहर जा रहे हैं। अगर आप अभी बाहर निकलते हैं तो खुले हुए changes या pending actions बाद में continue हो सकते हैं।</p>
+    <div class="exit-confirm-actions">
+      <button class="btn btn-outline" data-action="cancel-exit">नहीं, यहीं रहें</button>
+      <button class="btn btn-primary" data-action="confirm-exit">हाँ, बाहर जाएँ</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="overlay" role="dialog" aria-modal="true">
   <div class="modal"><button class="close" data-action="close" aria-label="Close">×</button><div id="modalBody"></div></div>
