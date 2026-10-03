@@ -1,45 +1,79 @@
-const STATIC_CACHE = 'presethub-static-v4';
-const PUBLIC_CACHE = 'presethub-public-v4';
-const STATIC_ASSETS = [
-  '/', '/index.html', '/style.css', '/app.js', '/manifest.json',
-  '/assets/icons/icon-192.png', '/assets/icons/icon-512.png',
-  '/assets/icons/favicon-32x32.png', '/assets/images/presethub-logo-1.jpg',
-  '/assets/images/og-image.png'
+const STATIC_CACHE = 'presethub-static-v7';
+const API_CACHE = 'presethub-api-v2';
+const IMAGE_CACHE = 'presethub-images-v2';
+const CORE = [
+  '/', '/index.html', '/manifest.json', '/style.css', '/app.js',
+  '/privacy.html', '/terms.html', '/about.html', '/blog.html',
+  '/creator-program.html', '/faq.html', '/contact.html',
+  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/download-app.js'
 ];
 
-self.addEventListener('install', event => {
-  event.waitUntil(caches.open(STATIC_CACHE).then(async cache => {
-    await Promise.all(STATIC_ASSETS.map(async url => { try { await cache.add(url); } catch (_) {} }));
+self.addEventListener('install', e => e.waitUntil(
+  caches.open(STATIC_CACHE).then(async c => {
+    await Promise.all(CORE.map(url => c.add(url).catch(() => {})));
     return self.skipWaiting();
-  }));
-});
+  })
+));
 
-self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => ![STATIC_CACHE,PUBLIC_CACHE].includes(k)).map(k => caches.delete(k)))).then(() => self.clients.claim()));
-});
+self.addEventListener('activate', e => e.waitUntil(
+  caches.keys().then(keys => Promise.all(
+    keys.filter(k => ![STATIC_CACHE, API_CACHE, IMAGE_CACHE].includes(k)).map(k => caches.delete(k))
+  )).then(() => self.clients.claim())
+));
 
-function isPublicGet(url) {
-  if (url.pathname.startsWith('/api/auth') || url.pathname.startsWith('/api/admin') || url.pathname.startsWith('/api/payments')) return false;
-  if (url.pathname === '/api/presets' || url.pathname.startsWith('/api/presets/search') || url.pathname.startsWith('/api/presets/')) return true;
-  if (url.pathname === '/api/users/top' || /^\/api\/users\/[^/]+$/.test(url.pathname)) return true;
-  if (url.pathname.startsWith('/api/reviews/')) return true;
-  if (url.pathname.startsWith('/uploads/previews/') || url.pathname.startsWith('/uploads/avatars/')) return true;
-  return false;
+async function networkFirst(request, cacheName) {
+  const cache = await caches.open(cacheName);
+  try {
+    const response = await fetch(request);
+    if (response && (response.ok || response.type === 'opaque')) {
+      cache.put(request, response.clone()).catch(() => {});
+    }
+    return response;
+  } catch (_) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    throw _;
+  }
 }
 
-self.addEventListener('fetch', event => {
-  const req = event.request; if (req.method !== 'GET') return;
-  const url = new URL(req.url); if (url.origin !== self.location.origin) return;
-  if (isPublicGet(url)) {
-    event.respondWith(caches.open(PUBLIC_CACHE).then(async cache => {
-      const cached = await cache.match(req);
-      const network = fetch(req).then(res => { if (res.ok) cache.put(req,res.clone()); return res; }).catch(() => cached);
-      return cached || network;
-    }));
+self.addEventListener('fetch', e => {
+  const u = new URL(e.request.url);
+  if (e.request.method !== 'GET') return;
+  if (u.pathname.startsWith('/admin')) return;
+
+  // Public API responses are cached after the first successful online load.
+  if (u.origin === location.origin && u.pathname.startsWith('/api/') &&
+      !u.pathname.startsWith('/api/auth/') && !u.pathname.startsWith('/api/admin/') &&
+      !u.pathname.startsWith('/api/payments/') && !u.pathname.startsWith('/api/users/me')) {
+    e.respondWith(networkFirst(e.request, API_CACHE).catch(() => caches.match('/')));
     return;
   }
-  if (url.pathname.startsWith('/api/')) return;
-  event.respondWith(caches.match(req).then(cached => cached || fetch(req).then(res => { if(res.ok) caches.open(STATIC_CACHE).then(c=>c.put(req,res.clone())); return res; })));
+
+  // Preview/poster assets must remain visible during temporary network loss.
+  if (u.pathname.startsWith('/media/') || u.pathname.startsWith('/uploads/') || /\.(?:png|jpe?g|webp|gif|svg|ico)$/i.test(u.pathname)) {
+    e.respondWith(networkFirst(e.request, IMAGE_CACHE).catch(() => caches.match(e.request)));
+    return;
+  }
+
+  e.respondWith(
+    caches.match(e.request).then(cached => cached || fetch(e.request).then(r => {
+      if (r.ok && r.type === 'basic') caches.open(STATIC_CACHE).then(c => c.put(e.request, r.clone())).catch(() => {});
+      return r;
+    }).catch(() => caches.match('/')))
+  );
 });
 
-self.addEventListener('message', event => { if (event.data?.type === 'SKIP_WAITING') self.skipWaiting(); });
+self.addEventListener('message', e => {
+  if (e.data?.type !== 'CACHE_IMAGES') return;
+  const urls = Array.isArray(e.data.urls) ? e.data.urls.slice(0, 300) : [];
+  e.waitUntil((async () => {
+    const cache = await caches.open(IMAGE_CACHE);
+    await Promise.all(urls.map(async url => {
+      try {
+        const req = new Request(url, { mode: 'no-cors' });
+        const res = await fetch(req);
+        if (res.ok || res.type === 'opaque') await cache.put(req, res.clone());
+      } catch (_) {}
+    }));
+  })());
+});

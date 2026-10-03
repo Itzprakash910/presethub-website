@@ -1,2472 +1,1319 @@
-// ============================================================
-// ===== CONFIGURATION =====
-// ============================================================
-const API_URL = window.location.origin + '/api';
-const APP_VERSION = '2.0.0';
+/* PresetHub Frontend — production client v2.0 */
+(() => {
+  'use strict';
 
-// ============================================================
-// ===== GLOBALS =====
-// ============================================================
-let currentUser = null;
-let token = localStorage.getItem('token');
-let allPresets = [];
-let wishlist = [];
-let currentPage = 1;
-let totalPages = 1;
-let currentFilters = {};
-let isOnline = navigator.onLine;
-let subscriptionData = {};
-let notifications = [];
-let viewedPresets = new Set();
-let isProcessing = false;
-let searchTimeout = null;
-let refreshInterval = null;
-const selectedPresetIds = new Set();
-const PUBLIC_CACHE = 'presethub-public-v3';
+  const API = `${location.origin}/api`;
+  const state = {
+    user: null,
+    token: localStorage.getItem('presethub_token') || '',
+    presets: [],
+    categories: [],
+    category: '',
+    creators: [],
+    page: 1,
+    totalPages: 1,
+    query: '',
+    price: '',
+    sort: 'newest',
+    searchTimer: null,
+    installPrompt: null,
+    currentPreset: null,
+    selected: new Set(),
+    featured: [],
+    cacheTTL: 5 * 60 * 1000,
+    pendingUploads: new Map(),
+    online: navigator.onLine,
+    syncTimer: null,
+  };
 
-// ============================================================
-// ===== DOM REFS =====
-// ============================================================
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const esc = (v = '') => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = v => Number(v || 0) <= 0 ? 'Free' : `₹${Number(v).toFixed(2)}`;
+  const slug = s => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'preset';
+  const presetUrl = p => `/preset/${encodeURIComponent(p.id)}/${slug(p.name)}/`;
+  const profileUrl = u => `/profile/${encodeURIComponent(u.id)}/${slug(u.username || u.name)}/`;
+  const safeExternal = v => /^(https?:\/\/|mailto:)/i.test(String(v || '')) ? String(v) : '#';
+  const fallbackPreview = `${location.origin}/assets/images/og-image.png`;
+  const assetUrl = v => { const x = String(v || '').trim(); if (!x) return fallbackPreview; if (/^https?:\/\//i.test(x)) return x; if (x.startsWith('/')) return `${location.origin}${x}`; if (x.startsWith('uploads/')) return `${location.origin}/${x}`; if (/^media\//i.test(x)) return `${location.origin}/${x}`; if (/^(previews|presets|avatars)\//i.test(x)) return `${location.origin}/uploads/${x}`; return fallbackPreview; };
+  const imgTag = (src, alt, cls='') => `<img class="${cls}" src="${esc(assetUrl(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackPreview}'">`;
 
-let authSection, userSection, userAvatar, loginBtn, signupBtn, logoutBtn;
-let presetGrid, latestGrid, searchInput, searchBtn;
-let filterCategory, filterPrice, filterSort;
-let wishlistBtn, exploreBtn, uploadHeroBtn, featuredDownloadBtn;
-let searchSuggestions, themeToggle, loadMoreBtn, offlineIndicator, userDropdown;
-
-// ============================================================
-// ===== DOM READY – Initialize after DOM load =====
-// ============================================================
-function initDOM() {
-  authSection = $('#authSection');
-  userSection = $('#userSection');
-  userAvatar = $('#userAvatar') || $('#avatar');
-  loginBtn = $('#loginBtn') || document.querySelector('[data-action="login"]');
-  signupBtn = $('#signupBtn') || document.querySelector('[data-action="signup"]');
-  logoutBtn = $('#logoutBtn');
-  presetGrid = $('#presetGrid');
-  latestGrid = $('#latestGrid');
-  searchInput = $('#searchInput');
-  searchBtn = $('#searchBtn');
-  filterCategory = $('#filterCategory');
-  filterPrice = $('#filterPrice');
-  filterSort = $('#filterSort');
-  wishlistBtn = $('#wishlistBtn');
-  exploreBtn = $('#exploreBtn');
-  uploadHeroBtn = $('#uploadHeroBtn');
-  featuredDownloadBtn = $('#featuredDownloadBtn');
-  searchSuggestions = $('#searchSuggestions');
-  themeToggle = $('#themeToggle') || document.querySelector('[data-action="theme"]');
-  loadMoreBtn = $('#loadMoreBtn');
-  offlineIndicator = $('#offlineIndicator');
-  userDropdown = document.getElementById('userDropdown');
-
-  attachEventListeners();
-}
-
-// ============================================================
-// ===== TOAST SYSTEM (Fixed XSS) =====
-// ============================================================
-function showToast(message, type = 'success') {
-  const sanitizedMessage = String(message).replace(/[<>]/g, '');
-  
-  // Container positioning/sizing now lives in style.css (#toastContainer),
-  // including the mobile media query, so it no longer gets overridden by inline CSS.
-  let container = document.getElementById('toastContainer');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'toastContainer';
-    document.body.appendChild(container);
-  }
-  
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.textContent = sanitizedMessage;
-  toast.style.animation = 'slideIn 0.3s ease';
-  toast.style.transition = 'all 0.3s ease';
-  container.appendChild(toast);
-  
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(100px)';
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
-}
-window.showToast = showToast;
-
-// ============================================================
-// ===== ATTACH ALL EVENT LISTENERS =====
-// ============================================================
-function attachEventListeners() {
-function updateBulkToolbar() {
-  const bar = document.getElementById('bulkToolbar');
-  const count = document.getElementById('selectedCount');
-  if (!bar || !count) return;
-  count.textContent = String(selectedPresetIds.size);
-  bar.hidden = selectedPresetIds.size === 0;
-}
-function togglePresetSelection(id, checked) {
-  if (checked) selectedPresetIds.add(id); else selectedPresetIds.delete(id);
-  updateBulkToolbar();
-}
-async function bulkDownloadSelected() {
-  if (!currentUser) return showToast('कृपया पहले लॉग इन करें', 'warning');
-  const ids = [...selectedPresetIds];
-  if (!ids.length) return;
-  for (const id of ids) await downloadPreset(id);
-  selectedPresetIds.clear(); updateBulkToolbar();
-}
-  // --- Auth Buttons ---
-  if (logoutBtn) logoutBtn.addEventListener('click', logout);
-
-  // Theme is handled by the generic data-action handler.
-  // --- User Avatar Dropdown ---
-  if (userAvatar) {
-    userAvatar.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!currentUser) {
-        showToast('कृपया पहले लॉग इन करें', 'warning');
-        return;
-      }
-      if (userDropdown) {
-        userDropdown.style.display = userDropdown.style.display === 'block' ? 'none' : 'block';
-      }
+  // ============ PERSISTENT CLIENT QUEUE / CACHE ============
+  const UPLOAD_DB = 'presethub-client-v2';
+  const UPLOAD_STORE = 'queue';
+  function openUploadDB() {
+    return new Promise((resolve, reject) => {
+      if (!('indexedDB' in window)) return reject(new Error('IndexedDB unavailable'));
+      const req = indexedDB.open(UPLOAD_DB, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(UPLOAD_STORE, { keyPath: 'id' });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('IndexedDB error'));
     });
   }
-
-  // --- Close dropdown on outside click ---
-  document.addEventListener('click', (e) => {
-    if (userDropdown && !e.target.closest('#userSection')) {
-      userDropdown.style.display = 'none';
+  async function queuePut(record) {
+    const db = await openUploadDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(UPLOAD_STORE, 'readwrite');
+      tx.objectStore(UPLOAD_STORE).put(record);
+      tx.oncomplete = () => { db.close(); resolve(record); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    });
+  }
+  async function queueDelete(id) {
+    try {
+      const db = await openUploadDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(UPLOAD_STORE, 'readwrite');
+        tx.objectStore(UPLOAD_STORE).delete(id);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+      });
+    } catch (_) {}
+  }
+  async function queueAll() {
+    try {
+      const db = await openUploadDB();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(UPLOAD_STORE, 'readonly');
+        const req = tx.objectStore(UPLOAD_STORE).getAll();
+        req.onsuccess = () => { db.close(); resolve(req.result || []); };
+        req.onerror = () => { db.close(); reject(req.error); };
+      });
+    } catch (_) { return []; }
+  }
+  // Persistent public-data cache: survives reloads and temporary network loss.
+  const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+  const cacheGet = key => {
+    try {
+      const x = JSON.parse(localStorage.getItem(`ph:${key}`) || 'null');
+      return x && (Date.now() - x.t) < CACHE_MAX_AGE ? x.v : null;
+    } catch (_) { return null; }
+  };
+  const cacheSet = (key, value) => {
+    try {
+      const raw = JSON.stringify({ t: Date.now(), v: value });
+      if (raw.length > 900000) return;
+      localStorage.setItem(`ph:${key}`, raw);
+    } catch (_) {
+      // Storage can be full; remove only old PresetHub public cache entries.
+      try { Object.keys(localStorage).filter(k => k.startsWith('ph:')).slice(0, 5).forEach(k => localStorage.removeItem(k)); } catch (_) {}
     }
-  });
-
-  // --- Wishlist Button ---
-  if (wishlistBtn) {
-    wishlistBtn.addEventListener('click', showWishlist);
+  };
+  function cacheableApi(path) {
+    const p = String(path || '');
+    return !p.startsWith('/auth/') && !p.startsWith('/admin/') && !p.startsWith('/payments/') && !p.startsWith('/users/me');
   }
-
-  // --- Upload Buttons ---
-  // Upload buttons are handled by the generic data-action handler.
-  document.addEventListener('click', e => {
-    const action = e.target.closest('[data-action]')?.dataset.action;
-    if (action === 'bulk-download') bulkDownloadSelected();
-    if (action === 'clear-selection') { selectedPresetIds.clear(); updateBulkToolbar(); document.querySelectorAll('.preset-select').forEach(x => x.checked=false); }
-  });
-
-  // --- Explore Button ---
-  if (exploreBtn) {
-    exploreBtn.addEventListener('click', () => {
-      const section = document.getElementById('presetsSection');
-      if (section) section.scrollIntoView({ behavior: 'smooth' });
+  function setNetworkState(online, message) {
+    state.online = !!online;
+    let bar = $('#networkStatus');
+    if (!bar) { bar = document.createElement('div'); bar.id = 'networkStatus'; bar.setAttribute('role','status'); bar.setAttribute('aria-live','polite'); document.body.appendChild(bar); }
+    bar.className = online ? 'network-status online' : 'network-status offline';
+    bar.innerHTML = `<i class="fas ${online ? 'fa-cloud-arrow-up' : 'fa-wifi'}"></i><span>${esc(message || (online ? 'Back online — syncing latest data…' : 'You are offline — showing saved PresetHub data'))}</span>`;
+    bar.hidden = false;
+    clearTimeout(setNetworkState.timer);
+    if (online) setNetworkState.timer = setTimeout(() => { if (bar) bar.hidden = true; }, 2800);
+  }
+  function refreshPublicData() {
+    if (!navigator.onLine) return;
+    Promise.allSettled([loadPresets(true, true), loadFeatured(true), loadCategories(true), loadCreators(true)])
+      .then(() => setNetworkState(true, 'Latest data synced'));
+  }
+  function uploadProgress(label, percent, icon='fa-cloud-arrow-up') {
+    let host = $('#uploadProgress');
+    if (!host) { host = document.createElement('div'); host.id = 'uploadProgress'; document.body.appendChild(host); }
+    host.innerHTML = `<div class="upload-progress-card"><div class="upload-progress-icon"><i class="fas ${icon}"></i></div><div class="upload-progress-copy"><strong>${esc(label)}</strong><span>${Math.max(0, Math.min(100, Math.round(percent)))}%</span><div class="upload-progress-line"><i style="width:${Math.max(0, Math.min(100, percent))}%"></i></div></div></div>`;
+    host.hidden = false;
+    return host;
+  }
+  function hideUploadProgress(delay=0) { const h=$('#uploadProgress'); if (!h) return; setTimeout(()=>{ if (h) h.hidden=true; }, delay); }
+  function makeId() { return (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`); }
+  function fileFromEntry(entry) { return entry && entry.file instanceof File ? entry.file : null; }
+  function buildFormData(record) {
+    const fd = new FormData();
+    (record.fields || []).forEach(x => fd.append(x.name, x.value));
+    (record.files || []).forEach(x => { const f=fileFromEntry(x); if (f) fd.append(x.field, f, f.name); });
+    return fd;
+  }
+  function xhrUpload(method, path, formData, token, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, `${API}${path}`);
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress((e.loaded / e.total) * 100); };
+      xhr.onload = () => { let data={}; try{data=JSON.parse(xhr.responseText||'{}')}catch(_){}; if(xhr.status>=200&&xhr.status<300) resolve(data); else { const err=new Error(data.error||`Request failed (${xhr.status})`); err.status=xhr.status; reject(err); } };
+      xhr.onerror = () => reject(new Error('Network error. Upload is saved and will resume when you return.'));
+      xhr.onabort = () => reject(new Error('Upload interrupted. It will resume when you return.'));
+      xhr.send(formData);
     });
   }
+  async function processQueuedUpload(record, announce=true) {
+    if (!state.token || (record.token && record.token !== state.token)) return false;
+    if (state.pendingUploads.has(record.id)) return false;
+    state.pendingUploads.set(record.id, true);
+    try {
+      if (announce) uploadProgress(record.kind === 'preset' ? 'Uploading preset' : 'Uploading profile image', 1, record.kind === 'preset' ? 'fa-cloud-arrow-up' : 'fa-image');
+      const r = await xhrUpload(record.method || (record.kind === 'avatar' ? 'PUT' : 'POST'), record.path, buildFormData(record), state.token, p => uploadProgress(record.kind === 'preset' ? `Uploading ${record.name || 'preset'}` : 'Uploading profile image', p, record.kind === 'preset' ? 'fa-cloud-arrow-up' : 'fa-image'));
+      await queueDelete(record.id);
+      state.pendingUploads.delete(record.id);
+      hideUploadProgress(700);
+      if (record.kind === 'preset') { toast('Preset uploaded successfully'); await loadPresets(); await loadFeatured(); }
+      else { state.user = { ...state.user, avatar: r.avatar }; updateAuthUI(); toast('Profile image updated'); }
+      return true;
+    } catch (e) {
+      state.pendingUploads.delete(record.id);
+      if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) await queueDelete(record.id);
+      hideUploadProgress(1200);
+      if (announce) toast(e.message, 'error');
+      return false;
+    }
+  }
+  async function resumeQueuedUploads() {
+    if (!state.token) return;
+    const rows = await queueAll();
+    for (const row of rows) {
+      if (!row?.files?.length) { await queueDelete(row.id); continue; }
+      await processQueuedUpload({ ...row, token: state.token }, true);
+    }
+  }
+  async function flushPendingProfile() {
+    if (!state.token) return;
+    try {
+      const raw = localStorage.getItem('presethub_pending_profile');
+      if (!raw) return;
+      const payload = JSON.parse(raw);
+      await api('/auth/profile', { method: 'PUT', body: JSON.stringify(payload) });
+      localStorage.removeItem('presethub_pending_profile');
+      const r = await api('/auth/me'); state.user = r.user; updateAuthUI();
+      toast('Pending profile update completed');
+    } catch (_) {}
+  }
 
-  // --- Featured Download ---
-  if (featuredDownloadBtn) {
-    featuredDownloadBtn.addEventListener('click', async () => {
-      if (!currentUser) {
-        showToast('कृपया पहले लॉग इन करें', 'warning');
-        return;
+  // ============ API HELPER ============
+  async function api(path, options = {}) {
+    const method = String(options.method || 'GET').toUpperCase();
+    const headers = new Headers(options.headers || {});
+    if (state.token) headers.set('Authorization', `Bearer ${state.token}`);
+    if (!(options.body instanceof FormData) && options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    const cacheKey = `api:${method}:${path}`;
+    try {
+      const res = await fetch(`${API}${path}`, { ...options, headers });
+      let data = {};
+      try { data = await res.json(); } catch (_) {}
+      if (res.status === 401) {
+        state.user = null; state.token = '';
+        localStorage.removeItem('presethub_token');
+        updateAuthUI();
       }
-      try {
-        const res = await fetch(`${API_URL}/presets/featured/download`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'featured-pack.zip';
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          URL.revokeObjectURL(url);
-          showToast('✅ फीचर्ड पैक डाउनलोड हो गया!', 'success');
-        } else {
-          const err = await res.json().catch(() => ({}));
-          showToast(err.error || 'डाउनलोड विफल', 'error');
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      if (method === 'GET' && cacheableApi(path)) cacheSet(cacheKey, data);
+      return data;
+    } catch (err) {
+      if (method === 'GET' && cacheableApi(path)) {
+        const cached = cacheGet(cacheKey);
+        if (cached !== null) {
+          setNetworkState(false, 'Network issue — showing saved data');
+          return cached;
         }
-      } catch (err) {
-        console.error(err);
-        showToast('त्रुटि: ' + err.message, 'error');
       }
-    });
-  }
-
-  // --- Search Button ---
-  if (searchBtn) {
-    searchBtn.addEventListener('click', () => {
-      if (searchSuggestions) searchSuggestions.classList.remove('active'); searchSuggestions.style.display = 'none';
-      currentPage = 1;
-      loadPresets();
-    });
-  }
-
-  // --- Search Input with Debouncing ---
-  if (searchInput) {
-    searchInput.addEventListener('keyup', (e) => {
-      if (e.key === 'Enter') {
-        if (searchSuggestions) searchSuggestions.classList.remove('active'); searchSuggestions.style.display = 'none';
-        currentPage = 1;
-        loadPresets();
-      }
-    });
-
-    searchInput.addEventListener('input', function() {
-      const query = this.value.trim();
-      if (query.length < 2) {
-        if (searchSuggestions) searchSuggestions.classList.remove('active'); searchSuggestions.style.display = 'none';
-        return;
-      }
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(async () => {
-        try {
-          const res = await fetch(`${API_URL}/presets/search?q=${encodeURIComponent(query)}`);
-          if (res.ok) {
-            const suggestions = await res.json();
-            if (searchSuggestions) {
-              if (suggestions.length === 0) {
-                searchSuggestions.classList.remove('active'); searchSuggestions.style.display = 'none';
-                return;
-              }
-              searchSuggestions.innerHTML = suggestions.map(p => `
-                <div class="suggestion-item" data-id="${p.id}" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;">
-                  <strong>${escapeHTML(p.name)}</strong> — ${escapeHTML(p.author)}
-                  <span style="font-size:0.8rem;color:#6b6b6b;">${escapeHTML(p.category)}</span>
-                </div>
-              `).join('');
-              searchSuggestions.classList.add('active'); searchSuggestions.style.display = 'block';
-              searchSuggestions.querySelectorAll('.suggestion-item').forEach(item => {
-                item.addEventListener('click', function(e) {
-                  e.stopPropagation();
-                  const id = this.dataset.id;
-                  if (searchInput) searchInput.value = '';
-                  if (searchSuggestions) searchSuggestions.classList.remove('active'); searchSuggestions.style.display = 'none';
-                  openPresetModal(id);
-                });
-              });
-            }
-          }
-        } catch (err) { console.error('Search error:', err); }
-      }, 300);
-    });
-  }
-
-  // --- Close search suggestions ---
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.nav-search')) {
-      if (searchSuggestions) searchSuggestions.classList.remove('active'); searchSuggestions.style.display = 'none';
+      if (!navigator.onLine) setNetworkState(false, 'Offline — saved data is available');
+      throw err;
     }
-  });
-
-  // --- Filters ---
-  if (filterCategory) {
-    filterCategory.addEventListener('change', () => { currentPage = 1; loadPresets(); });
-  }
-  if (filterPrice) {
-    filterPrice.addEventListener('change', () => { currentPage = 1; loadPresets(); });
-  }
-  if (filterSort) {
-    filterSort.addEventListener('change', () => { currentPage = 1; loadPresets(); });
   }
 
-  // --- Category Cards ---
-  document.querySelectorAll('.category-card').forEach(card => {
-    card.addEventListener('click', function() {
-      const cat = this.querySelector('.name')?.textContent;
-      if (cat && filterCategory) {
-        filterCategory.value = cat;
-        currentPage = 1;
-        loadPresets();
-        const section = document.getElementById('presetsSection');
-        if (section) section.scrollIntoView({ behavior: 'smooth' });
-      }
-    });
-  });
-
-  // --- Load More Button ---
-  if (loadMoreBtn) {
-    loadMoreBtn.addEventListener('click', () => {
-      if (!isProcessing) {
-        loadPresets(currentPage + 1, true);
-      }
-    });
+  // ============ TOAST ============
+  function toast(message, type = 'success', duration = 4200) {
+    const box = $('#toastBox') || (() => {
+      const x = document.createElement('div'); x.id = 'toastBox'; document.body.appendChild(x); return x;
+    })();
+    const el = document.createElement('div');
+    el.className = `toast toast-${esc(type)}`;
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    const icons = { success:'fa-circle-check', error:'fa-circle-exclamation', info:'fa-circle-info', warning:'fa-triangle-exclamation' };
+    el.innerHTML = `<i class="fas ${icons[type] || icons.info}"></i><span>${esc(message)}</span><button type="button" aria-label="Close">×</button>`;
+    el.querySelector('button')?.addEventListener('click', () => el.remove());
+    box.appendChild(el);
+    setTimeout(() => el.remove(), duration);
   }
 
-  // --- Notification Button ---
-  const notificationBtn = document.getElementById('notificationBtn');
-  if (notificationBtn) {
-    notificationBtn.addEventListener('click', openNotifications);
+  // ============ MODAL ============
+  function openModal(html) {
+    const overlay = $('#overlay'), body = $('#modalBody');
+    if (!overlay || !body) return;
+    body.innerHTML = html;
+    overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal() {
+    if(chatTimer){clearInterval(chatTimer);chatTimer=null;}
+    const overlay = $('#overlay');
+    if (overlay) overlay.classList.remove('active');
+    document.body.style.overflow = '';
   }
 
-  // --- Exit Button ---
-  const exitBtn = document.getElementById('exitBtn');
-  if (exitBtn) {
-    exitBtn.addEventListener('click', exitSite);
-  }
-
-  // --- Preset Grid Event Delegation ---
-  if (presetGrid) {
-    presetGrid.addEventListener('click', function(e) {
-      const card = e.target.closest('.preset-card');
-      if (!card) return;
-      const id = card.dataset.id;
-      const previewBtn = e.target.closest('.preview-btn');
-      if (previewBtn) {
-        e.stopPropagation();
-        openPresetModal(id);
-        return;
-      }
-      const wishBtn = e.target.closest('.wishlist-toggle');
-      if (wishBtn) {
-        e.stopPropagation();
-        toggleWishlist(id);
-        return;
-      }
-      if (!e.target.closest('.author')) {
-        openPresetModal(id);
-      }
-    });
-  }
-
-  // --- Latest Presets Grid ---
-  if (latestGrid) {
-    latestGrid.addEventListener('click', function(e) {
-      const card = e.target.closest('.preset-card');
-      if (!card) return;
-      const id = card.dataset.id;
-      const previewBtn = e.target.closest('.preview-btn');
-      if (previewBtn) {
-        e.stopPropagation();
-        openPresetModal(id);
-        return;
-      }
-      const wishBtn = e.target.closest('.wishlist-toggle');
-      if (wishBtn) {
-        e.stopPropagation();
-        toggleWishlist(id);
-        return;
-      }
-      if (!e.target.closest('.author')) {
-        openPresetModal(id);
-      }
-    });
-  }
-
-  // --- Online/Offline ---
-  window.addEventListener('online', async () => {
-    isOnline = true;
-    if (offlineIndicator) offlineIndicator.style.display = 'none';
-    showToast('🔄 Connection restored! Syncing data...', 'info');
-    await syncOfflineQueue();
-    if ('serviceWorker' in navigator) {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        if ('SyncManager' in window) {
-          await registration.sync.register('presethub-sync');
-        }
-      } catch (err) {
-        console.warn('Sync registration failed:', err);
-      }
-    }
-  });
-
-  window.addEventListener('offline', () => {
-    isOnline = false;
-    if (offlineIndicator) offlineIndicator.style.display = 'inline-block';
-    showToast('📴 You are offline. Actions will be queued.', 'warning');
-  });
-}
-
-// ============================================================
-// ===== ESCAPE HTML (XSS Prevention) =====
-// ============================================================
-function escapeHTML(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-// ============================================================
-// ===== OFFLINE QUEUE UTILITY =====
-// ============================================================
-function openOfflineDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('PresetHubOffline', 2);
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-      if (!db.objectStoreNames.contains('queue')) {
-        db.createObjectStore('queue', { keyPath: 'id', autoIncrement: true });
-      }
-      if (!db.objectStoreNames.contains('cache')) {
-        db.createObjectStore('cache', { keyPath: 'url' });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function addToQueue(action, url, options = {}) {
-  try {
-    const db = await openOfflineDB();
-    const tx = db.transaction('queue', 'readwrite');
-    const store = tx.objectStore('queue');
-    const item = {
-      action: action,
-      url: url,
-      method: options.method || 'POST',
-      headers: options.headers || {},
-      body: options.body || null,
-      timestamp: Date.now(),
-      retries: 0
-    };
-    await new Promise((resolve, reject) => {
-      const request = store.add(item);
-      request.onsuccess = resolve;
-      request.onerror = reject;
-    });
-    console.log(`📦 Added to queue: ${action} (${url})`);
-    
-    if ('serviceWorker' in navigator && 'SyncManager' in window) {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        await registration.sync.register('presethub-sync');
-        console.log('🔄 Sync registered!');
-      } catch (err) {
-        console.warn('Background Sync not available, will retry on next load.', err);
-      }
-    }
-    
-    showToast(`⏳ "${action}" saved offline. Will sync when online.`, 'warning');
+  function requireAuth() {
+    if (!state.user) { openAuth('login'); return false; }
     return true;
-  } catch (err) {
-    console.error('❌ Failed to add to queue:', err);
-    showToast('❌ Failed to save offline. Please try again later.', 'error');
-    return false;
   }
-}
 
-async function syncOfflineQueue() {
-  try {
-    const db = await openOfflineDB();
-    const tx = db.transaction('queue', 'readonly');
-    const store = tx.objectStore('queue');
-    const items = await new Promise((resolve, reject) => {
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    
-    if (items.length === 0) return;
-    
-    showToast(`🔄 Syncing ${items.length} offline actions...`, 'info');
-    
-    for (const item of items) {
-      try {
-        const options = {
-          method: item.method,
-          headers: item.headers || {},
-          body: item.body
-        };
-        if (item.headers && item.headers['Content-Type'] === 'application/json' && item.body) {
-          options.body = JSON.parse(item.body);
+  function updateAuthUI() {
+    const auth = $('#authSection'), user = $('#userSection'), avatar = $('#avatar'), admin = $('#adminLink');
+    if (state.user) {
+      if (auth) auth.style.display = 'none';
+      if (user) user.style.display = 'flex';
+      if (avatar) {
+        avatar.textContent = (state.user.name || state.user.username || 'U').trim().charAt(0).toUpperCase();
+        if (state.user.avatar) {
+          avatar.style.backgroundImage = `url("${assetUrl(state.user.avatar)}")`;
+          avatar.style.backgroundSize = 'cover';
+          avatar.textContent = '';
         }
-        const res = await fetch(item.url, options);
-        if (res.ok) {
-          const deleteTx = db.transaction('queue', 'readwrite');
-          const deleteStore = deleteTx.objectStore('queue');
-          await new Promise((resolve, reject) => {
-            const request = deleteStore.delete(item.id);
-            request.onsuccess = resolve;
-            request.onerror = reject;
-          });
-          showToast(`✅ "${item.action}" synced successfully!`, 'success');
-        } else {
-          item.retries = (item.retries || 0) + 1;
-          if (item.retries > 3) {
-            showToast(`❌ Failed to sync "${item.action}" after 3 attempts`, 'error');
-          }
-        }
-      } catch (err) {
-        console.error('Sync failed for item:', item, err);
       }
-    }
-    
-    await loadPresets();
-    await fetchWishlist();
-    await fetchNotifications();
-    
-  } catch (err) {
-    console.error('Sync error:', err);
-  }
-}
-
-// ============================================================
-// ===== SERVICE WORKER MESSAGE HANDLER =====
-// ============================================================
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (event.data.type === 'SYNC_SUCCESS') {
-      showToast(`✅ "${event.data.action}" synced successfully!`, 'success');
-      if (event.data.action === 'review') {
-        loadPresets();
-      } else if (event.data.action === 'wishlist') {
-        fetchWishlist();
-        loadPresets();
-      } else if (event.data.action === 'upload') {
-        loadPresets();
-        loadLatestPresets();
-        loadTopCreators();
-      } else if (event.data.action === 'download' || event.data.action === 'follow' || event.data.action === 'order') {
-        fetchUserProfile();
-      }
-    }
-  });
-}
-
-// ============================================================
-// ===== DARK MODE =====
-// ============================================================
-const currentTheme = localStorage.getItem('theme') || 'light';
-if (currentTheme === 'dark') {
-  document.body.classList.add('dark');
-}
-
-// ============================================================
-// ===== AUTH =====
-// ============================================================
-if (token) {
-  fetchUserProfile();
-}
-
-async function fetchUserProfile() {
-  try {
-    const res = await fetch(`${API_URL}/auth/me`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      currentUser = data.user;
-      showLoggedInUI(data.user);
+      if (admin) admin.classList.toggle('hidden', state.user.role !== 'admin');
     } else {
-      logout();
-    }
-  } catch (err) {
-    console.error('Profile fetch error', err);
-    if (err.message.includes('401')) {
-      logout();
+      if (auth) auth.style.display = 'flex';
+      if (user) user.style.display = 'none';
     }
   }
-}
 
-function showLoggedInUI(user) {
-  if (authSection) authSection.style.display = 'none';
-  if (userSection) userSection.style.display = 'flex';
-  if (userAvatar) {
-    userAvatar.textContent = user.name.charAt(0).toUpperCase();
-    if (user.avatar) {
-      userAvatar.style.backgroundImage = `url(${user.avatar}${user.avatar.includes('?')?'&':'?'}v=${Date.now()})`;
-      userAvatar.style.backgroundSize = 'cover';
-      userAvatar.textContent = '';
-    }
-  }
-  fetchWishlist();
-  fetchSubscription();
-  fetchNotifications();
-  if (userDropdown) userDropdown.style.display = 'none';
-  requestNotificationPermission();
-}
-
-function logout() {
-  localStorage.removeItem('token');
-  token = null;
-  currentUser = null;
-  if (authSection) authSection.style.display = 'flex';
-  if (userSection) userSection.style.display = 'none';
-  wishlist = [];
-  notifications = [];
-  subscriptionData = {};
-  updateWishlistUI();
-  if (userDropdown) userDropdown.style.display = 'none';
-  showToast('लॉगआउट हो गया', 'info');
-}
-window.logout = logout;
-
-// ============================================================
-// ===== MY PRESETS =====
-// ============================================================
-window.showMyPresets = async function() {
-  if (!currentUser) {
-    showToast('कृपया पहले लॉग इन करें', 'warning');
-    return;
-  }
-  try {
-    const res = await fetch(`${API_URL}/users/${currentUser.id}/presets`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('Failed to load presets');
-    const presets = await res.json();
-    if (!presets.length) {
-      showToast('आपने अभी तक कोई प्रीसेट अपलोड नहीं किया।', 'info');
-      return;
-    }
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:600px;">
-        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
-        <h2><i class="fas fa-cubes"></i> मेरे प्रीसेट</h2>
-        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
-          ${presets.map(p => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
-              <div>
-                <strong>${escapeHTML(p.name)}</strong> – ${escapeHTML(p.category)}
-                <span style="font-size:0.8rem;color:#888;">(${escapeHTML(p.status)})</span>
-              </div>
-              <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-outline" data-my-open="${p.id}"><i class="fas fa-eye"></i></button><button class="btn btn-sm btn-outline" data-my-edit="${p.id}"><i class="fas fa-pen"></i></button><button class="btn btn-sm btn-outline" data-my-delete="${p.id}"><i class="fas fa-trash"></i></button></div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    modal.querySelector('.close').addEventListener('click', () => modal.remove());
-    modal.addEventListener('click', async e=>{
-      const open=e.target.closest('[data-my-open]'); if(open){modal.remove();window.openPresetModal(open.dataset.myOpen);return;}
-      const edit=e.target.closest('[data-my-edit]'); if(edit){openEditPresetModal(edit.dataset.myEdit);return;}
-      const del=e.target.closest('[data-my-delete]'); if(del){if(!confirm('Delete this preset?'))return;const r=await fetch(`${API_URL}/presets/${encodeURIComponent(del.dataset.myDelete)}`,{method:'DELETE',headers:{Authorization:`Bearer ${token}`}});if(r.ok){showToast('Preset deleted','success');modal.remove();window.showMyPresets();loadPresets();loadLatestPresets();}else{const d=await r.json().catch(()=>({}));showToast(d.error||'Delete failed','error')}}
-    });
-  } catch (err) {
-    console.error(err);
-    showToast('प्रीसेट लोड नहीं हुए', 'error');
-  }
-};
-
-async function openEditPresetModal(id){
-  const r=await fetch(`${API_URL}/presets/${encodeURIComponent(id)}`);if(!r.ok)return showToast('Preset not found','error');const p=await r.json();
-  const m=document.createElement('div');m.className='modal-overlay active';m.innerHTML=`<div class="modal" style="max-width:500px"><button class="close">×</button><h2><i class="fas fa-pen"></i> Edit preset</h2><form id="editPresetForm"><div class="form-group"><label>Name</label><input id="epName" value="${escapeHTML(p.name)}" required></div><div class="form-group"><label>Description</label><textarea id="epDesc">${escapeHTML(p.description||'')}</textarea></div><div class="form-group"><label>Category</label><input id="epCategory" value="${escapeHTML(p.category||'General')}"></div><div class="form-group"><label>Tags</label><input id="epTags" value="${escapeHTML((p.tags||[]).join(', '))}"></div><button class="btn btn-primary" type="submit">Save changes</button></form></div>`;document.body.appendChild(m);m.querySelector('.close').onclick=()=>m.remove();m.querySelector('form').onsubmit=async e=>{e.preventDefault();const rr=await fetch(`${API_URL}/presets/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({name:m.querySelector('#epName').value,description:m.querySelector('#epDesc').value,category:m.querySelector('#epCategory').value,tags:m.querySelector('#epTags').value})});const d=await rr.json().catch(()=>({}));if(rr.ok){showToast('Preset updated','success');m.remove();}else showToast(d.error||'Update failed','error')};
-}
-window.openEditPresetModal=openEditPresetModal;
-
-// ============================================================
-// ===== MY DOWNLOADS =====
-// ============================================================
-window.showMyDownloads = async function() {
-  if (!currentUser) {
-    showToast('कृपया पहले लॉग इन करें', 'warning');
-    return;
-  }
-  try {
-    const res = await fetch(`${API_URL}/users/me/downloads`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('Failed to load downloads');
-    const presets = await res.json();
-    if (!presets.length) {
-      showToast('आपने अभी तक कोई प्रीसेट डाउनलोड नहीं किया।', 'info');
-      return;
-    }
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:600px;">
-        <button class="close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
-        <h2><i class="fas fa-download"></i> मेरे डाउनलोड</h2>
-        <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
-          ${presets.map(p => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
-              <div>
-                <strong>${escapeHTML(p.name)}</strong> – ${escapeHTML(p.author)}
-              </div>
-              <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    modal.querySelector('.close').addEventListener('click', () => modal.remove());
-  } catch (err) {
-    console.error(err);
-    showToast('डाउनलोड लोड नहीं हुए', 'error');
-  }
-};
-
-// ============================================================
-// ===== AUTH MODAL =====
-// ============================================================
-function openAuthModal(mode) {
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay active';
-  const urlParams = new URLSearchParams(window.location.search);
-  const ref = urlParams.get('ref') || '';
-  const refInput = ref ? `<input type="hidden" id="authRef" value="${escapeHTML(ref)}" />` : '';
-  modal.innerHTML = `
-    <div class="modal" style="max-width:450px;">
-      <button class="close">&times;</button>
-      <h2>${mode === 'login' ? 'लॉग इन' : 'साइन अप'}</h2>
-      <form id="authForm">
-        ${mode === 'signup' ? `<div class="form-group"><input type="text" id="authName" placeholder="आपका नाम" required /></div>` : ''}
-        <div class="form-group"><input type="email" id="authEmail" placeholder="ईमेल" required /></div>
-        <div class="form-group"><input type="password" id="authPassword" placeholder="पासवर्ड (6+ अक्षर)" required minlength="6" /></div>
-        ${refInput}
-        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">
-          ${mode === 'login' ? '<i class="fas fa-sign-in-alt"></i> लॉग इन करें' : '<i class="fas fa-user-plus"></i> साइन अप करें'}
-        </button>
-      </form>
-    </div>
-  `;
-  document.body.appendChild(modal);
-
-  modal.querySelector('.close').addEventListener('click', () => modal.remove());
-
-  modal.querySelector('#authForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = document.getElementById('authEmail').value;
-    const password = document.getElementById('authPassword').value;
-    const name = document.getElementById('authName')?.value;
-    const refCode = document.getElementById('authRef')?.value || '';
-    let url = `${API_URL}/auth/${mode}`;
-    if (mode === 'signup' && refCode) {
-      url += `?ref=${encodeURIComponent(refCode)}`;
-    }
-    const payload = { email, password };
-    if (mode === 'signup') payload.name = name;
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (res.ok) {
-        localStorage.setItem('token', data.token);
-        token = data.token;
-        currentUser = data.user;
-        showLoggedInUI(data.user);
-        modal.remove();
-        loadPresets();
-        loadLatestPresets();
-        loadTopCreators();
-        showToast(mode === 'login' ? 'स्वागत है! 🎉' : 'अकाउंट बन गया! 🎉', 'success');
-        if (window.history && window.history.replaceState) {
-          const newUrl = window.location.pathname;
-          window.history.replaceState({}, document.title, newUrl);
-        }
-      } else {
-        showToast(data.error || 'कुछ गलत हो गया', 'error');
-      }
-    } catch (err) {
-      showToast('सर्वर से कनेक्ट नहीं हो पाया', 'error');
-    }
-  });
-}
-window.openAuthModal = openAuthModal;
-
-// ============================================================
-// ===== WISHLIST =====
-// ============================================================
-async function fetchWishlist() {
-  if (!currentUser) return;
-  try {
-    const res = await fetch(`${API_URL}/auth/me/wishlist`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      wishlist = data.wishlist || [];
-      updateWishlistUI();
-    }
-  } catch (err) { console.error(err); }
-}
-
-async function toggleWishlist(presetId) {
-  if (!currentUser) {
-    showToast('कृपया पहले लॉग इन करें', 'warning');
-    return;
-  }
-  const url = `${API_URL}/auth/me/wishlist/${presetId}`;
-  const options = {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` }
-  };
-  try {
-    if (!navigator.onLine) {
-      await addToQueue('wishlist', url, options);
-      const index = wishlist.indexOf(presetId);
-      if (index === -1) wishlist.push(presetId);
-      else wishlist.splice(index, 1);
-      updateWishlistUI();
-      renderPresets(allPresets);
-      loadLatestPresets();
-      return;
-    }
-    const res = await fetch(url, options);
-    if (res.ok) {
-      const data = await res.json();
-      wishlist = data.wishlist || [];
-      updateWishlistUI();
-      renderPresets(allPresets);
-      loadLatestPresets();
-      showToast(data.isInWishlist ? '❤️ पसंद में जोड़ा' : '💔 पसंद से हटाया', 'info');
-    } else {
-      showToast('❌ कृपया बाद में प्रयास करें', 'error');
-    }
-  } catch (err) {
-    await addToQueue('wishlist', url, options);
-  }
-}
-window.toggleWishlist = toggleWishlist;
-
-function updateWishlistUI() {
-  if (!wishlistBtn) return;
-  const count = wishlist.length;
-  wishlistBtn.innerHTML = `<i class="fa${count > 0 ? 's' : 'r'} fa-heart"></i>${count > 0 ? count : ''}`;
-}
-
-// ============================================================
-// ===== WISHLIST MODAL =====
-// ============================================================
-async function showWishlist() {
-  if (!currentUser) {
-    showToast('कृपया पहले लॉग इन करें', 'warning');
-    return;
-  }
-  if (wishlist.length === 0) {
-    showToast('आपकी विशलिस्ट खाली है।', 'info');
-    return;
-  }
-  const presetPromises = wishlist.map(id =>
-    fetch(`${API_URL}/presets/${id}`).then(r => r.ok ? r.json() : null)
-  );
-  const presets = (await Promise.all(presetPromises)).filter(Boolean);
-  if (presets.length === 0) {
-    showToast('कोई प्रीसेट नहीं मिला।', 'info');
-    return;
-  }
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay active';
-  modal.innerHTML = `
-    <div class="modal" style="max-width:600px;">
-      <button class="close">&times;</button>
-      <h2><i class="fas fa-heart" style="color:#e74c3c;"></i> आपकी विशलिस्ट</h2>
-      <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;">
-        ${presets.map(p => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--bg, #f8f6f2);border-radius:12px;">
-            <div>
-              <strong>${escapeHTML(p.name)}</strong> – ${escapeHTML(p.author)}
-              <span style="margin-left:8px;font-size:0.8rem;color:#6b6b6b;">${escapeHTML(p.category)}</span>
-            </div>
-            <button class="btn btn-sm btn-primary" onclick="window.openPresetModal('${p.id}')"><i class="fas fa-eye"></i> देखें</button>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  modal.querySelector('.close').addEventListener('click', () => modal.remove());
-}
-window.showWishlist = showWishlist;
-
-// ============================================================
-// ===== PRESETS CRUD - FIXED XSS =====
-// ============================================================
-function renderPresetsToContainer(presets, container) {
-  if (!container) return;
-  if (!presets || presets.length === 0) {
-    container.innerHTML = `<div class="no-results" style="grid-column:1/-1;text-align:center;padding:30px 15px;color:#7a7a7a;font-size:0.9rem;"><i class="fas fa-search" style="font-size:2rem;display:block;margin-bottom:10px;"></i>😕 कोई प्रीसेट नहीं मिला</div>`;
-    return;
-  }
-  container.innerHTML = presets.map(p => {
-    const isLiked = wishlist.includes(p.id);
-    const priceDisplay = p.price === 0 ?
-      `<span class="price free">मुफ्त</span>` :
-      `<span class="price">₹${p.price}</span>`;
-    const stars = '★'.repeat(Math.floor(p.avgRating || 0)) + (p.avgRating % 1 >= 0.5 ? '½' : '');
-    const previewImageSrc = p.previewImage ? 
-      (p.previewImage.startsWith('http') ? p.previewImage : window.location.origin + p.previewImage) : 
-      null;
-    const previewImg = previewImageSrc ? 
-      `<img loading="lazy" decoding="async" src="${previewImageSrc}?v=${encodeURIComponent(p.updatedAt || p.createdAt || '')}" alt="${escapeHTML(p.name)} preset preview" style="width:100%;height:100%;object-fit:cover;background:#e8e0d6;" onerror="this.onerror=null;this.src='/assets/images/og-image.png'">` :
-      `<svg viewBox="0 0 270 180" style="background:#d9d0c4;width:100%;height:100%;">
-        <rect x="30" y="20" width="70" height="60" rx="8" fill="#b8aa98" />
-        <rect x="120" y="20" width="70" height="60" rx="8" fill="#c4b5a2" />
-        <rect x="30" y="100" width="70" height="60" rx="8" fill="#a89682" />
-        <rect x="120" y="100" width="70" height="60" rx="8" fill="#d4c5b2" />
-        <text x="50" y="165" font-family="Inter" font-weight="600" font-size="11" fill="#4a3f35"><i class="fas fa-camera"></i> ${escapeHTML(p.name)}</text>
-      </svg>`;
+  // ============ PRESET CARD ============
+  function presetCard(p) {
+    const image = imgTag(p.previewImage, `${p.name} preset preview`, 'preset-preview-img');
+    const likes = Number(p.likesCount || (p.likes || []).length);
+    const rating = Number(p.avgRating || 0).toFixed(1);
+    const downloads = Number(p.downloads || 0);
+    const views = Number(p.views || 0);
+    const shares = Number(p.shares || 0);
     return `
-      <div class="preset-card" data-id="${p.id}">
-        <label class="preset-select-wrap" title="Select preset"><input class="preset-select" type="checkbox" data-id="${p.id}" ${selectedPresetIds.has(p.id)?'checked':''} aria-label="Select ${escapeHTML(p.name)}"><span></span></label>
-        <div class="thumb" style="height:160px;">
-          ${previewImg}
+      <article class="preset-card" data-preset-card="${esc(p.id)}">
+        <label class="select-preset" title="Select preset">
+          <input type="checkbox" data-action="select-preset" data-id="${esc(p.id)}" ${state.selected.has(String(p.id)) ? 'checked' : ''} aria-label="Select ${esc(p.name)}">
+          <span></span>
+        </label>
+        <div class="thumb">
+          ${image}
           <div class="overlay">
-            <button class="btn btn-sm preview-btn" data-id="${p.id}" style="font-size:0.7rem;padding:5px 12px;"><i class="fas fa-eye"></i> प्रीव्यू</button>
-            <button class="btn btn-sm wishlist-toggle" data-id="${p.id}" style="background:#fff;color:#e74c3c;font-size:0.7rem;padding:5px 10px;">
-              <i class="fa${isLiked ? 's' : 'r'} fa-heart"></i>
-            </button>
+            <button class="btn btn-sm" data-action="view-preset" data-id="${esc(p.id)}"><i class="fas fa-eye"></i> Preview</button>
+          </div>
+          <span class="thumb-price ${Number(p.price || 0) === 0 ? 'free' : ''}">${money(p.price)}</span>
+        </div>
+        <div class="info">
+          <span class="tag">${esc(p.category || 'General')}</span>
+          <h3>${esc(p.name)}</h3>
+          <button class="author-link" data-action="profile" data-id="${esc(p.authorId || '')}">${esc(p.author || 'Creator')}</button>
+          <div class="preset-description">${esc(p.description || 'Lightroom preset')}</div>
+          <div class="preset-stats" aria-label="Preset statistics">
+            <span title="Rating">⭐ ${rating}</span>
+            <span title="Downloads">↓ ${downloads}</span>
+            <span title="Views">👁 ${views}</span>
+            <span title="Shares">↗ ${shares}</span>
+          </div>
+          <div class="card-actions">
+            <button class="icon-action" data-action="wishlist" data-id="${esc(p.id)}" title="Wishlist" aria-label="Wishlist"><i class="far fa-heart"></i></button>
+            <button class="icon-action" data-action="like" data-id="${esc(p.id)}" title="Like" aria-label="Like">♥ ${likes}</button>
+            <button class="icon-action" data-action="share" data-id="${esc(p.id)}" title="Share" aria-label="Share"><i class="fas fa-share-nodes"></i></button>
+            <a class="icon-action" href="${presetUrl(p)}" title="Open preset page" aria-label="Open preset page"><i class="fas fa-link"></i></a>
+            <button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}"><i class="fas fa-arrow-up-right-from-square"></i> Open</button>
           </div>
         </div>
-        <div class="info" style="padding:12px 14px 14px;">
-          <span class="tag" style="font-size:0.6rem;">${escapeHTML(p.category || 'General')}</span>
-          <h3 style="font-size:0.95rem;font-weight:700;margin:4px 0 2px;">${escapeHTML(p.name)}</h3>
-          <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.75rem;" onclick="event.stopPropagation(); window.openProfile('${p.authorId}')">
-            ${escapeHTML(p.author)}
-            <span style="font-size:0.6rem;color:#888;margin-left:4px;"><i class="fas fa-users"></i> ${p.authorFollowers || 0}</span>
-          </div>
-          <div class="meta" style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border, #f0ebe3);padding-top:8px;margin-top:6px;">
-            ${priceDisplay}
-            <span class="rating" style="font-size:0.75rem;color:#f4a261;">${stars} ${p.avgRating ? p.avgRating.toFixed(1) : '0'}</span>
-          </div>
-          <div style="display:flex;gap:8px;font-size:0.65rem;color:#888;margin-top:4px;flex-wrap:wrap;">
-            <span><i class="fas fa-eye"></i> ${p.views || 0}</span>
-            <span><i class="fas fa-heart" style="color:#e74c3c;"></i> ${p.likes?.length || 0}</span>
-            <span><i class="fas fa-share-alt"></i> ${p.shares || 0}</span>
-            <span><i class="fas fa-comment"></i> ${p.reviews?.length || 0}</span>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-async function loadHeroFeatured() {
-  try {
-    const res = await fetch(`${API_URL}/presets?sort=popular&limit=1`);
-    if (!res.ok) return;
-    const data = await res.json(); const p = data.presets?.[0];
-    if (!p) return;
-    const img = document.getElementById('heroFeaturedImage'); const link = document.getElementById('heroFeaturedLink'); const badge=document.getElementById('heroFeaturedBadge');
-    if (img && p.previewImage) { img.src = `${p.previewImage}${p.previewImage.includes('?')?'&':'?'}v=${encodeURIComponent(p.updatedAt||p.createdAt||'')}`; img.alt = `${p.name} preset preview`; }
-    if (link) link.href = `/?preset=${encodeURIComponent(p.id)}`;
-    if (badge) badge.innerHTML = `<i class="fas fa-star"></i> ${escapeHTML(p.name)} · ${Number(p.avgRating||0).toFixed(1)}★ · ${p.views||0} views`;
-  } catch (_) {}
-}
-
-// ============================================================
-// ===== LOAD PRESETS =====
-// ============================================================
-async function loadPresets(page = 1, append = false) {
-  if (isProcessing) return;
-  isProcessing = true;
-  
-  try {
-    const params = new URLSearchParams();
-    const q = searchInput ? searchInput.value.trim() : '';
-    if (q) params.append('q', q);
-    const cat = filterCategory ? filterCategory.value : '';
-    if (cat) params.append('category', cat);
-    const price = filterPrice ? filterPrice.value : '';
-    if (price) params.append('price', price);
-    const sort = filterSort ? filterSort.value : '';
-    if (sort) params.append('sort', sort);
-    params.append('page', page);
-    params.append('limit', 20);
-    
-    const url = `${API_URL}/presets?${params.toString()}`;
-    const res = await fetch(url);
-    
-    if (res.ok) {
-      const data = await res.json();
-      let userMap = {};
-      try {
-        const usersRes = await fetch(`${API_URL}/users?limit=100`, {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        });
-        if (usersRes.ok) {
-          const users = await usersRes.json();
-          users.forEach(u => {
-            userMap[u.id] = { followers: u.followers?.length || 0, name: u.name };
-          });
-        }
-      } catch (e) { console.warn('Could not load follower counts', e); }
-      data.presets.forEach(p => {
-        p.authorFollowers = userMap[p.authorId]?.followers || 0;
-      });
-      allPresets = data.presets || [];
-      totalPages = data.totalPages || 1;
-      currentPage = data.page || 1;
-      
-      if (append) {
-        const existing = presetGrid ? presetGrid.innerHTML : '';
-        const tempDiv = document.createElement('div');
-        renderPresetsToContainer(allPresets, tempDiv);
-        if (presetGrid) presetGrid.innerHTML = existing + tempDiv.innerHTML;
-      } else {
-        renderPresetsToContainer(allPresets, presetGrid);
-      }
-      
-      if (loadMoreBtn) {
-        if (currentPage < totalPages) {
-          loadMoreBtn.style.display = 'inline-flex';
-          loadMoreBtn.innerHTML = `<i class="fas fa-plus"></i> और लोड करें (${currentPage}/${totalPages})`;
-        } else {
-          loadMoreBtn.style.display = 'none';
-        }
-      }
-      isProcessing = false;
-      return;
-    }
-    
-    throw new Error('Network or server error');
-    
-  } catch (err) {
-    console.warn('⚠️ Load presets failed, trying cache:', err);
-    try {
-      const params = new URLSearchParams();
-      const q = searchInput ? searchInput.value.trim() : '';
-      if (q) params.append('q', q);
-      const cat = filterCategory ? filterCategory.value : '';
-      if (cat) params.append('category', cat);
-      const price = filterPrice ? filterPrice.value : '';
-      if (price) params.append('price', price);
-      const sort = filterSort ? filterSort.value : '';
-      if (sort) params.append('sort', sort);
-      params.append('page', page);
-      params.append('limit', 20);
-      const url = `${API_URL}/presets?${params.toString()}`;
-      
-      const cache = await caches.open('presethub-api-v1');
-      const cachedResponse = await cache.match(url);
-      if (cachedResponse) {
-        const data = await cachedResponse.json();
-        allPresets = data.presets || [];
-        totalPages = data.totalPages || 1;
-        currentPage = data.page || 1;
-        renderPresetsToContainer(allPresets, presetGrid);
-        showToast('📦 Showing cached presets (offline)', 'info');
-        isProcessing = false;
-        return;
-      }
-      showToast('😕 No cached presets available offline.', 'error');
-      if (presetGrid && !append) {
-        presetGrid.innerHTML = `<div style="padding:30px;color:#7a7a7a;font-size:0.9rem;text-align:center;grid-column:1/-1;">
-          <i class="fas fa-triangle-exclamation" style="color:#f39c12;font-size:1.5rem;display:block;margin-bottom:10px;"></i>
-          प्रीसेट लोड नहीं हो पाए। कृपया कनेक्शन जांचें।
-          <br><button class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="loadPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
-        </div>`;
-      }
-    } catch (cacheErr) {
-      console.error('Cache error:', cacheErr);
-      showToast('❌ Unable to load presets. Please check your connection.', 'error');
-      if (presetGrid && !append) {
-        presetGrid.innerHTML = `<div style="padding:30px;color:#7a7a7a;font-size:0.9rem;text-align:center;grid-column:1/-1;">
-          <i class="fas fa-triangle-exclamation" style="color:#f39c12;font-size:1.5rem;display:block;margin-bottom:10px;"></i>
-          प्रीसेट लोड नहीं हो पाए। कृपया कनेक्शन जांचें।
-          <br><button class="btn btn-sm btn-outline" style="margin-top:10px;" onclick="loadPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
-        </div>`;
-      }
-    }
-    isProcessing = false;
+      </article>`;
   }
-}
 
-// ============================================================
-// ===== LOAD LATEST PRESETS =====
-// ============================================================
-async function loadLatestPresets() {
-  try {
-    const res = await fetch(`${API_URL}/presets?sort=newest&limit=6`);
-    const data = await res.json();
-    const presets = data.presets || [];
-    let userMap = {};
+  function renderPresetGrid(data) {
+    const grid = $('#presetGrid');
+    if (grid) grid.innerHTML = state.presets.length
+      ? state.presets.map(presetCard).join('')
+      : `<div class="empty-state"><i class="fas fa-box-open"></i><h3>No presets found</h3><p>Try another search or upload the first preset.</p></div>`;
+    const title = $('#listTitle');
+    if (title) title.textContent = state.query ? `Search: ${state.query}` : 'सभी Presets';
+    if ($('#statPresets')) $('#statPresets').textContent = data.total || 0;
+    if ($('#statFree')) $('#statFree').textContent = state.presets.filter(p => Number(p.price || 0) === 0).length;
+  }
+
+  function featuredCard(p) {
+    return `<article class="featured-card"><a class="featured-image" href="${presetUrl(p)}"><img src="${esc(assetUrl(p.previewImage))}" alt="${esc(p.name)} preview" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackPreview}'"></a><div class="featured-body"><div class="featured-top"><span class="tag">${esc(p.category || 'General')}</span><span class="price ${Number(p.price||0)===0?'free':''}">${money(p.price)}</span></div><h3>${esc(p.name)}</h3><button class="author-link" data-action="profile" data-id="${esc(p.authorId||'')}">By ${esc(p.author||'Creator')}</button><p>${esc(p.description || 'Lightroom preset')}</p><div class="featured-stats"><span>★ ${Number(p.avgRating||0).toFixed(1)}</span><span>👁 ${p.views||0}</span><span>♥ ${p.likesCount||0}</span><span>💬 ${p.commentsCount||0}</span><span>↗ ${p.shares||0}</span><span>↓ ${p.downloads||0}</span></div><div class="card-actions"><button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}">View details</button><button class="icon-action" data-action="share" data-id="${esc(p.id)}" title="Share"><i class="fas fa-share-nodes"></i></button></div></div></article>`;
+  }
+  function updateHeroFeatured(p) {
+    const img=$('#heroFeaturedImage'), link=$('#heroFeaturedLink'), badge=$('#heroFeaturedBadge');
+    if(!img || !p) return;
+    img.src=assetUrl(p.previewImage);
+    img.alt=`${p.name || 'Featured'} Lightroom preset preview`;
+    img.onerror=()=>{ img.onerror=null; img.src=fallbackPreview; };
+    if(link) link.href=presetUrl(p);
+    if(badge) badge.innerHTML=`<i class="fas fa-star" aria-hidden="true"></i> ${esc(p.name || 'Top featured preset')}`;
+  }
+
+  async function loadFeatured(force=false) {
+    const box=$('#featuredGrid'); if(!box) return;
+    const cached=!force ? cacheGet('featured') : null;
+    if(cached){ state.featured=cached; box.innerHTML=cached.map(featuredCard).join(''); updateHeroFeatured(cached[0]); }
     try {
-      const usersRes = await fetch(`${API_URL}/users?limit=100`, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-      });
-      if (usersRes.ok) {
-        const users = await usersRes.json();
-        users.forEach(u => {
-          userMap[u.id] = { followers: u.followers?.length || 0, name: u.name };
-        });
-      }
-    } catch (e) { console.warn('Could not load follower counts', e); }
-    presets.forEach(p => {
-      p.authorFollowers = userMap[p.authorId]?.followers || 0;
-    });
-    renderPresetsToContainer(presets, latestGrid);
-  } catch (err) {
-    console.warn('⚠️ Load latest failed, trying cache');
-    try {
-      const cache = await caches.open('presethub-api-v1');
-      const cachedResponse = await cache.match(`${API_URL}/presets?sort=newest&limit=6`);
-      if (cachedResponse) {
-        const data = await cachedResponse.json();
-        renderPresetsToContainer(data.presets || [], latestGrid);
-        return;
-      }
-    } catch (cacheErr) {
-      console.error('Latest cache error:', cacheErr);
-    }
-    if (latestGrid) {
-      latestGrid.innerHTML = `<div style="padding:20px;color:#7a7a7a;font-size:0.85rem;text-align:center;width:100%;">
-        <i class="fas fa-triangle-exclamation" style="color:#f39c12;"></i> प्रीसेट लोड नहीं हो पाए।
-        <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="loadLatestPresets()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
-      </div>`;
+      const data=await api('/presets/featured?limit=8');
+      state.featured=data||[]; cacheSet('featured',state.featured);
+      box.innerHTML=state.featured.map(featuredCard).join('') || '<div class="empty-state">No featured presets yet.</div>';
+      updateHeroFeatured(state.featured[0]);
+    } catch(_){
+      if(!cached) box.innerHTML='<div class="empty-state">Featured presets will appear here.</div>';
+      if(cached?.[0]) updateHeroFeatured(cached[0]);
     }
   }
-}
 
-// ============================================================
-// ===== PRESET MODAL - FIXED XSS =====
-// ============================================================
-async function openPresetModal(presetId) {
-  try {
-    const res = await fetch(`${API_URL}/presets/${presetId}`);
-    if (!res.ok) throw new Error('Preset not found');
-    const preset = await res.json();
-    const isLiked = wishlist.includes(preset.id);
-    const isFree = preset.price === 0;
-
-    updatePresetMetaTags(preset);
-
-    if (!viewedPresets.has(presetId) && currentUser && preset.authorId !== currentUser.id) {
-      viewedPresets.add(presetId);
-      try {
-        await fetch(`${API_URL}/presets/${presetId}/view`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
-      } catch (e) { console.warn('View tracking failed:', e); }
-      try {
-        await fetch(`${API_URL}/presets/${presetId}/ad-impression`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } });
-      } catch (e) { console.warn('Ad impression tracking failed:', e); }
+  // ============ LOAD PRESETS ============
+  async function loadPresets(reset = true, force = false) {
+    if (reset) state.page = 1;
+    const cacheKey = `presets:${state.page}:${state.sort}:${state.price}:${state.category}:${state.query}`;
+    const cached = !force && reset ? cacheGet(cacheKey) : null;
+    if (cached) {
+      state.presets = cached.presets || [];
+      state.totalPages = cached.totalPages || 1;
+      renderPresetGrid(cached);
     }
+    const params = new URLSearchParams({ page: state.page, limit: 24, sort: state.sort });
+    if (state.query) params.set('q', state.query);
+    if (state.price) params.set('price', state.price);
+    if (state.category) params.set('category', state.category);
+    const grid = $('#presetGrid');
+    if (grid && reset) grid.innerHTML = '<div class="skeleton" style="height:280px"></div>'.repeat(4);
+    try {
+      const data = await api(`/presets?${params.toString()}`);
+      state.presets = reset ? data.presets : [...state.presets, ...data.presets];
+      state.totalPages = data.totalPages || 1;
+      cacheSet(cacheKey, { ...data, presets: state.presets });
+      renderPresetGrid(data);
+    } catch (e) {
+      const catalog = cacheGet('offline-catalog');
+      if (catalog?.presets?.length && !state.query && !state.category && state.sort === 'newest') {
+        const start = (state.page - 1) * 24;
+        const slice = catalog.presets.slice(start, start + 24);
+        const offlineData = { presets: slice, total: catalog.total, page: state.page, totalPages: Math.ceil(catalog.total / 24), limit: 24 };
+        state.presets = state.page === 1 ? slice : [...state.presets, ...slice];
+        state.totalPages = offlineData.totalPages;
+        renderPresetGrid(offlineData);
+        setNetworkState(false, 'Offline — showing saved preset catalog');
+        return;
+      }
+      if (grid) grid.innerHTML = `<div class="empty-state"><h3>Could not load presets</h3><p>${esc(e.message)}</p><button class="btn btn-primary" data-action="retry">Retry</button></div>`;
+    }
+  }
 
-    const reviews = preset.reviews || [];
-    const sortedReviews = [...reviews].sort((a, b) => (b.helpful || 0) - (a.helpful || 0) || new Date(b.createdAt) - new Date(a.createdAt));
-    const topReviews = sortedReviews.slice(0, 5);
+  async function loadCategories() {
+    const cached = cacheGet('categories');
+    if (cached) { state.categories=cached; const el=$('#categories'); if(el) el.innerHTML=cached.length ? cached.map(([name,count])=>`<button class="category-card" data-action="category" data-category="${esc(name)}"><div class="icon">✦</div><div class="name">${esc(name)}</div><div class="count">${count} presets</div></button>`).join('') : '<p>No categories yet.</p>'; }
+    try {
+      const data = await api('/presets?limit=200&sort=newest');
+      const counts = {};
+      (data.presets || []).forEach(p => counts[p.category || 'General'] = (counts[p.category || 'General'] || 0) + 1);
+      const cats = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      state.categories = cats;
+      cacheSet('categories', cats);
+      const el = $('#categories');
+      if (el) el.innerHTML = cats.length
+        ? cats.map(([name, count]) => `
+            <button class="category-card" data-action="category" data-category="${esc(name)}">
+              <div class="icon">✦</div><div class="name">${esc(name)}</div><div class="count">${count} presets</div>
+            </button>`).join('')
+        : '<p>No categories yet.</p>';
+    } catch (_) {}
+  }
 
-    const previewImageSrc = preset.previewImage ? 
-      (preset.previewImage.startsWith('http') ? preset.previewImage : window.location.origin + preset.previewImage) : 
-      null;
+  async function prefetchOfflineCatalog() {
+    if (!navigator.onLine) return;
+    try {
+      const first = await fetch(`${API}/presets?page=1&limit=50&sort=newest`).then(r => { if (!r.ok) throw new Error('catalog'); return r.json(); });
+      cacheSet('api:GET:/presets?page=1&limit=50&sort=newest', first);
+      const totalPages = Math.min(Number(first.totalPages || 1), 10);
+      const all = [...(first.presets || [])];
+      for (let page = 2; page <= totalPages; page++) {
+        const data = await fetch(`${API}/presets?page=${page}&limit=50&sort=newest`).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (!data) break;
+        cacheSet(`api:GET:/presets?page=${page}&limit=50&sort=newest`, data);
+        cacheSet(`presets:${page}:newest:::`, data);
+        all.push(...(data.presets || []));
+      }
+      cacheSet('offline-catalog', { updatedAt: Date.now(), total: all.length, presets: all });
+      // Ask the service worker to cache preview images in the normal image cache.
+      if (navigator.serviceWorker?.controller) navigator.serviceWorker.controller.postMessage({ type: 'CACHE_IMAGES', urls: all.slice(0, 300).map(x => x.previewImage).filter(Boolean) });
+    } catch (_) {}
+  }
 
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-      <div class="modal">
-        <button class="close">&times;</button>
+  function creatorCard(u) {
+    const name = u.name || u.username || 'Creator';
+    const avatar = u.avatar ? imgTag(u.avatar, `${name} profile photo`, 'creator-avatar-img') : `<span class="creator-avatar-fallback">${esc(name.charAt(0).toUpperCase())}</span>`;
+    const own = state.user && String(state.user.id) === String(u.id);
+    return `<article class="creator-card" data-creator-id="${esc(u.id)}">
+      <button class="creator-main" data-action="profile" data-id="${esc(u.id)}" aria-label="Open ${esc(name)} profile">
+        <span class="creator-avatar">${avatar}</span>
+        <span class="creator-identity"><b>${esc(name)}</b><small>@${esc(u.username || 'creator')}</small></span>
+        <span class="creator-badge"><i class="fas fa-check"></i> Creator</span>
+        <span class="creator-stats"><span>${Number(u.presetCount||0)} presets</span><span>${Number(u.totalDownloads||0)} downloads</span><span>${Number(u.followers||0)} followers</span></span>
+      </button>
+      <button class="creator-menu-btn" data-action="creator-menu" data-id="${esc(u.id)}" aria-label="More options for ${esc(name)}" title="More options"><i class="fas fa-ellipsis"></i></button>
+    </article>`;
+  }
+
+  async function loadCreators() {
+    const cached = cacheGet('creators');
+    if (cached) { state.creators = cached; const el = $('#creators'); if (el) el.innerHTML = (cached || []).map(creatorCard).join(''); }
+    try {
+      const creators = await api('/users/top');
+      state.creators = creators;
+      cacheSet('creators', creators);
+      const el = $('#creators');
+      if (el) el.innerHTML = (creators || []).map(creatorCard).join('');
+    } catch (_) {}
+  }
+
+  // ============ SHOW PRESET MODAL ============
+  async function showPreset(id) {
+    try {
+      const p = await api(`/presets/${encodeURIComponent(id)}`);
+      state.currentPreset = p;
+      let reviews = [];
+      let comments = [];
+      try { reviews = await api(`/reviews/${encodeURIComponent(id)}`); } catch (_) {}
+      try { comments = await api(`/comments/${encodeURIComponent(id)}`); } catch (_) {}
+      const image = `<div class="preview-frame">${imgTag(p.previewImage, `${p.name} preset preview`, 'preset-detail-image')}<div class="preview-badge"><i class="fas fa-image"></i> Preview</div></div>`;
+      openModal(`
         <div class="modal-grid">
-          <div class="modal-preview">
-            ${previewImageSrc ? `<img src="${previewImageSrc}" alt="${escapeHTML(preset.name)}" style="width:100%;height:auto;border-radius:12px;" onerror="this.style.display='none'">` :
-              `<svg viewBox="0 0 300 200" style="width:100%;height:auto;background:#d9d0c4;border-radius:12px;">
-                <rect x="20" y="20" width="100" height="80" rx="8" fill="#b8aa98" />
-                <rect x="140" y="20" width="100" height="80" rx="8" fill="#c4b5a2" />
-                <rect x="20" y="120" width="100" height="60" rx="8" fill="#a89682" />
-                <rect x="140" y="120" width="100" height="60" rx="8" fill="#d4c5b2" />
-                <text x="80" y="185" font-family="Inter" font-weight="600" font-size="14" fill="#4a3f35"><i class="fas fa-camera"></i> ${escapeHTML(preset.name)}</text>
-              </svg>`
-            }
-          </div>
+          <div class="modal-preview">${image}</div>
           <div class="modal-details">
-            <h2>${escapeHTML(preset.name)}</h2>
-            <div class="author" style="cursor:pointer;color:#d4a373;font-size:0.9rem;" onclick="window.openProfile('${preset.authorId}')">by <strong>${escapeHTML(preset.author)}</strong></div>
-            <div class="desc" style="font-size:0.9rem;color:var(--text, #3a3a3a);margin:8px 0 14px;">${escapeHTML(preset.description || 'कोई विवरण नहीं')}</div>
-            <div class="price-lg ${isFree ? 'free' : ''}" style="font-size:1.4rem;">${isFree ? 'मुफ्त' : '₹' + preset.price}</div>
-            <div class="actions" style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
-              <button class="btn btn-primary download-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 20px;">
-                <i class="fas fa-download"></i> ${isFree ? 'डाउनलोड करें' : 'खरीदें'}
-              </button>
-              <button class="btn btn-outline wishlist-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 18px;">
-                <i class="fa${isLiked ? 's' : 'r'} fa-heart"></i> ${isLiked ? 'पसंद में' : 'पसंद करें'}
-              </button>
-              <button class="btn btn-outline like-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 16px;">
-                <i class="fa${preset.likes && preset.likes.includes(currentUser?.id) ? 's' : 'r'} fa-heart"></i>
-                <span class="like-count">${preset.likes?.length || 0}</span>
-              </button>
-              <button class="btn btn-outline share-btn" data-id="${preset.id}" style="font-size:0.85rem;padding:10px 16px;">
-                <i class="fas fa-share-alt"></i> <span class="share-count">${preset.shares || 0}</span>
-              </button>
+            <span class="tag">${esc(p.category || 'General')}</span>
+            <h2>${esc(p.name)}</h2>
+            <button class="author-link" data-action="profile" data-id="${esc(p.authorId || '')}">by ${esc(p.author || 'Creator')}</button>
+            <p class="desc">${esc(p.description || 'No description yet.')}</p>
+            <div class="price-lg ${Number(p.price || 0) === 0 ? 'free' : ''}">${money(p.price)}</div>
+            <div class="meta-list">
+              <span><i class="fas fa-star"></i>${Number(p.avgRating || 0).toFixed(1)}</span>
+              <span><i class="fas fa-download"></i>${p.downloads || 0}</span>
+              <span><i class="fas fa-eye"></i>${p.views || 0}</span>
+              <span><i class="fas fa-heart"></i>${Number(p.likesCount || 0)}</span>
+              <span><i class="fas fa-share-nodes"></i>${p.shares || 0}</span>
             </div>
-            <div class="meta-list" style="display:flex;flex-wrap:wrap;gap:12px;font-size:0.8rem;color:#5a5a5a;margin-top:14px;">
-              <span><i class="fas fa-eye"></i> ${preset.views || 0} views</span>
-              <span><i class="fas fa-download"></i> ${preset.downloads || 0} downloads</span>
-              <span><i class="fas fa-star" style="color:#f4a261;"></i> ${preset.avgRating ? preset.avgRating.toFixed(1) : '0'} (${preset.reviews?.length || 0})</span>
-              <span><i class="fas fa-tag"></i> ${preset.tags?.map(t => escapeHTML(t)).join(', ') || '—'}</span>
+            <div class="actions">
+              <button class="btn btn-primary" data-action="download" data-id="${esc(p.id)}"><i class="fas fa-download"></i> Download</button>
+              <button class="btn btn-outline" data-action="wishlist" data-id="${esc(p.id)}"><i class="far fa-heart"></i> Wishlist</button>
+              <button class="btn btn-outline" data-action="share" data-id="${esc(p.id)}"><i class="fas fa-share-nodes"></i> Share</button>
+              <a class="btn btn-outline" href="${presetUrl(p)}">SEO Page</a>
             </div>
-            <div style="margin-top:16px;border-top:1px solid var(--border, #eee);padding-top:14px;">
-              <h4 style="font-size:1rem;"><i class="fas fa-star" style="color:#f4a261;"></i> समीक्षाएँ (${preset.reviews?.length || 0})</h4>
-              <div id="reviewList" style="max-height:200px;overflow-y:auto;">
-                ${topReviews.length > 0 ? topReviews.map(r => `
-                  <div style="padding:8px 0;border-bottom:1px solid var(--border, #f0ebe3);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
-                      <div>
-                        <button type="button" class="review-user" data-review-user="${escapeHTML(r.userId || '')}" style="font-size:0.85rem;background:none;border:0;padding:0;font-weight:700;color:var(--text);cursor:pointer">${escapeHTML(r.userName)}</button> 
-                        <span style="color:#f4a261;font-size:0.8rem;">${'★'.repeat(r.rating)}</span>
-                        <span style="color:#888;font-size:0.7rem;">${new Date(r.createdAt).toLocaleDateString()}</span>
-                      </div>
-                      <span style="font-size:0.75rem;color:#888;">
-                        <i class="fas fa-thumbs-up" style="color:#d4a373;"></i> ${r.helpful || 0}
-                      </span>
-                    </div>
-                    <p style="margin:3px 0 0;font-size:0.85rem;color:var(--text, #3a3a3a);">${escapeHTML(r.comment)}</p>
-                  </div>
-                `).join('') : '<p style="color:#888;font-size:0.85rem;">अभी कोई समीक्षा नहीं</p>'}
-                ${preset.reviews && preset.reviews.length > 5 ? `<p style="color:#888;font-size:0.75rem;margin-top:4px;">... और ${preset.reviews.length - 5} समीक्षाएँ</p>` : ''}
-              </div>
-              ${currentUser ? `
-                <form id="reviewForm" style="margin-top:10px;">
-                  <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    <div style="flex:1;min-width:80px;">
-                      <label style="font-size:0.8rem;font-weight:600;">रेटिंग</label>
-                      <input type="number" id="reviewRating" min="1" max="5" style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--border,#ddd);font-size:0.9rem;" required />
-                    </div>
-                    <div style="flex:3;min-width:150px;">
-                      <label style="font-size:0.8rem;font-weight:600;">समीक्षा</label>
-                      <textarea id="reviewComment" placeholder="अपनी समीक्षा लिखें..." style="width:100%;padding:6px 10px;border-radius:8px;border:1px solid var(--border,#ddd);font-size:0.9rem;resize:vertical;min-height:50px;" required></textarea>
-                    </div>
-                  </div>
-                  <button type="submit" class="btn btn-sm btn-primary" style="margin-top:8px;font-size:0.8rem;padding:6px 16px;"><i class="fas fa-paper-plane"></i> समीक्षा भेजें</button>
-                </form>
-              ` : `<p style="color:#888;font-size:0.85rem;margin-top:8px;">समीक्षा देने के लिए <a href="#" onclick="openAuthModal('login');return false;" style="color:#d4a373;">लॉग इन</a> करें</p>`}
+            <div class="review-box">
+              <h3>Reviews</h3>
+              ${(reviews || []).slice(-5).reverse().map(r => `<div class="review"><b>${esc(r.userName)}</b> · ${'★'.repeat(Number(r.rating) || 0)}<p>${esc(r.comment)}</p></div>`).join('') || '<p>No reviews yet.</p>'}
+              ${state.user ? `<form id="reviewForm" data-preset="${esc(p.id)}"><select name="rating" required><option value="">Rating</option>${[1, 2, 3, 4, 5].map(n => `<option>${n}</option>`).join('')}</select><input name="comment" maxlength="500" placeholder="Write a review…" required><button class="btn btn-primary btn-sm">Post review</button></form>` : ''}
+            </div>
+            <div class="comment-box">
+              <h3>Comments</h3>
+              ${comments.length ? comments.map(c => `<div class="comment"><button class="comment-user" data-action="profile" data-id="${esc(c.userId)}"><b>${esc(c.userName)}</b></button><small>${new Date(c.createdAt).toLocaleString()}</small><p>${esc(c.text)}</p><button class="text-button" data-action="comment-like" data-preset="${esc(p.id)}" data-comment="${esc(c.id)}">♥ ${c.likes || 0}</button> <button class="text-button" data-action="reply-comment" data-comment="${esc(c.id)}">Reply</button></div>`).join('') : '<p>No comments yet.</p>'}
+              ${state.user ? `<form id="commentForm" data-preset="${esc(p.id)}"><input type="hidden" name="parentId" value=""><textarea name="text" maxlength="500" placeholder="Write a comment…" required></textarea><small id="replyingTo" class="muted"></small><button class="btn btn-primary btn-sm">Comment</button></form>` : ''}
             </div>
           </div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
+        </div>`);
+      try { await api(`/presets/${encodeURIComponent(id)}/view`, { method: 'POST' }); } catch (_) {}
+    } catch (e) { toast(e.message, 'error'); }
+  }
 
-    modal.querySelector('.close').addEventListener('click', () => modal.remove());
-    modal.querySelectorAll('[data-review-user]').forEach(btn=>btn.addEventListener('click',()=>btn.dataset.reviewUser&&window.openProfile(btn.dataset.reviewUser)));
-
-    modal.querySelector('.download-btn').addEventListener('click', async () => {
-      if (!currentUser) {
-        showToast('कृपया लॉग इन करें', 'warning');
-        return;
-      }
-      if (preset.price > 0) {
-        await buyPreset(preset.id);
-      } else {
-        await downloadPreset(preset.id);
-      }
-    });
-
-    modal.querySelector('.wishlist-btn').addEventListener('click', async () => {
-      await toggleWishlist(preset.id);
-      modal.remove();
-      openPresetModal(preset.id);
-    });
-
-    modal.querySelector('.like-btn')?.addEventListener('click', async () => {
-      if (!currentUser) { showToast('Please login', 'warning'); return; }
-      const res = await fetch(`${API_URL}/presets/${preset.id}/like`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const likeSpan = modal.querySelector('.like-count');
-        const icon = modal.querySelector('.like-btn i');
-        icon.className = data.liked ? 'fas fa-heart' : 'far fa-heart';
-        likeSpan.textContent = data.likes;
-        await fetchNotifications();
-      }
-    });
-
-    modal.querySelector('.share-btn')?.addEventListener('click', async () => {
-      if (!currentUser) { showToast('Please login', 'warning'); return; }
-      const res = await fetch(`${API_URL}/presets/${preset.id}/share`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        modal.querySelector('.share-count').textContent = data.shares;
-        const shareLink = `${window.location.origin}/preset/${preset.id}`;
-        if (navigator.share) {
-          navigator.share({ title: preset.name, text: 'Check out this preset!', url: shareLink });
-        } else {
-          navigator.clipboard.writeText(shareLink).then(() => showToast('Link copied!', 'success'));
-        }
-      }
-    });
-
-    const reviewForm = modal.querySelector('#reviewForm');
-    if (reviewForm) {
-      reviewForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const rating = document.getElementById('reviewRating').value;
-        const comment = document.getElementById('reviewComment').value;
-        await submitReview(preset.id, rating, comment);
-      });
+  // ============ DOWNLOAD (R2 SUPPORT) ============
+  function downloadOverlay(name='Preset') {
+    const old = document.getElementById('downloadProgress'); if (old) old.remove();
+    const el = document.createElement('div'); el.id='downloadProgress'; el.innerHTML=`<div class="download-progress-card"><div class="download-spinner"><i class="fas fa-download"></i></div><div><strong>Preparing download</strong><span>${esc(name)}</span><div class="progress-line"><i></i></div></div></div>`; document.body.appendChild(el);
+    return el;
+  }
+  async function notifyDownload(name, url) {
+    toast(`Download ready: ${name}`);
+    if ('Notification' in window) {
+      try { if (Notification.permission === 'default') await Notification.requestPermission(); if (Notification.permission === 'granted') new Notification('PresetHub download complete', { body: name, icon:'/assets/icons/icon-192.png', data:url }); } catch (_) {}
     }
-  } catch (err) {
-    console.error(err);
-    showToast('प्रीसेट लोड नहीं हुआ', 'error');
   }
-}
-window.openPresetModal = openPresetModal;
-
-// ============================================================
-// ===== UPDATE PRESET META TAGS FOR SEO =====
-// ============================================================
-function updatePresetMetaTags(preset) {
-  document.title = `${preset.name} – ${preset.category} Preset | PresetHub`;
-  
-  let metaDesc = document.querySelector('meta[name="description"]');
-  if (!metaDesc) {
-    metaDesc = document.createElement('meta');
-    metaDesc.name = 'description';
-    document.head.appendChild(metaDesc);
-  }
-  metaDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset by ${preset.author}. ${preset.description || 'Professional photo editing preset.'} ⭐ ${preset.avgRating || 0} rating.`;
-
-  let ogTitle = document.querySelector('meta[property="og:title"]');
-  if (!ogTitle) {
-    ogTitle = document.createElement('meta');
-    ogTitle.setAttribute('property', 'og:title');
-    document.head.appendChild(ogTitle);
-  }
-  ogTitle.content = `${preset.name} – ${preset.category} Preset | PresetHub`;
-
-  let ogDesc = document.querySelector('meta[property="og:description"]');
-  if (!ogDesc) {
-    ogDesc = document.createElement('meta');
-    ogDesc.setAttribute('property', 'og:description');
-    document.head.appendChild(ogDesc);
-  }
-  ogDesc.content = `Download ${preset.name} - ${preset.category} Lightroom preset. ${preset.description || 'Professional preset for photo editing.'}`;
-
-  let ogImage = document.querySelector('meta[property="og:image"]');
-  if (!ogImage) {
-    ogImage = document.createElement('meta');
-    ogImage.setAttribute('property', 'og:image');
-    document.head.appendChild(ogImage);
-  }
-  const imageUrl = preset.previewImage ? 
-    (preset.previewImage.startsWith('http') ? preset.previewImage : window.location.origin + preset.previewImage) : 
-    `${window.location.origin}/assets/images/og-image.jpg`;
-  ogImage.content = imageUrl;
-
-  let twitterTitle = document.querySelector('meta[name="twitter:title"]');
-  if (!twitterTitle) {
-    twitterTitle = document.createElement('meta');
-    twitterTitle.name = 'twitter:title';
-    document.head.appendChild(twitterTitle);
-  }
-  twitterTitle.content = `${preset.name} – ${preset.category} Preset`;
-
-  let jsonLd = document.querySelector('script[type="application/ld+json"]');
-  if (!jsonLd) {
-    jsonLd = document.createElement('script');
-    jsonLd.type = 'application/ld+json';
-    document.head.appendChild(jsonLd);
-  }
-  jsonLd.textContent = JSON.stringify({
-    "@context": "https://schema.org",
-    "@type": "Product",
-    "name": preset.name,
-    "description": preset.description || `${preset.category} Lightroom preset`,
-    "image": imageUrl,
-    "brand": { "@type": "Brand", "name": "PresetHub" },
-    "offers": {
-      "@type": "Offer",
-      "price": preset.price,
-      "priceCurrency": "INR",
-      "availability": "https://schema.org/InStock"
-    },
-    "aggregateRating": {
-      "@type": "AggregateRating",
-      "ratingValue": preset.avgRating || 0,
-      "ratingCount": preset.reviews?.length || 0
-    },
-    "author": { "@type": "Person", "name": preset.author }
-  });
-}
-
-// ============================================================
-// ===== REVIEW SUBMIT =====
-// ============================================================
-async function submitReview(presetId, rating, comment) {
-  const url = `${API_URL}/reviews/${presetId}`;
-  const options = {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({ rating, comment })
-  };
-  try {
-    if (!navigator.onLine) {
-      await addToQueue('review', url, options);
-      showToast('⏳ Review saved offline. Will sync when online.', 'info');
-      return;
-    }
-    const res = await fetch(url, options);
-    if (res.ok) {
-      showToast('✅ समीक्षा सहेजी गई', 'success');
-      const modal = document.querySelector('.modal-overlay.active');
-      if (modal) {
-        const id = modal.querySelector('.download-btn')?.dataset.id;
-        if (id) {
-          modal.remove();
-          openPresetModal(id);
-        }
-      }
-      loadPresets();
-    } else {
-      const err = await res.json();
-      showToast(err.error || 'समीक्षा सबमिट नहीं हो पाई', 'error');
-    }
-  } catch (err) {
-    await addToQueue('review', url, options);
-  }
-}
-
-// ============================================================
-// ===== DOWNLOAD =====
-// ============================================================
-async function downloadPreset(presetId) {
-  if (!currentUser) {
-    showToast('कृपया लॉग इन करें', 'warning');
-    return;
-  }
-
-  return new Promise((resolve) => {
-    const modal = document.createElement('div');
-    modal.className = 'ad-overlay';
-    modal.innerHTML = `
-      <div class="ad-modal">
-        <h3><i class="fas fa-ad"></i> Sponsored</h3>
-        <div class="ad-content">
-          <img src="https://via.placeholder.com/400x200/d4a373/ffffff?text=Your+Ad+Here" alt="Ad" style="max-width:100%;border-radius:12px;">
-          <p style="margin-top:8px;color:#888;">Continue in <span class="timer">3</span>s</p>
-        </div>
-        <button class="skip-btn" disabled>Skip Ad</button>
-      </div>
-    `;
-    document.body.appendChild(modal);
-
-    let seconds = 3;
-    const timerSpan = modal.querySelector('.timer');
-    const skipBtn = modal.querySelector('.skip-btn');
-
-    const interval = setInterval(() => {
-      seconds--;
-      if (seconds <= 0) {
-        clearInterval(interval);
-        timerSpan.textContent = '0';
-        skipBtn.textContent = 'Download Now';
-        skipBtn.classList.add('enabled');
-        skipBtn.disabled = false;
-        setTimeout(() => { skipBtn.click(); }, 500);
-      } else {
-        timerSpan.textContent = seconds;
-      }
-    }, 1000);
-
-    skipBtn.addEventListener('click', async () => {
-      if (!skipBtn.classList.contains('enabled')) return;
-      modal.remove();
-      await adWatched();
-      await performDownload(presetId);
-      resolve();
-    });
-  });
-}
-
-async function performDownload(presetId) {
-  const url = `${API_URL}/presets/${presetId}/download`;
-  const options = { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } };
-  try {
-    if (!navigator.onLine) {
-      await addToQueue('download', url, options);
-      showToast('⏳ Download queued. Will start when online.', 'warning');
-      return;
-    }
-    const res = await fetch(url, options);
-    if (res.ok) {
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      const disposition = res.headers.get('content-disposition');
-      let filename = 'preset.xmp';
-      if (disposition && disposition.indexOf('filename=') !== -1) {
-        const match = disposition.match(/filename="?(.+)"?/);
-        if (match) filename = match[1];
-      }
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(blobUrl);
-      showToast('✅ प्रीसेट डाउनलोड हो गया!', 'success');
-      await fetchNotifications();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      showToast(err.error || 'डाउनलोड विफल', 'error');
-    }
-  } catch (err) {
-    await addToQueue('download', url, options);
-  }
-}
-window.downloadPreset = downloadPreset;
-
-// ============================================================
-// ===== BUY (Razorpay) =====
-// ============================================================
-async function buyPreset(presetId) {
-  if (!currentUser) {
-    showToast('कृपया पहले लॉग इन करें', 'warning');
-    return;
-  }
-  if (!navigator.onLine) {
-    const url = `${API_URL}/payments/create-order`;
-    const options = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ presetId })
-    };
-    await addToQueue('order', url, options);
-    return;
-  }
-  try {
-    const res = await fetch(`${API_URL}/payments/create-order`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ presetId })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Order creation failed');
-    const options = {
-      key: data.key,
-      amount: data.amount,
-      currency: data.currency,
-      name: 'PresetHub',
-      description: 'Preset Purchase',
-      order_id: data.orderId,
-      handler: function (response) {
-        verifyPayment(response, presetId);
-      },
-      prefill: {
-        name: currentUser.name,
-        email: currentUser.email,
-      },
-      theme: { color: '#d4a373' }
-    };
-    const rzp = new Razorpay(options);
-    rzp.open();
-  } catch (err) {
-    showToast('Payment initiation failed: ' + err.message, 'error');
-  }
-}
-window.buyPreset = buyPreset;
-
-async function verifyPayment(response, presetId) {
-  try {
-    const res = await fetch(`${API_URL}/payments/verify`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        razorpay_order_id: response.razorpay_order_id,
-        razorpay_payment_id: response.razorpay_payment_id,
-        razorpay_signature: response.razorpay_signature,
-      })
-    });
-    const data = await res.json();
-    if (res.ok) {
-      showToast('✅ भुगतान सफल! प्रीसेट डाउनलोड हो रहा है...', 'success');
-      await downloadPreset(presetId);
-    } else {
-      showToast('Payment verification failed: ' + (data.error || 'unknown error'), 'error');
-    }
-  } catch (err) {
-    showToast('Verification error: ' + err.message, 'error');
-  }
-}
-
-// ============================================================
-// ===== UPLOAD MODAL =====
-// ============================================================
-function openUploadModal() {
-  if (!currentUser) {
-    showToast('कृपया पहले लॉग इन करें', 'warning');
-    return;
-  }
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay active';
-  modal.innerHTML = `
-    <div class="modal" style="max-width:500px;padding:28px;">
-      <button class="close">&times;</button>
-      <h2 style="font-size:1.4rem;"><i class="fas fa-cloud-upload-alt"></i> नया प्रीसेट अपलोड करें</h2>
-      <form id="uploadForm" enctype="multipart/form-data">
-        <div class="form-group"><input type="text" id="uploadName" placeholder="प्रीसेट का नाम" required style="padding:8px 12px;font-size:0.9rem;" /></div>
-        <div class="form-group"><textarea id="uploadDesc" placeholder="विवरण" style="padding:8px 12px;font-size:0.9rem;min-height:60px;"></textarea></div>
-        <div class="form-group">
-          <select id="uploadCategory" style="padding:8px 12px;font-size:0.9rem;">
-            <option value="सनसेट">सनसेट</option>
-            <option value="ब्लैक & व्हाइट">ब्लैक & व्हाइट</option>
-            <option value="नैचुरल">नैचुरल</option>
-            <option value="विंटेज">विंटेज</option>
-            <option value="सिटीस्केप">सिटीस्केप</option>
-          </select>
-        </div>
-        <div class="form-group"><input type="text" id="uploadTags" placeholder="टैग्स (कॉमा से अलग)" style="padding:8px 12px;font-size:0.9rem;" /></div>
-        <div class="form-group"><input type="number" id="uploadPrice" placeholder="कीमत (0 = मुफ्त)" min="0" step="1" style="padding:8px 12px;font-size:0.9rem;" /></div>
-        <div class="form-group">
-          <label style="font-size:0.85rem;">प्रीसेट फ़ाइल (.xmp, .dng, .lrtemplate)</label>
-          <input type="file" id="uploadFile" accept=".xmp,.dng,.lrtemplate" required style="padding:6px;font-size:0.85rem;" />
-        </div>
-        <div class="form-group">
-          <label style="font-size:0.85rem;">प्रीव्यू इमेज (वैकल्पिक)</label>
-          <input type="file" id="uploadPreview" accept="image/*" style="padding:6px;font-size:0.85rem;" />
-        </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;"><i class="fas fa-upload"></i> अपलोड करें</button>
-      </form>
-    </div>
-  `;
-  document.body.appendChild(modal);
-
-  modal.querySelector('.close').addEventListener('click', () => modal.remove());
-
-  modal.querySelector('#uploadForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData();
-    formData.append('name', document.getElementById('uploadName').value);
-    formData.append('description', document.getElementById('uploadDesc').value);
-    formData.append('category', document.getElementById('uploadCategory').value);
-    formData.append('tags', document.getElementById('uploadTags').value);
-    formData.append('price', document.getElementById('uploadPrice').value || 0);
-    const fileInput = document.getElementById('uploadFile');
-    if (fileInput.files[0]) formData.append('file', fileInput.files[0]);
-    const previewInput = document.getElementById('uploadPreview');
-    if (previewInput.files[0]) formData.append('previewImage', previewInput.files[0]);
-    
-    const url = `${API_URL}/presets`;
-    const options = {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData
-    };
-
+  async function downloadPreset(id, options = {}) {
+    const skipPayment = Boolean(options.skipPayment);
+    let progress;
     try {
-      if (!navigator.onLine) {
-        showToast('⚠️ You are offline. Please connect to the internet to upload.', 'warning');
-        return;
+      const p = state.currentPreset?.id === id ? state.currentPreset : await api(`/presets/${id}`);
+      progress = downloadOverlay(p.name);
+      if (Number(p.price || 0) > 0 && !skipPayment) {
+        if (!requireAuth()) return;
+        if (p.authorId !== state.user.id) return startPayment(p);
       }
-      const res = await fetch(url, options);
-      if (res.ok) {
-        showToast('✅ प्रीसेट अपलोड हो गया!', 'success');
-        modal.remove();
-        loadPresets();
-        loadLatestPresets();
-        loadTopCreators();
-      } else {
-        const err = await res.json();
-        showToast(err.error || 'अपलोड विफल', 'error');
-      }
-    } catch (err) {
-      showToast('❌ Upload failed. Please check your connection.', 'error');
-    }
-  });
-}
-window.openUploadModal = openUploadModal;
-
-// ============================================================
-// ===== TOP CREATORS =====
-// ============================================================
-async function loadTopCreators() {
-  const grid = document.getElementById('topCreatorsGrid');
-  try {
-    const res = await fetch(`${API_URL}/users/top`);
-    if (res.ok) {
-      const creators = await res.json();
-      if (!grid) return;
-      if (!creators || creators.length === 0) {
-        grid.innerHTML = '<p style="color:var(--text);font-size:0.9rem;">कोई क्रिएटर नहीं</p>';
-        return;
-      }
-      grid.innerHTML = creators.map(c => `
-        <div class="creator-card" data-creator-id="${c.id}">
-          <button class="creator-menu" type="button" data-creator-menu="${c.id}" aria-label="Creator menu"><i class="fas fa-ellipsis"></i></button>
-          <div class="avatar" style="width:50px;height:50px;font-size:1.2rem;margin:0 auto 6px;background-image:url(${c.avatar || ''});background-size:cover;">
-            ${!c.avatar ? c.name.charAt(0).toUpperCase() : ''}
-          </div>
-          <div class="name" style="font-size:0.85rem;">${escapeHTML(c.name)}</div>
-          <div class="stats" style="font-size:0.7rem;color:#6b6b6b;">${c.presetCount || 0} प्रीसेट</div>
-          <div class="followers" style="font-size:0.7rem;color:#d4a373;"><i class="fas fa-users"></i> ${c.followers || 0}</div>
-        </div>
-      `).join('');
-    } else {
-      throw new Error('Server error ' + res.status);
-    }
-  } catch (err) {
-    console.error('Top creators error:', err);
-    if (grid) {
-      grid.innerHTML = `<div style="padding:20px;color:#7a7a7a;font-size:0.85rem;text-align:center;width:100%;">
-        <i class="fas fa-triangle-exclamation" style="color:#f39c12;"></i> क्रिएटर्स लोड नहीं हो पाए।
-        <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="loadTopCreators()"><i class="fas fa-rotate"></i> फिर कोशिश करें</button>
-      </div>`;
-    }
+      const r = await api(`/presets/${encodeURIComponent(id)}/download`, { method: 'POST' });
+      if (!r.downloadUrl) throw new Error('Download file unavailable');
+      const a = document.createElement('a'); a.href = r.downloadUrl; a.download = r.originalName || `${slug(p.name)}.xmp`; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
+      await notifyDownload(p.name, r.downloadUrl);
+    } catch (e) { toast(e.message, 'error'); }
+    finally { setTimeout(()=>progress?.remove(), 650); }
   }
-}
 
-// ============================================================
-// ===== PROFILE MODAL =====
-// ============================================================
-window.openProfile = async function(userId) {
-  try {
-    window._currentProfileId = userId;
-    
-    const res = await fetch(`${API_URL}/users/${userId}`);
-    if (!res.ok) throw new Error('User not found');
-    const user = await res.json();
-
-    const presetsRes = await fetch(`${API_URL}/users/${userId}/presets`);
-    const userPresets = presetsRes.ok ? await presetsRes.json() : [];
-
-    const isFollowing = currentUser ? (user.followers || []).includes(currentUser.id) : false;
-
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:650px;padding:28px;">
-        <button class="close">&times;</button>
-        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
-          <div style="width:64px;height:64px;border-radius:50%;background:#d4a373;display:flex;align-items:center;justify-content:center;font-size:1.6rem;color:#fff;${user.avatar ? `background-image:url(${user.avatar});background-size:cover;` : ''}">
-            ${!user.avatar ? user.name.charAt(0).toUpperCase() : ''}
-          </div>
-          <div>
-            <h2 style="font-size:1.2rem;color:var(--text, #1e1e1e);">${escapeHTML(user.name)}</h2>
-            <div style="color:#6b6b6b;font-size:0.85rem;">@${escapeHTML(user.username || user.email?.split('@')[0] || '')}</div>
-            <div style="margin-top:2px;font-size:0.85rem;color:var(--text, #1e1e1e);">${escapeHTML(user.bio || 'कोई बायो नहीं')}</div>
-            <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap;font-size:0.8rem;">
-              <span><strong>${user.totalPresets || 0}</strong> प्रीसेट</span>
-              <span><strong>${user.totalDownloads || 0}</strong> डाउनलोड</span>
-              <span><strong><i class="fas fa-users"></i> ${user.followers || 0}</strong></span>
-              <span><strong><i class="fas fa-user-plus"></i> ${user.following || 0}</strong></span>
-            </div>
-          </div>
-          <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
-            ${currentUser && currentUser.id !== userId ? `
-              <button class="btn ${isFollowing ? 'btn-outline' : 'btn-primary'}" id="followBtn" style="font-size:0.8rem;padding:6px 14px;">
-                ${isFollowing ? '<i class="fas fa-user-minus"></i> अनफॉलो' : '<i class="fas fa-user-plus"></i> फॉलो'}
-              </button>
-            ` : ''}
-            ${currentUser && currentUser.id !== userId ? `<button class="btn btn-outline" id="messageBtn" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-message"></i> Message</button>` : ''}
-            ${currentUser && currentUser.id === userId ? `
-              <button class="btn btn-outline" onclick="window.openEditProfile()" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-edit"></i> एडिट</button>
-              <button class="btn btn-outline" onclick="window.openChangePassword()" style="font-size:0.8rem;padding:6px 14px;"><i class="fas fa-key"></i> पासवर्ड</button>
-            ` : ''}
-          </div>
-        </div>
-        ${user.socialLinks && Object.values(user.socialLinks).some(v => v) ? `
-          <div style="margin-bottom:12px;display:flex;gap:10px;">
-            ${user.socialLinks.instagram ? `<a href="${escapeHTML(user.socialLinks.instagram)}" target="_blank" style="color:#d4a373;"><i class="fab fa-instagram fa-lg"></i></a>` : ''}
-            ${user.socialLinks.youtube ? `<a href="${escapeHTML(user.socialLinks.youtube)}" target="_blank" style="color:#d4a373;"><i class="fab fa-youtube fa-lg"></i></a>` : ''}
-            ${user.socialLinks.twitter ? `<a href="${escapeHTML(user.socialLinks.twitter)}" target="_blank" style="color:#d4a373;"><i class="fab fa-twitter fa-lg"></i></a>` : ''}
-            ${user.socialLinks.website ? `<a href="${escapeHTML(user.socialLinks.website)}" target="_blank" style="color:#d4a373;"><i class="fas fa-globe fa-lg"></i></a>` : ''}
-          </div>
-        ` : ''}
-        <h3 style="font-size:1rem;color:var(--text, #1e1e1e);"><i class="fas fa-cubes"></i> प्रीसेट</h3>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:8px;">
-          ${userPresets.length === 0 ? '<p style="grid-column:1/-1;color:#888;font-size:0.9rem;">अभी कोई प्रीसेट नहीं</p>' : 
-            userPresets.map(p => `
-              <div style="background:var(--bg, #f8f6f2);padding:12px;border-radius:10px;cursor:pointer;" onclick="window.openPresetModal('${p.id}')">
-                <strong style="font-size:0.85rem;color:var(--text, #1e1e1e);">${escapeHTML(p.name)}</strong>
-                <div style="font-size:0.75rem;color:#6b6b6b;">${escapeHTML(p.category)} • ${p.downloads || 0} डाउनलोड</div>
-              </div>
-            `).join('')
-          }
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-
-    modal.querySelector('.close').addEventListener('click', () => modal.remove());
-
-    const messageBtn = modal.querySelector('#messageBtn');
-    if (messageBtn) messageBtn.addEventListener('click', () => openChatModal(user));
-
-    const followBtn = modal.querySelector('#followBtn');
-    if (followBtn) {
-      followBtn.addEventListener('click', async () => {
-        if (!currentUser) {
-          showToast('कृपया लॉग इन करें', 'warning');
-          return;
-        }
-        await toggleFollow(userId);
-      });
-    }
-  } catch (err) {
-    console.error(err);
-    showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
-  }
-};
-
-async function openChatModal(user){
-  if(!currentUser)return showToast('कृपया लॉग इन करें','warning');
-  const m=document.createElement('div');m.className='modal-overlay active';m.innerHTML=`<div class="modal chat-modal"><button class="close">×</button><h2><i class="fas fa-message"></i> ${escapeHTML(user.name)}</h2><p class="chat-note">Messages automatically expire after 24 hours and are not stored in the database.</p><div class="chat-list" id="chatList"></div><form class="chat-form" id="chatForm"><input id="chatInput" maxlength=1000 placeholder="Message…" required><button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane"></i></button></form></div>`;document.body.appendChild(m);m.querySelector('.close').onclick=()=>m.remove();
-  const list=m.querySelector('#chatList'); const render=msgs=>{list.innerHTML=msgs.map(x=>`<div class="chat-bubble ${x.senderId===currentUser.id?'mine':''}"><span>${escapeHTML(x.text)}</span><small>${new Date(x.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('');list.scrollTop=list.scrollHeight;};
-  const load=async()=>{try{const r=await fetch(`${API_URL}/chat/${encodeURIComponent(user.id)}`,{headers:{Authorization:`Bearer ${token}`}});if(r.ok)render((await r.json()).messages||[]);}catch(_){}};await load();const poll=setInterval(()=>{if(!document.body.contains(m)){clearInterval(poll);return}load()},2500);
-  m.querySelector('#chatForm').onsubmit=async e=>{e.preventDefault();const input=m.querySelector('#chatInput');const text=input.value.trim();if(!text)return;input.disabled=true;try{const r=await fetch(`${API_URL}/chat/${encodeURIComponent(user.id)}`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({text})});if(!r.ok)throw new Error();input.value='';await load();}catch(_){showToast('Message send नहीं हुआ','error')}finally{input.disabled=false;input.focus()}};
-}
-window.openChatModal=openChatModal;
-
-// ============================================================
-// ===== FOLLOW / UNFOLLOW =====
-// ============================================================
-async function toggleFollow(userId) {
-  const url = `${API_URL}/users/${userId}/follow`;
-  const options = {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}` }
-  };
-  try {
-    if (!navigator.onLine) {
-      await addToQueue('follow', url, options);
-      showToast('⏳ Follow action queued.', 'info');
-      return;
-    }
-    const res = await fetch(url, options);
-    if (res.ok) {
-      const data = await res.json();
-      showToast(data.following ? '✅ फॉलो कर लिया!' : '❌ अनफॉलो कर दिया', 'info');
-      const modal = document.querySelector('.modal-overlay.active');
-      if (modal) {
-        const currentProfileId = window._currentProfileId;
-        if (currentProfileId) {
-          modal.remove();
-          window.openProfile(currentProfileId);
-        }
-      }
-      await fetchNotifications();
-    } else {
-      showToast('कृपया बाद में प्रयास करें', 'error');
-    }
-  } catch (err) {
-    await addToQueue('follow', url, options);
-  }
-}
-
-// ============================================================
-// ===== CHANGE PASSWORD =====
-// ============================================================
-window.openChangePassword = async function() {
-  if (!currentUser) {
-    showToast('कृपया लॉग इन करें', 'warning');
-    return;
-  }
-  
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay active';
-  modal.innerHTML = `
-    <div class="modal" style="max-width:450px;padding:28px;">
-      <button class="close">&times;</button>
-      <h2 style="font-size:1.2rem;"><i class="fas fa-key"></i> पासवर्ड बदलें</h2>
-      <form id="changePasswordForm">
-        <div class="form-group">
-          <label style="font-size:0.85rem;">मौजूदा पासवर्ड</label>
-          <input type="password" id="currentPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
-        </div>
-        <div class="form-group">
-          <label style="font-size:0.85rem;">नया पासवर्ड (6+ अक्षर, एक नंबर, एक बड़ा अक्षर)</label>
-          <input type="password" id="newPassword" required minlength="6" style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
-        </div>
-        <div class="form-group">
-          <label style="font-size:0.85rem;">नया पासवर्ड दोबारा</label>
-          <input type="password" id="confirmPassword" required style="padding:8px 12px;font-size:0.9rem;width:100%;border-radius:8px;border:1px solid var(--border, #ddd);" />
-        </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;margin-top:8px;">
-          <i class="fas fa-save"></i> पासवर्ड बदलें
-        </button>
-      </form>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  
-  modal.querySelector('.close').addEventListener('click', () => modal.remove());
-  
-  modal.querySelector('#changePasswordForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const currentPassword = document.getElementById('currentPassword').value;
-    const newPassword = document.getElementById('newPassword').value;
-    const confirmPassword = document.getElementById('confirmPassword').value;
-    
-    if (newPassword !== confirmPassword) {
-      showToast('नए पासवर्ड मेल नहीं खाते', 'error');
-      return;
-    }
-    
-    if (newPassword.length < 6) {
-      showToast('पासवर्ड कम से कम 6 अक्षर का होना चाहिए', 'error');
-      return;
-    }
-    
+  // ============ PAYMENT ============
+  async function startPayment(p) {
+    if (!requireAuth()) return;
     try {
-      const res = await fetch(`${API_URL}/auth/change-password`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ currentPassword, newPassword })
-      });
-      
-      const data = await res.json();
-      if (res.ok) {
-        showToast('✅ पासवर्ड बदल गया!', 'success');
-        modal.remove();
-      } else {
-        showToast(data.error || 'पासवर्ड बदलने में विफल', 'error');
+      if (!window.Razorpay) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
       }
-    } catch (err) {
-      showToast('❌ सर्वर से कनेक्ट नहीं हो पाया', 'error');
-    }
-  });
-};
-
-// ============================================================
-// ===== EDIT PROFILE =====
-// ============================================================
-window.openEditProfile = async function() {
-  if (!currentUser) {
-    showToast('कृपया लॉग इन करें', 'warning');
-    return;
+      const order = await api('/payments/create-order', { method: 'POST', body: JSON.stringify({ presetId: p.id }) });
+      const rz = new Razorpay({
+        key: order.key, amount: order.amount, currency: order.currency, order_id: order.orderId,
+        name: 'PresetHub', description: p.name,
+        prefill: { name: state.user.name, email: state.user.email },
+        theme: { color: '#d4a373' },
+        handler: async response => {
+          try {
+            await api('/payments/verify', { method: 'POST', body: JSON.stringify(response) });
+            toast('Payment verified. Download now available.');
+            downloadPreset(p.id, { skipPayment: true });
+          } catch (e) { toast(e.message, 'error'); }
+        }
+      });
+      rz.open();
+    } catch (e) { toast(e.message, 'error'); }
   }
-  try {
-    const res = await fetch(`${API_URL}/users/me`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('Profile not found');
-    const user = await res.json();
 
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:500px;padding:28px;">
-        <button class="close">&times;</button>
-        <h2 style="font-size:1.3rem;"><i class="fas fa-edit"></i> प्रोफ़ाइल एडिट करें</h2>
-        <form id="editProfileForm" enctype="multipart/form-data">
-          <div class="form-group">
-            <label style="font-size:0.85rem;">अवतार</label>
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-              <img id="avatarPreview" src="${user.avatar || ''}" alt="Avatar" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #d4a373;${user.avatar ? '' : 'display:none;'}">
-              <div>
-                <input type="file" id="avatarFile" accept="image/*" style="padding:6px;border:1px solid var(--border,#ddd);border-radius:8px;font-size:0.85rem;width:100%;" />
-                <div style="font-size:0.7rem;color:#888;margin-top:2px;">Max 5MB, JPG/PNG/GIF/WEBP</div>
-              </div>
-            </div>
+  // ============ WISHLIST / LIKE ============
+  async function toggleWishlist(id) {
+    if (!requireAuth()) return;
+    try {
+      const d = await api(`/users/me/wishlist/${id}`, { method: 'POST' });
+      toast((d.wishlist || []).includes(id) ? 'Added to wishlist' : 'Removed from wishlist');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function likePreset(id) {
+    if (!requireAuth()) return;
+    try {
+      const d = await api(`/presets/${id}/like`, { method: 'POST' });
+      toast(d.liked ? 'Liked' : 'Like removed');
+      loadPresets(false);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ SHARE (RICH MODAL) ============
+  async function sharePreset(id) {
+    try {
+      const p = state.currentPreset?.id === id ? state.currentPreset : await api(`/presets/${id}`);
+      const baseUrl = location.origin;
+      const shareUrl = `${baseUrl}/preset/${encodeURIComponent(p.id)}/${slug(p.name)}/`;
+      const shortUrl = await getOrCreateShortLink(p.id);
+      const finalUrl = shortUrl || shareUrl;
+      const shareText = `Check out "${p.name}" by ${p.author} on PresetHub!`;
+      const encodedUrl = encodeURIComponent(finalUrl);
+      const encodedText = encodeURIComponent(shareText);
+      const encodedTitle = encodeURIComponent(`${p.name} — PresetHub`);
+      const previewImg = assetUrl(p.previewImage);
+      const qr1 = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodedUrl}`;
+      const qr2 = `https://quickchart.io/qr?size=220&text=${encodedUrl}`;
+      openModal(`
+        <div class="share-panel">
+          <div class="share-title"><div><span class="eyebrow">PresetHub</span><h2><i class="fas fa-share-nodes"></i> Share Preset</h2></div><button class="share-close" data-action="close" aria-label="Close"><i class="fas fa-xmark"></i></button></div>
+          <div class="share-preview">${imgTag(p.previewImage, `${p.name} preview`, 'share-preview-image')}<div><h3>${esc(p.name)}</h3><p>by ${esc(p.author)} · ${money(p.price)}</p><small>${esc((p.description||'').slice(0,120))}</small></div></div>
+          <div class="share-grid">
+            <button class="share-btn whatsapp" data-share-platform="whatsapp" data-url="${encodedUrl}" data-text="${encodedText}"><i class="fab fa-whatsapp"></i><span>WhatsApp</span></button>
+            <button class="share-btn telegram" data-share-platform="telegram" data-url="${encodedUrl}" data-text="${encodedText}"><i class="fab fa-telegram"></i><span>Telegram</span></button>
+            <button class="share-btn facebook" data-share-platform="facebook" data-url="${encodedUrl}"><i class="fab fa-facebook"></i><span>Facebook</span></button>
+            <button class="share-btn twitter" data-share-platform="twitter" data-url="${encodedUrl}" data-text="${encodedText}"><i class="fab fa-x-twitter"></i><span>X</span></button>
+            <button class="share-btn linkedin" data-share-platform="linkedin" data-url="${encodedUrl}" data-title="${encodedTitle}"><i class="fab fa-linkedin"></i><span>LinkedIn</span></button>
+            <button class="share-btn native" data-share-platform="native" data-url="${encodedUrl}" data-text="${encodedText}" data-title="${encodedTitle}"><i class="fas fa-share"></i><span>More</span></button>
           </div>
-          <div class="form-group">
-            <label style="font-size:0.85rem;">नाम</label>
-            <input type="text" id="editName" value="${escapeHTML(user.name || '')}" required style="padding:8px 12px;font-size:0.9rem;" />
+          <div class="share-link-box"><label>Short Link</label><div class="share-link-input"><input readonly value="${esc(finalUrl)}" aria-label="Preset share link"><button class="btn btn-primary btn-sm" data-share-copy="${esc(finalUrl)}">Copy</button></div></div>
+          <div class="share-qr"><img class="qr-primary" src="${qr1}" data-qr-fallback="${qr2}" alt="QR code to open ${esc(p.name)}" loading="eager" decoding="async"><p>Scan to open on mobile</p></div>
+          <div class="share-footer"><button class="btn btn-outline btn-sm" data-share-copy-image="${esc(previewImg)}" data-share-copy-url="${esc(finalUrl)}"><i class="fas fa-image"></i> Copy Image + Link</button><button class="btn btn-outline btn-sm" data-share-copy="${esc(finalUrl)}"><i class="fas fa-link"></i> Copy Short Link</button></div>
+        </div>`);
+      const qr=document.querySelector('.qr-primary'); if(qr) qr.onerror=()=>{qr.onerror=null;qr.src=qr.dataset.qrFallback;};
+      trackShare(p.id, 'open_menu');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function getOrCreateShortLink(presetId) {
+    try { const r = await api('/share/create', { method: 'POST', body: JSON.stringify({ presetId, platform: 'menu' }) }); return r.shortUrl; }
+    catch (_) { return null; }
+  }
+
+  function trackShare(presetId, platform) {
+    const headers = new Headers({ 'Content-Type': 'application/json' });
+    if (state.token) headers.set('Authorization', `Bearer ${state.token}`);
+    fetch(`${API}/presets/${presetId}/share`, { method:'POST', headers, body:JSON.stringify({platform}) }).catch(()=>{});
+  }
+
+  function openSharePlatform(platform, url, text, title) {
+    let link='';
+    switch(platform){
+      case 'whatsapp': link=`https://wa.me/?text=${text}%20${url}`; break;
+      case 'telegram': link=`https://t.me/share/url?url=${url}&text=${text}`; break;
+      case 'facebook': link=`https://www.facebook.com/sharer/sharer.php?u=${url}`; break;
+      case 'twitter': link=`https://twitter.com/intent/tweet?text=${text}&url=${url}`; break;
+      case 'linkedin': link=`https://www.linkedin.com/sharing/share-offsite/?url=${url}`; break;
+      case 'native': if(navigator.share){navigator.share({title:decodeURIComponent(title||''),text:decodeURIComponent(text||''),url:decodeURIComponent(url||'')}).catch(()=>{});return true;} return false;
+      default:return false;
+    }
+    if(link) window.open(link,'_blank','noopener,width=600,height=600');
+    return true;
+  }
+
+  async function copyImageAndLink(imageUrl, linkUrl){
+    try{
+      if(navigator.clipboard?.write && window.ClipboardItem && imageUrl){
+        const response=await fetch(imageUrl,{mode:'cors'});
+        const blob=await response.blob();
+        const textBlob=new Blob([`${linkUrl}`],{type:'text/plain'});
+        await navigator.clipboard.write([new ClipboardItem({'text/plain':textBlob,[blob.type]:blob})]);
+        toast('Preview image + link copied');
+      }else{
+        await navigator.clipboard.writeText(`${linkUrl}\n${imageUrl}`);
+        toast('Link + preview image URL copied');
+      }
+    }catch(e){
+      try{await navigator.clipboard.writeText(`${linkUrl}\n${imageUrl}`);toast('Link + image URL copied');}
+      catch(_){toast('Copy failed','error');}
+    }
+  }
+  // ============ MY SHARE LINKS ============
+  async function showMyShares() {
+    if (!requireAuth()) return;
+    try {
+      const links = await api('/share/me/list');
+      openModal(`
+        <h2><i class="fas fa-link"></i> My Share Links</h2>
+        ${links.length === 0
+          ? '<p>You have not created any share links yet. Open a preset and click Share to create one.</p>'
+          : `<div class="share-links-list">
+              ${links.map(l => `
+                <div class="share-link-item">
+                  <div>
+                    <a href="${esc(l.shortUrl)}" target="_blank" rel="noopener">${esc(l.shortUrl)}</a>
+                    <small>${esc(l.platform)} · ${new Date(l.createdAt).toLocaleDateString()}</small>
+                  </div>
+                  <div class="share-link-stats">
+                    <b>${l.clicks}</b><span>clicks</span>
+                  </div>
+                </div>
+              `).join('')}
+            </div>`}
+      `);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ SHARE STATS (For Creator) ============
+  async function showShareStats(presetId) {
+    if (!requireAuth()) return;
+    try {
+      const stats = await api(`/presets/${presetId}/share-stats`);
+      const platforms = stats.platforms || {};
+      openModal(`
+        <h2><i class="fas fa-chart-pie"></i> Share Analytics</h2>
+        <div class="stats-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:16px 0">
+          <div class="stat-item" style="background:var(--input-bg);padding:14px;border-radius:12px;text-align:center">
+            <div style="font-size:2rem;font-weight:700">${stats.totalShares || 0}</div>
+            <div style="font-size:0.8rem;color:var(--muted)">Total Shares</div>
           </div>
-          <div class="form-group">
-            <label style="font-size:0.85rem;">यूज़रनेम</label>
-            <input type="text" id="editUsername" value="${escapeHTML(user.username || '')}" style="padding:8px 12px;font-size:0.9rem;" />
+          <div class="stat-item" style="background:var(--input-bg);padding:14px;border-radius:12px;text-align:center">
+            <div style="font-size:2rem;font-weight:700">${stats.uniqueSharers || 0}</div>
+            <div style="font-size:0.8rem;color:var(--muted)">Unique Sharers</div>
           </div>
-          <div class="form-group">
-            <label style="font-size:0.85rem;">बायो</label>
-            <textarea id="editBio" rows="3" style="padding:8px 12px;font-size:0.9rem;min-height:60px;">${escapeHTML(user.bio || '')}</textarea>
+        </div>
+        <h3 style="margin-top:20px">By Platform</h3>
+        ${Object.keys(platforms).length === 0
+          ? '<p>No shares yet.</p>'
+          : `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px">
+              ${Object.entries(platforms).map(([p, c]) => `
+                <div style="background:var(--input-bg);padding:10px;border-radius:10px;text-align:center">
+                  <div style="font-size:1.3rem;font-weight:700">${c}</div>
+                  <div style="font-size:0.75rem;color:var(--muted);text-transform:capitalize">${esc(p)}</div>
+                </div>
+              `).join('')}
+            </div>`}
+        <h3 style="margin-top:20px">Recent Shares</h3>
+        ${(stats.recent || []).length === 0
+          ? '<p>No recent shares.</p>'
+          : `<div>${stats.recent.map(s => `<div style="padding:8px 0;border-bottom:1px solid var(--border)"><b>${esc(s.userName)}</b> on ${esc(s.platform)}<small style="display:block;color:var(--muted);font-size:0.75rem">${new Date(s.sharedAt).toLocaleString()}</small></div>`).join('')}</div>`}
+      `);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ PROFILE ============
+  async function openCreatorMenu(id) {
+    try {
+      const u = await api(`/users/${encodeURIComponent(id)}`);
+      const own = state.user && String(state.user.id) === String(u.id);
+      const profileLink = profileUrl(u);
+      openModal(`<div class="creator-action-menu">
+        <div class="creator-menu-head">
+          <div class="profile-avatar mini">${u.avatar ? imgTag(u.avatar, `${esc(u.name || 'Creator')} avatar`) : esc((u.name || 'U').charAt(0).toUpperCase())}</div>
+          <div><span class="eyebrow">CREATOR</span><h2>${esc(u.name || u.username || 'Creator')}</h2><small>@${esc(u.username || 'creator')}</small></div>
+        </div>
+        <div class="creator-menu-grid">
+          <button class="menu-action" data-action="profile" data-id="${esc(u.id)}"><i class="fas fa-user"></i><span>View Profile</span></button>
+          <button class="menu-action" data-action="share-profile" data-id="${esc(u.id)}"><i class="fas fa-share-nodes"></i><span>Share Profile link</span></button>
+          <button class="menu-action" data-action="invite-referral" data-id="${esc(u.id)}"><i class="fas fa-user-group"></i><span>Invite / Refer Friends</span></button>
+          <button class="menu-action" data-action="download-profile" data-id="${esc(u.id)}"><i class="fas fa-download"></i><span>Download Presets</span></button>
+          <button class="menu-action" data-action="profile-wishlist" data-id="${esc(u.id)}"><i class="far fa-heart"></i><span>My Wishlist</span></button>
+          ${own ? `<button class="menu-action" data-action="edit-profile"><i class="fas fa-pen"></i><span>Edit Profile</span></button>` : `<button class="menu-action" data-action="follow" data-id="${esc(u.id)}"><i class="fas fa-user-plus"></i><span>Follow / Unfollow</span></button>`}
+          ${!own ? `<button class="menu-action" data-action="chat" data-id="${esc(u.id)}"><i class="fas fa-message"></i><span>Message Creator</span></button>` : ''}
+          <button class="menu-action" data-action="copy-link" data-link="${esc(profileLink)}"><i class="fas fa-link"></i><span>Copy Profile Link</span></button>
+        </div>
+      </div>`);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function shareProfile(id) {
+    try {
+      const u = await api(`/users/${encodeURIComponent(id)}`);
+      const url = `${location.origin}${profileUrl(u)}`;
+      if (navigator.share) await navigator.share({ title: `${u.name || u.username || 'Creator'} on PresetHub`, text: `Check out ${u.name || u.username || 'this creator'} on PresetHub.`, url });
+      else { await navigator.clipboard.writeText(url); toast('Profile link copied'); }
+    } catch (e) { if (e?.name !== 'AbortError') toast(e.message || 'Unable to share profile', 'error'); }
+  }
+
+  async function showProfile(id) {
+    try {
+      const u = await api(`/users/${encodeURIComponent(id)}`);
+      const presets = await api(`/users/${encodeURIComponent(id)}/presets`);
+      let following = false;
+      if (state.user && state.user.id !== u.id) {
+        try { following = (await api(`/users/${encodeURIComponent(id)}/follow-status`)).following; } catch (_) {}
+      }
+      const socialMap = { instagram:'fa-instagram', youtube:'fa-youtube', twitter:'fa-x-twitter', website:'fa-globe' };
+      openModal(`
+        <div class="profile-view professional-profile">
+          <div class="profile-cover"></div>
+          <div class="profile-head profile-head-pro">
+            <div class="profile-avatar">${u.avatar ? imgTag(u.avatar, `${u.name || 'Creator'} avatar`) : esc((u.name || 'U').charAt(0).toUpperCase())}</div>
+            <div class="profile-main"><span class="eyebrow">CREATOR PROFILE</span><h2>${esc(u.name || u.username || 'Creator')}</h2><p class="profile-handle">@${esc(u.username || 'creator')}</p><p class="profile-bio">${esc(u.bio || 'Preset creator on PresetHub.')}</p></div>
+            <div class="profile-actions">${state.user && state.user.id !== u.id ? `<button class="btn btn-primary" data-action="follow" data-id="${esc(u.id)}"><i class="fas fa-user-plus"></i> ${following ? 'Following' : 'Follow'}</button>${following ? `<button class="btn btn-message profile-message-btn" data-action="chat" data-id="${esc(u.id)}"><i class="fas fa-message" aria-hidden="true"></i><span>Message</span></button>` : ''}` : `<button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button>`}</div>
           </div>
-          <div style="border-top:1px solid var(--border, #eee);padding-top:10px;margin-top:10px;">
-            <h4 style="font-size:0.95rem;"><i class="fas fa-share-alt"></i> सोशल लिंक्स</h4>
-            <div class="form-group">
-              <label style="font-size:0.8rem;"><i class="fab fa-instagram"></i> Instagram</label>
-              <input type="text" id="editInstagram" value="${escapeHTML(user.socialLinks?.instagram || '')}" style="padding:8px 12px;font-size:0.9rem;" />
-            </div>
-            <div class="form-group">
-              <label style="font-size:0.8rem;"><i class="fab fa-youtube"></i> YouTube</label>
-              <input type="text" id="editYoutube" value="${escapeHTML(user.socialLinks?.youtube || '')}" style="padding:8px 12px;font-size:0.9rem;" />
-            </div>
-            <div class="form-group">
-              <label style="font-size:0.8rem;"><i class="fab fa-twitter"></i> Twitter</label>
-              <input type="text" id="editTwitter" value="${escapeHTML(user.socialLinks?.twitter || '')}" style="padding:8px 12px;font-size:0.9rem;" />
-            </div>
-            <div class="form-group">
-              <label style="font-size:0.8rem;"><i class="fas fa-globe"></i> Website</label>
-              <input type="text" id="editWebsite" value="${escapeHTML(user.socialLinks?.website || '')}" style="padding:8px 12px;font-size:0.9rem;" />
-            </div>
-          </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;font-size:0.9rem;padding:10px;"><i class="fas fa-save"></i> सहेजें</button>
+          <div class="profile-stats"><b>${u.totalPresets || 0}<span>Presets</span></b><b>${u.totalDownloads || 0}<span>Downloads</span></b><b>${u.followers || 0}<span>Followers</span></b><b>${u.following || 0}<span>Following</span></b></div>
+          <div class="social-row">${Object.entries(u.socialLinks || {}).filter(([,v]) => safeExternal(v) !== '#').map(([k,v]) => `<a class="social-icon" href="${esc(safeExternal(v))}" target="_blank" rel="noopener noreferrer" aria-label="${esc(k)}"><i class="fab ${socialMap[k] || 'fa-link'}"></i><span>${esc(k)}</span></a>`).join('') || '<span class="muted">No social links added yet.</span>'}</div>
+          <div class="profile-section-head"><h3>Presets by ${esc(u.name || u.username || 'Creator')}</h3><span>${presets.length} published</span></div>
+          <div class="mini-preset-grid">${(presets || []).map(presetCard).join('') || '<div class="empty-state"><i class="fas fa-images"></i><p>No presets yet.</p></div>'}</div>
+        </div>`);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function editProfileModal() {
+    if (!requireAuth()) return;
+    const u = state.user;
+    openModal(`<div class="profile-edit-panel"><span class="eyebrow">ACCOUNT SETTINGS</span><h2>Edit profile</h2><form id="profileForm">
+      <div class="form-grid"><div class="form-group"><label>Name</label><input name="name" value="${esc(u.name || '')}" maxlength="50"></div><div class="form-group"><label>Username</label><input name="username" value="${esc(u.username || '')}" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+"></div></div>
+      <div class="profile-avatar-upload"><div class="profile-avatar-preview">${u.avatar ? imgTag(u.avatar, 'Current profile image') : '<i class="fas fa-user"></i>'}</div><div class="form-group"><label>Profile image</label><input name="avatarFile" id="profileAvatarFile" type="file" accept="image/png,image/jpeg,image/webp"><small>JPG, PNG or WEBP · max 5MB. Upload continues/resumes if you leave the page.</small></div></div>
+      <div class="form-group"><label>Bio</label><textarea name="bio" maxlength="500">${esc(u.bio || '')}</textarea></div>
+      <div class="form-grid"><div class="form-group"><label><i class="fab fa-instagram"></i> Instagram</label><input name="instagram" value="${esc(u.socialLinks?.instagram || '')}" placeholder="https://instagram.com/username"></div><div class="form-group"><label><i class="fab fa-youtube"></i> YouTube</label><input name="youtube" value="${esc(u.socialLinks?.youtube || '')}" placeholder="https://youtube.com/@username"></div><div class="form-group"><label><i class="fab fa-x-twitter"></i> X / Twitter</label><input name="twitter" value="${esc(u.socialLinks?.twitter || '')}" placeholder="https://x.com/username"></div><div class="form-group"><label><i class="fas fa-globe"></i> Website</label><input name="website" value="${esc(u.socialLinks?.website || '')}" placeholder="https://example.com"></div></div>
+      <button class="btn btn-primary" type="submit"><i class="fas fa-check"></i> Save profile</button></form></div>`);
+  }
+
+  // ============ AUTH ============
+  function openAuth(mode = 'login', after = null) {
+    openModal(`
+      <div class="auth-box">
+        <h2>${mode === 'login' ? 'Welcome back' : 'Create your PresetHub account'}</h2>
+        <form id="authForm" data-mode="${mode}">
+          ${mode === 'signup' ? '<div class="form-group"><label>Name</label><input name="name" maxlength="50" required></div><div class="form-group"><label>Username</label><input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" required></div>' : ''}
+          <div class="form-group"><label>Email</label><input type="email" name="email" required autocomplete="email"></div>
+          <div class="form-group"><label>Password</label><input type="password" name="password" minlength="8" required autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}"></div>
+          ${mode === 'signup' ? '<small>At least 8 characters with upper/lowercase and a number.</small>' : ''}
+          <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
         </form>
-      </div>
-    `;
-    document.body.appendChild(modal);
+        ${mode === 'login' ? '<button class="text-button" data-action="forgot-password">Forgot password?</button>' : ''}
+        <button class="text-button" data-action="switch-auth" data-mode="${mode === 'login' ? 'signup' : 'login'}">${mode === 'login' ? 'Create account' : 'Already have an account? Log in'}</button>
+      </div>`);
+  }
 
-    modal.querySelector('.close').addEventListener('click', () => modal.remove());
+  function openForgotPassword(){
+    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Reset password</h2><p class="muted">Enter your account email. If it exists, PresetHub will send a reset link.</p><form id="forgotForm"><div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div><button class="btn btn-primary" type="submit"><i class="fas fa-envelope"></i> Send reset link</button></form></div>`);
+  }
+  function openResetPassword(token){
+    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}"><div class="form-group"><label>New password</label><input type="password" name="password" minlength="8" required autocomplete="new-password"></div><button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
+  }
 
-    const avatarFileInput = modal.querySelector('#avatarFile');
-    const avatarPreview = modal.querySelector('#avatarPreview');
-    avatarFileInput.addEventListener('change', function(e) {
-      const file = e.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = function(event) {
-          avatarPreview.src = event.target.result;
-          avatarPreview.style.display = 'block';
-        };
-        reader.readAsDataURL(file);
+  async function submitAuth(form) {
+    const mode = form.dataset.mode;
+    const data = Object.fromEntries(new FormData(form).entries());
+    try {
+      const r = await api(`/auth/${mode}`, { method: 'POST', body: JSON.stringify(data) });
+      state.token = r.token; state.user = r.user;
+      localStorage.setItem('presethub_token', state.token);
+      updateAuthUI(); closeModal();
+      toast(mode === 'login' ? 'Logged in' : 'Account created');
+      await loadPresets();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function openAccount() {
+    if (!requireAuth()) return;
+    try {
+      const [u, d] = await Promise.all([api('/auth/me'), api('/users/me/dashboard')]);
+      state.user = u.user;
+      const s = d.stats || {};
+      openModal(`
+        <div class="account-panel professional-dashboard">
+          <div class="dashboard-head"><div><span class="eyebrow">CREATOR STUDIO</span><h2>Professional Dashboard</h2><p>@${esc(d.user.username || d.user.name || 'creator')}</p></div><button class="btn btn-accent" data-action="upload"><i class="fas fa-cloud-arrow-up"></i> Upload</button></div>
+          <div class="dashboard-stats"><div><b>${s.views || 0}</b><span>Views</span></div><div><b>${s.downloads || 0}</b><span>Downloads</span></div><div><b>${s.likes || 0}</b><span>Likes</span></div><div><b>${d.followers || 0}</b><span>Followers</span></div><div><b>${d.unreadNotifications || 0}</b><span>Unread</span></div></div>
+          <div class="account-actions"><button class="btn btn-outline" data-action="my-profile"><i class="fas fa-user"></i> Profile</button><button class="btn btn-outline" data-action="edit-profile"><i class="fas fa-pen"></i> Edit profile</button><button class="btn btn-outline" data-action="wishlist-page"><i class="fas fa-heart"></i> Wishlist</button><button class="btn btn-outline" data-action="downloads"><i class="fas fa-download"></i> Downloads</button><button class="btn btn-outline" data-action="notifications"><i class="fas fa-bell"></i> Notifications</button><button class="btn btn-outline" data-action="my-shares"><i class="fas fa-link"></i> Share links</button><button class="btn btn-danger" data-action="logout"><i class="fas fa-right-from-bracket"></i> Log out</button></div>
+          <div class="profile-section-head"><h3>Your presets</h3><span>${(d.presets || []).length} uploads</span></div>
+          <div class="dashboard-preset-list">${(d.presets || []).map(p => `<div class="dashboard-row"><div class="dashboard-thumb">${imgTag(p.previewImage, p.name, '')}</div><div class="dashboard-row-main"><b>${esc(p.name)}</b><small>${esc(p.status)} · ${p.views || 0} views · ${p.downloads || 0} downloads</small></div><div class="dashboard-row-actions"><button class="icon-action" data-action="view-preset" data-id="${esc(p.id)}" title="View"><i class="fas fa-eye"></i></button><button class="icon-action" data-action="edit-preset" data-id="${esc(p.id)}" title="Edit"><i class="fas fa-pen"></i></button><button class="icon-action danger" data-action="delete-preset" data-id="${esc(p.id)}" title="Delete"><i class="fas fa-trash"></i></button></div></div>`).join('') || '<div class="empty-state"><i class="fas fa-cloud-arrow-up"></i><p>No uploads yet.</p></div>'}</div>
+        </div>`);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ WISHLIST (BATCH) ============
+  async function showWishlist() {
+    if (!requireAuth()) return;
+    try {
+      const list = await api('/users/me/wishlist/presets');
+      openModal(`<h2>My Wishlist</h2><div class="mini-preset-grid">${list.map(presetCard).join('') || '<p>Your wishlist is empty.</p>'}</div>`);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function showDownloads() {
+    if (!requireAuth()) return;
+    try {
+      const list = await api('/users/me/downloads');
+      openModal(`<h2>My Downloads</h2><div class="mini-preset-grid">${(list || []).map(presetCard).join('') || '<p>No downloads yet.</p>'}</div>`);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function showNotifications() {
+    if (!requireAuth()) return;
+    try {
+      const list = await api('/users/me/notifications');
+      openModal(`<h2>Notifications</h2><div class="notification-list">${(list || []).map(n => `<div class="notification ${n.read ? '' : 'unread'}"><b>${esc(n.type)}</b><p>${esc(n.message)}</p><small>${new Date(n.createdAt).toLocaleString()}</small></div>`).join('') || '<p>No notifications.</p>'}<button class="btn btn-outline" data-action="read-notifications">Mark all read</button></div>`);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ UPLOAD (SINGLE + BULK TABS) ============
+  function openUpload() {
+    if (!requireAuth()) return;
+    openModal(`
+      <div class="upload-panel">
+        <h2>Upload Presets</h2>
+        <div class="upload-tabs">
+          <button class="upload-tab active" data-upload-tab="single">📄 Single Upload</button>
+          <button class="upload-tab" data-upload-tab="bulk">📦 Bulk Upload (max 20)</button>
+        </div>
+
+        <form id="uploadForm" enctype="multipart/form-data" data-tab="single">
+          <p style="color:var(--muted);font-size:0.85rem;margin-bottom:14px">Accepted: XMP, DNG, LRTEMPLATE, CUBE, 3DL, LOOK, COSTYLE, XML, JSON, ZIP. Max 100MB each.</p>
+          <div class="form-group"><label>Preset name</label><input name="name" required maxlength="100"></div>
+          <div class="form-group"><label>Description</label><textarea name="description" maxlength="500"></textarea></div>
+          <div class="form-group"><label>Category</label><input name="category" maxlength="50" placeholder="Natural, Vintage…"></div>
+          <div class="form-group"><label>Tags</label><input name="tags" maxlength="300" placeholder="portrait, warm, mobile"></div>
+          <div class="form-group"><label>Price (INR)</label><input name="price" type="number" min="0" max="999999.99" step="0.01" value="0"></div>
+          <div class="form-group"><label>Preset file</label><input name="file" type="file" accept=".xmp,.dng,.lrtemplate,.cube,.3dl,.look,.costyle,.xml,.json,.zip" required></div>
+          <div class="form-group"><label>Preview image</label><input name="previewImage" type="file" accept="image/png,image/jpeg,image/webp"></div>
+          <button class="btn btn-accent" type="submit">Publish preset</button>
+        </form>
+
+        <form id="bulkUploadForm" enctype="multipart/form-data" data-tab="bulk" hidden>
+          <div class="bulk-hint">
+            <strong>💡 Tip:</strong> Preview images pair by matching filename.<br>
+            Example: <code>Sunset.xmp</code> + <code>Sunset.jpg</code> → 1 preset. If no name match, previews pair by order.
+          </div>
+          <div class="form-group">
+            <label>Preset files (up to 20)</label>
+            <input name="files" type="file" accept=".xmp,.dng,.lrtemplate,.cube,.3dl,.look,.costyle,.xml,.json,.zip" multiple required>
+          </div>
+          <div class="form-group">
+            <label>Preview images (optional, pair by name)</label>
+            <input name="previewImages" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+          </div>
+          <div class="form-group"><label>Category (applies to all)</label><input name="category" maxlength="50" placeholder="General" value="General"></div>
+          <div class="form-group"><label>Tags (applies to all, comma-separated)</label><input name="tags" maxlength="300" placeholder="portrait, warm, mobile"></div>
+          <div class="form-group"><label>Price (INR, applies to all)</label><input name="price" type="number" min="0" max="999999.99" step="0.01" value="0"></div>
+          <div class="form-group"><label>Description (applies to all, optional)</label><textarea name="description" maxlength="500" placeholder="Common description (preset name used if empty)"></textarea></div>
+          <button class="btn btn-accent" type="submit">Publish All Presets</button>
+        </form>
+      </div>`);
+  }
+
+  async function submitUpload(form) {
+    if (!state.token) return requireAuth();
+    const fd = new FormData(form);
+    const tags = String(fd.get('tags') || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 10);
+    fd.delete('tags'); tags.forEach(t => fd.append('tags', t));
+    const uploadId = makeId(); fd.append('uploadId', uploadId);
+    const record = { id: uploadId, kind: 'preset', method: 'POST', path: '/presets', token: state.token, name: String(fd.get('name')||'preset'), fields: [], files: [] };
+    for (const [name,value] of fd.entries()) { if (value instanceof File) { if (value.size) record.files.push({field:name,file:value}); } else record.fields.push({name,value:String(value)}); }
+    try { await queuePut(record); closeModal(); await processQueuedUpload(record, true); }
+    catch (e) { toast('Upload queue could not be saved. Please retry.', 'error'); }
+  }
+
+  async function submitBulkUpload(form) {
+    const fd = new FormData(form);
+    const files = fd.getAll('files');
+    if (!files.length) return toast('Select at least one preset file', 'error');
+    if (files.length > 20) return toast('Max 20 presets per bulk upload', 'error');
+
+    const btn = form.querySelector('button[type="submit"]');
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = `Uploading ${files.length} preset(s)…`;
+
+    try {
+      const r = await api('/presets/bulk', { method: 'POST', body: fd });
+      closeModal();
+      toast(`✅ ${r.created} preset(s) published${r.failed ? `, ${r.failed} failed` : ''}`);
+      loadPresets();
+      if (r.failed > 0 && r.errors) {
+        console.warn('Bulk upload errors:', r.errors);
       }
-    });
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  }
 
-    modal.querySelector('#editProfileForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      const avatarFile = modal.querySelector('#avatarFile').files[0];
-      if (avatarFile) {
-        const formData = new FormData();
-        formData.append('avatar', avatarFile);
-        try {
-          const avatarRes = await fetch(`${API_URL}/auth/me/avatar`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${token}` },
-            body: formData
-          });
-          if (!avatarRes.ok) {
-            const err = await avatarRes.json();
-            showToast('Avatar upload failed: ' + (err.error || 'unknown'), 'error');
-            return;
-          }
-          const avatarData = await avatarRes.json();
-          currentUser.avatar = avatarData.avatar;
-          showLoggedInUI(currentUser);
-        } catch (err) {
-          showToast('Avatar upload error', 'error');
-          return;
-        }
+  function updateSelectionUI() {
+    const toolbar = $('#bulkToolbar');
+    const count = $('#selectedCount');
+    if (toolbar) toolbar.hidden = state.selected.size === 0;
+    if (count) count.textContent = state.selected.size;
+  }
+
+  async function bulkDownload() {
+    if (!requireAuth()) return;
+    const ids = [...state.selected];
+    if (!ids.length) return toast('Select presets first', 'error');
+    try {
+      const r = await api('/presets/bulk-download', { method: 'POST', body: JSON.stringify({ ids }) });
+      if (r.skipped?.length) toast(`${r.skipped.length} item(s) skipped because purchase/file access is required`, 'info');
+      r.downloads.forEach((d, i) => setTimeout(() => {
+        const a = document.createElement('a'); a.href = d.url; a.download = d.filename; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
+      }, i * 450));
+      state.selected.clear(); updateSelectionUI(); loadPresets(false); toast(`Starting ${r.count} download(s)…`); if ('Notification' in window && Notification.permission === 'granted') new Notification('PresetHub', {body:`${r.count} preset download(s) started`, icon:'/assets/icons/icon-192.png'});
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function editPreset(id) {
+    if (!requireAuth()) return;
+    try {
+      const p = await api(`/presets/${id}`);
+      openModal(`<div class="edit-preset-panel"><span class="eyebrow">PRESET MANAGEMENT</span><h2>Edit preset</h2><form id="editPresetForm" data-id="${esc(id)}"><div class="form-group"><label>Name</label><input name="name" maxlength="100" value="${esc(p.name)}" required></div><div class="form-group"><label>Description</label><textarea name="description" maxlength="500">${esc(p.description || '')}</textarea></div><div class="form-grid"><div class="form-group"><label>Category</label><input name="category" maxlength="50" value="${esc(p.category || 'General')}"></div><div class="form-group"><label>Price (INR)</label><input name="price" type="number" min="0" step="0.01" value="${Number(p.price||0)}"></div></div><div class="form-group"><label>Tags</label><input name="tags" maxlength="300" value="${esc((p.tags||[]).join(', '))}"></div><div class="form-group"><label>Replace preset file (optional)</label><input name="file" type="file" accept=".xmp,.dng,.lrtemplate,.cube,.3dl,.look,.costyle,.xml,.json,.zip"></div><div class="form-group"><label>Replace poster / preview (optional)</label><input name="previewImage" type="file" accept="image/png,image/jpeg,image/webp"></div><button class="btn btn-primary"><i class="fas fa-check"></i> Save changes</button></form></div>`);
+    } catch(e){ toast(e.message,'error'); }
+  }
+  async function deletePreset(id) {
+    if (!requireAuth()) return;
+    if (!confirm('Delete this preset permanently?')) return;
+    try { await api(`/presets/${id}`, {method:'DELETE'}); toast('Preset deleted'); closeModal(); openAccount(); loadPresets(); } catch(e){ toast(e.message,'error'); }
+  }
+
+  // ============ FOLLOW ============
+  async function follow(id) {
+    if (!requireAuth()) return;
+    try {
+      const r = await api(`/users/${id}/follow`, { method: 'POST' });
+      toast(r.following ? 'Followed' : 'Unfollowed');
+      showProfile(id);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function submitComment(form) {
+    try { await api(`/comments/${form.dataset.preset}`, { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) }); toast('Comment added'); showPreset(form.dataset.preset); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function likeComment(presetId, commentId) {
+    if (!requireAuth()) return;
+    try { await api(`/comments/${presetId}/${commentId}/like`, { method: 'POST' }); showPreset(presetId); } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ REVIEW ============
+  async function submitReview(form) {
+    try {
+      await api(`/reviews/${form.dataset.preset}`, {
+        method: 'POST',
+        body: JSON.stringify(Object.fromEntries(new FormData(form).entries()))
+      });
+      toast('Review added');
+      showPreset(form.dataset.preset);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  // ============ SEARCH HELPERS ============
+  async function globalSearch(q) {
+    q = String(q || '').trim();
+    if (q.length < 2) { $('#searchEntityResults')?.setAttribute('hidden',''); return; }
+    try {
+      const r = await api(`/presets/global-search?q=${encodeURIComponent(q)}`);
+      const box = $('#searchEntityResults');
+      if (box) {
+        const users = (r.users||[]).map(u => `<button class="search-entity user" data-action="profile" data-id="${esc(u.id)}"><span class="search-entity-avatar">${u.avatar?`<img src="${esc(assetUrl(u.avatar))}" alt="">`:esc((u.name||'U').charAt(0).toUpperCase())}</span><span><b>${esc(u.name||u.username||'User')}</b><small>@${esc(u.username||'user')} · ${u.followers||0} followers</small></span></button>`).join('');
+        const cats = (r.categories||[]).map(c => `<button class="search-chip" data-action="category" data-category="${esc(c.name)}">Category: ${esc(c.name)} <small>${c.count}</small></button>`).join('');
+        const tags = (r.tags||[]).map(t => `<button class="search-chip" data-action="tag-search" data-tag="${esc(t.name)}">#${esc(t.name)} <small>${t.count}</small></button>`).join('');
+        const presetResults=(r.presets||[]).slice(0,6).map(p=>`<button class="search-entity preset" data-action="view-preset" data-id="${esc(p.id)}"><span class="search-entity-avatar">${imgTag(p.previewImage,p.name,'')}</span><span><b>${esc(p.name)}</b><small>${esc(p.category||'General')} · ${esc(p.author||'Creator')} · ${money(p.price)}</small></span><i class="fas fa-arrow-right"></i></button>`).join('');
+      box.innerHTML = `<div class="search-result-head"><div><span class="eyebrow">SEARCH</span><h3>Results for “${esc(q)}”</h3></div><span>${(r.presets||[]).length} presets</span></div>${presetResults?`<div class="search-entity-group"><b>Presets</b><div class="search-entity-list">${presetResults}</div></div>`:''}${users?`<div class="search-entity-group"><b>Users</b><div class="search-entity-list">${users}</div></div>`:''}${cats?`<div class="search-entity-group"><b>Categories</b><div class="search-chip-list">${cats}</div></div>`:''}${tags?`<div class="search-entity-group"><b>Tags</b><div class="search-chip-list">${tags}</div></div>`:''}`;
+        box.hidden = false;
       }
-      
-      const payload = {
-        name: document.getElementById('editName').value,
-        username: document.getElementById('editUsername').value,
-        bio: document.getElementById('editBio').value,
-        socialLinks: {
-          instagram: document.getElementById('editInstagram').value,
-          youtube: document.getElementById('editYoutube').value,
-          twitter: document.getElementById('editTwitter').value,
-          website: document.getElementById('editWebsite').value,
-        }
-      };
-      try {
-        const res = await fetch(`${API_URL}/users/me`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(payload)
-        });
-        if (res.ok) {
-          const updatedUser = await res.json();
-          currentUser = updatedUser;
-          showLoggedInUI(updatedUser);
-          showToast('✅ प्रोफ़ाइल अपडेट हो गई', 'success');
-          modal.remove();
-          loadTopCreators();
-        } else {
-          const err = await res.json();
-          showToast(err.error || 'अपडेट विफल', 'error');
-        }
-      } catch (err) {
-        showToast('❌ Update failed. Please check your connection.', 'error');
-      }
-    });
-  } catch (err) {
-    console.error(err);
-    showToast('प्रोफ़ाइल लोड नहीं हुई', 'error');
+      return r;
+    } catch (e) { toast(e.message,'error'); return null; }
   }
-};
-
-// ============================================================
-// ===== SUBSCRIPTION & REFERRAL =====
-// ============================================================
-async function fetchSubscription() {
-  if (!token) return;
-  try {
-    const res = await fetch(`${API_URL}/users/me/subscription`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-      subscriptionData = await res.json();
-      updateSubscriptionUI();
-    }
-  } catch (err) { console.error(err); }
-}
-
-function updateSubscriptionUI() {
-  const badge = document.getElementById('premiumBadge');
-  if (badge) {
-    badge.textContent = subscriptionData.isPremium ? '✅ Premium' : 'Free';
-    badge.style.color = subscriptionData.isPremium ? '#2ecc71' : '#e74c3c';
+  async function suggestions(q) {
+    const box = $('#searchSuggestions');
+    if (!box) return;
+    if (q.length < 2) { box.hidden = true; return; }
+    try {
+      const r = await api(`/presets/global-search?q=${encodeURIComponent(q)}`);
+      const rows = [];
+      (r.presets||[]).slice(0,5).forEach(p => rows.push(`<button class="suggestion-item" data-action="view-preset" data-id="${esc(p.id)}"><span class="suggestion-thumb">${imgTag(p.previewImage,p.name,'')}</span><span><strong>${esc(p.name)}</strong><small>${esc(p.author||'Creator')} · ${esc(p.category||'General')}</small></span><i class="fas fa-arrow-right"></i></button>`));
+      (r.users||[]).slice(0,3).forEach(u => rows.push(`<button class="suggestion-item" data-action="profile" data-id="${esc(u.id)}"><span class="suggestion-thumb">${u.avatar?imgTag(u.avatar,u.name,''):esc((u.name||'U').charAt(0))}</span><span><strong>${esc(u.name||u.username)}</strong><small>@${esc(u.username||'user')}</small></span><i class="fas fa-user"></i></button>`));
+      (r.categories||[]).slice(0,3).forEach(c => rows.push(`<button class="suggestion-item" data-action="category" data-category="${esc(c.name)}"><span class="suggestion-google"><i class="fas fa-layer-group"></i></span><span><strong>${esc(c.name)}</strong><small>${c.count} presets</small></span><i class="fas fa-arrow-right"></i></button>`));
+      (r.tags||[]).slice(0,4).forEach(t => rows.push(`<button class="suggestion-item" data-action="tag-search" data-tag="${esc(t.name)}"><span class="suggestion-google"><i class="fas fa-hashtag"></i></span><span><strong>#${esc(t.name)}</strong><small>${t.count} presets</small></span><i class="fas fa-arrow-right"></i></button>`));
+      box.innerHTML = rows.join('') || `<div class="suggestion-empty">No results found for “${esc(q)}”</div>`;
+      box.hidden = false;
+    } catch (_) { box.hidden = true; }
   }
-}
 
-async function adWatched() {
-  try {
-    const res = await fetch(`${API_URL}/ads/watched`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      showToast(`✅ Ad watched! (${data.adWatchCount} total, ${data.daysEarned} days earned)`, 'success');
-      await fetchSubscription();
-    }
-  } catch (err) {
-    showToast('Failed to register ad watch', 'error');
+  // ============ 24H IN-MEMORY CHAT ============
+  let chatTimer = null;
+  async function showChat(userId){
+    if(!requireAuth()) return;
+    try{
+      const r=await api(`/chat/with/${encodeURIComponent(userId)}`);
+      const render=()=>{ const box=$('#chatMessages'); if(!box) return; box.innerHTML=(r.messages||[]).map(m=>`<div class="chat-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('')||'<div class="empty-state">No messages yet.</div>'; box.scrollTop=box.scrollHeight; };
+      openModal(`<div class="chat-panel"><div class="chat-head"><div class="profile-mini">${r.user.avatar?imgTag(r.user.avatar,r.user.name,''):''}<div><b>${esc(r.user.name||r.user.username)}</b><small>@${esc(r.user.username||'user')}</small></div></div></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" data-user="${esc(userId)}" class="chat-form"><input name="text" maxlength="1000" placeholder="Message…" autocomplete="off" required><button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button></form><small class="chat-note">Messages are temporary and automatically expire after 24 hours; they are not stored in MongoDB.</small></div>`);
+      render();
+      if(chatTimer) clearInterval(chatTimer);
+      chatTimer=setInterval(async()=>{try{const n=await api(`/chat/with/${encodeURIComponent(userId)}`);r.messages=n.messages||[];render();}catch(_){}} ,2000);
+    }catch(e){toast(e.message,'error');}
   }
-}
-
-async function generateReferral() {
-  try {
-    const res = await fetch(`${API_URL}/referrals/generate`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      showToast(`Your referral code: ${data.referralCode}`, 'info');
-      await fetchSubscription();
-    }
-  } catch (err) {
-    showToast('Failed to generate code', 'error');
-  }
-}
-
-function showReferral() {
-  const code = subscriptionData.referralCode || 'Generate';
-  const link = `${window.location.origin}/?ref=${code}`;
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay active';
-  modal.innerHTML = `
-    <div class="modal" style="max-width:380px;padding:24px;">
-      <button class="close">&times;</button>
-      <h2 style="font-size:1.2rem;"><i class="fas fa-link"></i> Referral Program</h2>
-      <p style="font-size:0.9rem;">Share your code: <strong>${escapeHTML(code)}</strong></p>
-      <p style="font-size:0.85rem;">Link: <a href="${escapeHTML(link)}" target="_blank" style="color:#d4a373;word-break:break-all;">${escapeHTML(link)}</a></p>
-      <p style="font-size:0.85rem;">You have referred ${subscriptionData.referralCount || 0} users.</p>
-      <p style="font-size:0.85rem;">Earn 28 days free for every 10 referrals!</p>
-      <button class="btn btn-primary" onclick="generateReferral()" style="font-size:0.85rem;padding:8px 16px;"><i class="fas fa-sync"></i> Generate Code</button>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  modal.querySelector('.close').addEventListener('click', () => modal.remove());
-}
-window.showReferral = showReferral;
-
-// ============================================================
-// ===== NOTIFICATIONS =====
-// ============================================================
-async function fetchNotifications() {
-  if (!token) return;
-  try {
-    const res = await fetch(`${API_URL}/users/me/notifications`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-      notifications = await res.json();
-      updateNotificationUI();
+  // ============ PWA ============
+  function installPWA() {
+    if (state.installPrompt) {
+      state.installPrompt.prompt();
+      state.installPrompt.userChoice.finally(() => { state.installPrompt = null; });
     } else {
-      notifications = [];
-      updateNotificationUI();
-    }
-  } catch (err) { 
-    console.error('Notification fetch error:', err);
-    notifications = [];
-    updateNotificationUI();
-  }
-}
-
-function updateNotificationUI() {
-  const badge = document.getElementById('notifBadge');
-  const unread = notifications.filter(n => !n.read).length;
-  if (badge) {
-    if (unread > 0) {
-      badge.style.display = 'inline';
-      badge.textContent = unread;
-    } else {
-      badge.style.display = 'none';
+      toast('Browser menu → Add to Home screen / Install app', 'info');
     }
   }
-}
 
-function openNotifications() {
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay active';
-  modal.innerHTML = `
-    <div class="modal" style="max-width:500px;padding:24px;">
-      <button class="close">&times;</button>
-      <h2 style="font-size:1.2rem;"><i class="fas fa-bell"></i> Inbox</h2>
-      <div id="notifList" style="max-height:300px;overflow-y:auto;">
-        ${notifications.length === 0 ? '<p style="color:#888;font-size:0.9rem;">No notifications</p>' : 
-          notifications.map(n => `
-            <div class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" style="padding:10px 12px;border-bottom:1px solid var(--border,#eee);cursor:pointer;${n.read ? '' : 'background:#fef9e7;'}">
-              <div style="font-size:0.9rem;">${escapeHTML(n.message)}</div>
-              <div style="font-size:0.7rem;color:#888;">${new Date(n.createdAt).toLocaleString()}</div>
-              ${n.link ? `<a href="${escapeHTML(n.link)}" target="_blank" style="font-size:0.8rem;color:#d4a373;">View</a>` : ''}
-            </div>
-          `).join('')
-        }
-      </div>
-      ${notifications.length > 0 ? `
-        <button class="btn btn-sm btn-primary" id="markAllRead" style="margin-top:10px;font-size:0.8rem;padding:6px 14px;">
-          <i class="fas fa-check-double"></i> Mark all as read
-        </button>
-      ` : ''}
-    </div>
-  `;
-  document.body.appendChild(modal);
-  
-  modal.querySelector('.close').addEventListener('click', () => modal.remove());
-  
-  const markBtn = modal.querySelector('#markAllRead');
-  if (markBtn) {
-    markBtn.addEventListener('click', async () => {
-      try {
-        await fetch(`${API_URL}/notifications/read-all`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        await fetchNotifications();
-        modal.remove();
-        openNotifications();
-      } catch (err) {
-        showToast('Failed to mark all as read', 'error');
-      }
-    });
+  function registerSW() {
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); state.installPrompt = e; });
   }
-  
-  modal.querySelectorAll('.notif-item').forEach(item => {
-    item.addEventListener('click', async () => {
-      const id = item.dataset.id;
-      try {
-        await fetch(`${API_URL}/notifications/read/${id}`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        await fetchNotifications();
-      } catch (err) {
-        console.error('Failed to mark notification as read:', err);
+
+  // ============ BOOTSTRAP ============
+  async function bootstrap() {
+    const savedTheme = localStorage.getItem('presethub_theme');
+    if (savedTheme === 'dark') document.body.classList.add('dark');
+    registerSW();
+    if (!navigator.onLine) setNetworkState(false, 'Offline — loading your saved PresetHub data');
+
+    if (state.token) {
+      try { const r = await api('/auth/me'); state.user = r.user; } catch (_) {}
+    }
+    updateAuthUI();
+
+    await Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured()]);
+    await flushPendingProfile();
+    await resumeQueuedUploads();
+    if (state.syncTimer) clearInterval(state.syncTimer);
+    prefetchOfflineCatalog();
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('reset')) openResetPassword(params.get('reset'));
+    if (params.get('q')) {
+      state.query = params.get('q').trim();
+      const input = $('#searchInput'); if (input) input.value = state.query;
+      await globalSearch(state.query);
+      await loadPresets();
+    }
+    if (params.get('action') === 'search') $('#searchInput')?.focus();
+    if (params.get('action') === 'wishlist') showWishlist();
+    if (params.get('action') === 'upload') openUpload();
+    if (params.get('action') === 'profile') openAccount();
+  }
+
+  // ============ GLOBAL CLICK HANDLER ============
+  document.addEventListener('click', async e => {
+    // Upload tab switching
+    if (e.target.dataset.uploadTab) {
+      const tab = e.target.dataset.uploadTab;
+      document.querySelectorAll('.upload-tab').forEach(t => t.classList.toggle('active', t.dataset.uploadTab === tab));
+      document.querySelectorAll('form[data-tab]').forEach(f => { f.hidden = f.dataset.tab !== tab; });
+      return;
+    }
+
+    // Share platform click
+    if (e.target.closest('[data-share-platform]')) {
+      const btn = e.target.closest('[data-share-platform]');
+      const platform = btn.dataset.sharePlatform;
+      const ok = openSharePlatform(platform, btn.dataset.url, btn.dataset.text, btn.dataset.title);
+      if (ok && state.currentPreset) trackShare(state.currentPreset.id, platform);
+      return;
+    }
+
+    // Share copy
+    if (e.target.closest('[data-share-copy]')) {
+      e.preventDefault(); e.stopPropagation();
+      const btn = e.target.closest('[data-share-copy]');
+      navigator.clipboard.writeText(btn.dataset.shareCopy).then(() => toast('Link copied!')).catch(() => toast('Copy failed','error'));
+      return;
+    }
+
+    // Share copy image + link
+    if (e.target.closest('[data-share-copy-image]')) {
+      e.preventDefault(); e.stopPropagation();
+      const btn=e.target.closest('[data-share-copy-image]');
+      copyImageAndLink(btn.dataset.shareCopyImage,btn.dataset.shareCopyUrl);
+      return;
+    }
+
+    // data-action buttons
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+
+    if (action === 'close') { closeModal(); return; }
+    if (action === 'login') { openAuth('login'); return; }
+    if (action === 'signup') { openAuth('signup'); return; }
+    if (action === 'account') { openAccount(); return; }
+    if (action === 'logout') {
+      state.token = ''; state.user = null;
+      localStorage.removeItem('presethub_token');
+      updateAuthUI(); closeModal(); toast('Logged out');
+      return;
+    }
+    if (action === 'upload') { openUpload(); return; }
+    if (action === 'wishlist' || action === 'wishlist-page') {
+      action === 'wishlist' ? toggleWishlist(el.dataset.id) : showWishlist();
+      return;
+    }
+    if (action === 'downloads') { showDownloads(); return; }
+    if (action === 'notifications') { showNotifications(); return; }
+    if (action === 'read-notifications') {
+      if (requireAuth()) {
+        await api('/users/notifications/read-all', { method: 'POST' });
+        showNotifications();
       }
-    });
+      return;
+    }
+    if (action === 'my-profile') { showProfile(state.user.id); return; }
+    if (action === 'edit-profile') { editProfileModal(); return; }
+    if (action === 'edit-preset') { editPreset(el.dataset.id); return; }
+    if (action === 'delete-preset') { deletePreset(el.dataset.id); return; }
+    if (action === 'my-shares') { showMyShares(); return; }
+    if (action === 'select-preset') {
+      const id = String(el.dataset.id);
+      if (el.checked) state.selected.add(id); else state.selected.delete(id);
+      updateSelectionUI(); return;
+    }
+    if (action === 'bulk-download') { bulkDownload(); return; }
+    if (action === 'clear-selection') { state.selected.clear(); $$('#presetGrid input[data-action=\"select-preset\"]').forEach(x => x.checked = false); updateSelectionUI(); return; }
+    if (action === 'comment-like') { likeComment(el.dataset.preset, el.dataset.comment); return; }
+    if (action === 'reply-comment') { const f=$('#commentForm'); if(f){ const h=f.querySelector('input[name=parentId]'); if(h) h.value=el.dataset.comment||''; const r=$('#replyingTo'); if(r) r.textContent='Replying to this comment'; f.querySelector('textarea')?.focus(); } return; }
+    if (action === 'view-preset') { showPreset(el.dataset.id); return; }
+    if (action === 'download') { downloadPreset(el.dataset.id); return; }
+    if (action === 'like') { likePreset(el.dataset.id); return; }
+    if (action === 'share') { sharePreset(el.dataset.id); return; }
+    if (action === 'share-stats') { showShareStats(el.dataset.id); return; }
+    if (action === 'creator-menu') { openCreatorMenu(el.dataset.id); return; }
+    if (action === 'share-profile') { shareProfile(el.dataset.id); return; }
+    if (action === 'invite-referral') {
+      const url = `${location.origin}${profileUrl({id: el.dataset.id, username: ''})}`;
+      if (navigator.share) { try { await navigator.share({title:'Join PresetHub', text:'Discover creators and Lightroom presets on PresetHub.', url}); } catch (_) {} }
+      else { try { await navigator.clipboard.writeText(url); toast('Invite link copied'); } catch (_) { toast('Unable to copy invite link','error'); } }
+      return;
+    }
+    if (action === 'download-profile') { closeModal(); showProfile(el.dataset.id); return; }
+    if (action === 'profile-wishlist') { showWishlist(); return; }
+    if (action === 'copy-link') { try { await navigator.clipboard.writeText(el.dataset.link); toast('Profile link copied'); } catch (_) { toast('Unable to copy link','error'); } return; }
+    if (action === 'profile') { showProfile(el.dataset.id); return; }
+    if (action === 'follow') { follow(el.dataset.id); return; }
+    if (action === 'chat') { showChat(el.dataset.id); return; }
+    if (action === 'switch-auth') { openAuth(el.dataset.mode); return; }
+    if (action === 'forgot-password') { openForgotPassword(); return; }
+    if (action === 'tag-search') { state.query = el.dataset.tag || ''; state.category=''; $('#searchInput').value=state.query; $('#searchSuggestions')?.setAttribute('hidden',''); globalSearch(state.query); loadPresets(); return; }
+    if (action === 'retry') { refreshPublicData(); return; }
+    if (action === 'category') {
+      state.query = ''; state.category = el.dataset.category;
+      loadPresets();
+      return;
+    }
+    if (action === 'install') { installPWA(); return; }
+    if (action === 'theme') {
+      document.body.classList.toggle('dark');
+      localStorage.setItem('presethub_theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+      const icon = el.querySelector('i');
+      if (icon) icon.className = document.body.classList.contains('dark') ? 'fas fa-sun' : 'fas fa-moon';
+      return;
+    }
   });
-}
 
-function requestNotificationPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
-}
-
-// ============================================================
-// ===== EARNINGS =====
-// ============================================================
-window.showEarnings = async function() {
-  if (!currentUser) { showToast('Please login', 'warning'); return; }
-  try {
-    const res = await fetch(`${API_URL}/users/${currentUser.id}/earnings`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!res.ok) throw new Error('Failed to fetch earnings');
-    const data = await res.json();
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay active';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:600px;padding:28px;">
-        <button class="close">&times;</button>
-        <h2 style="font-size:1.2rem;"><i class="fas fa-rupee-sign"></i> My Earnings</h2>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0;">
-          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
-            <div class="num" style="font-size:1.4rem;font-weight:700;color:#d4a373;">${data.totalImpressions}</div>
-            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Impressions</div>
-          </div>
-          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
-            <div class="num" style="font-size:1.4rem;font-weight:700;color:#2a9d8f;">₹${data.totalRevenue.toFixed(2)}</div>
-            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Earnings</div>
-          </div>
-          <div class="stat-item" style="background:var(--bg,#f8f6f2);padding:12px;border-radius:10px;text-align:center;">
-            <div class="num" style="font-size:1.4rem;font-weight:700;color:#3498db;">${data.totalDownloads}</div>
-            <div class="label" style="font-size:0.75rem;color:#6b6b6b;">Downloads</div>
-          </div>
-        </div>
-        <h3 style="font-size:0.95rem;margin:10px 0 6px;"><i class="fas fa-chart-bar"></i> Preset Performance</h3>
-        <div style="max-height:250px;overflow-y:auto;font-size:0.85rem;">
-          ${data.presets.length === 0 ? '<p style="color:#888;">No presets uploaded yet.</p>' :
-            data.presets.map(p => `
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border,#eee);flex-wrap:wrap;gap:4px;">
-                <div>
-                  <strong>${escapeHTML(p.name)}</strong>
-                  <span style="font-size:0.75rem;color:#888;">(${escapeHTML(p.category)})</span>
-                </div>
-                <div style="display:flex;gap:12px;font-size:0.75rem;">
-                  <span><i class="fas fa-eye"></i> ${p.impressions}</span>
-                  <span><i class="fas fa-download"></i> ${p.downloads}</span>
-                  <span style="color:#2a9d8f;font-weight:600;">₹${p.revenue.toFixed(2)}</span>
-                </div>
-              </div>
-            `).join('')
-          }
-        </div>
-        ${data.canWithdraw ? `
-          <div style="margin-top:12px;padding:10px;background:#d4edda;border-radius:10px;color:#155724;font-size:0.85rem;">
-            ✅ You are eligible for withdrawal! (Min. ₹100)
-            <button class="btn btn-sm btn-primary" onclick="requestWithdrawal()" style="margin-left:10px;font-size:0.8rem;padding:5px 12px;"><i class="fas fa-hand-holding-usd"></i> Withdraw</button>
-          </div>
-        ` : `
-          <div style="margin-top:12px;padding:10px;background:#fff3cd;border-radius:10px;color:#856404;font-size:0.85rem;">
-            💡 Need ₹100+ to withdraw. Current: ₹${data.totalRevenue.toFixed(2)}
-          </div>
-        `}
-        ${data.withdrawalStatus ? `<div style="margin-top:6px;font-size:0.8rem;">📝 Status: ${escapeHTML(data.withdrawalStatus)}</div>` : ''}
-      </div>
-    `;
-    document.body.appendChild(modal);
-    modal.querySelector('.close').addEventListener('click', () => modal.remove());
-  } catch (err) {
-    console.error(err);
-    showToast('Failed to load earnings', 'error');
-  }
-};
-
-window.requestWithdrawal = function() {
-  showToast('Please contact support@presethub.site for withdrawal requests.', 'info');
-};
-
-// ============================================================
-// ===== EXIT BUTTON =====
-// ============================================================
-function exitSite() {
-  if (confirm('Are you sure you want to leave PresetHub?')) {
-    window.close();
-    window.location.href = 'about:blank';
-  }
-}
-
-// ============================================================
-// ===== ADD AFTER INIT() FUNCTION =====
-// ============================================================
-
-// ===== ADBLOCK HANDLER =====
-// NOTE: closeAdblockAlert() and continueWithoutAds() are defined once, in the
-// inline <script> at the bottom of index.html (they need to run after that
-// markup exists). Defining them again here would just create dead code that
-// silently gets overridden, so only the ad-refresh helper lives in app.js.
-
-// ===== REFRESH ADS =====
-window.refreshAds = function() {
-    if (typeof adsbygoogle !== 'undefined') {
-        try {
-            var adUnits = document.querySelectorAll('ins.adsbygoogle');
-            for (var i = 0; i < adUnits.length; i++) {
-                if (adUnits[i].children.length === 0) {
-                    (adsbygoogle = window.adsbygoogle || []).push({});
-                }
-            }
-            console.log('🔄 Ads refreshed.');
-        } catch (e) {
-            console.warn('Ad refresh error:', e);
-        }
+  // ============ GLOBAL SUBMIT HANDLER ============
+  document.addEventListener('submit', async e => {
+    if (e.target.id === 'searchForm') {
+      e.preventDefault();
+      state.query = $('#searchInput')?.value.trim() || '';
+      state.category = '';
+      $('#searchSuggestions')?.setAttribute('hidden', '');
+      if (state.query) await globalSearch(state.query); else $('#searchEntityResults')?.setAttribute('hidden','');
+      await loadPresets();
+      document.querySelector('#presets')?.scrollIntoView({behavior:'smooth',block:'start'});
+      return;
     }
-};
-// ============================================================
-// ===== HANDLE URL ACTIONS =====
-// ============================================================
-function handleUrlAction() {
-  const params = new URLSearchParams(window.location.search);
-  const action = params.get('action');
-  const preset = params.get('preset');
-  const profileId = params.get('profile');
-  if (profileId) setTimeout(() => window.openProfile(profileId), 350);
-  if (preset) { setTimeout(() => openPresetModal(preset), 350); }
-  if (!action) return;
-
-  setTimeout(() => {
-    switch (action) {
-      case 'search':
-        const si = document.getElementById('searchInput');
-        if (si) { si.focus(); si.scrollIntoView({ behavior: 'smooth' }); }
-        break;
-      case 'wishlist':
-        showWishlist();
-        break;
-      case 'upload':
-        if (currentUser) openUploadModal();
-        else showToast('Please login', 'warning');
-        break;
-      case 'inbox':
-        if (currentUser) openNotifications();
-        else showToast('Please login', 'warning');
-        break;
-      case 'profile':
-        if (currentUser) openEditProfile();
-        else showToast('Please login', 'warning');
-        break;
-      default:
-        break;
+    if (e.target.id === 'authForm') { e.preventDefault(); submitAuth(e.target); return; }
+    if (e.target.id === 'forgotForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api('/auth/request-reset',{method:'POST',body:JSON.stringify({email:fd.get('email')})}); toast('If the email exists, a reset link has been sent.'); } catch(err){toast(err.message,'error');} return; }
+    if (e.target.id === 'resetForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api('/auth/reset-password',{method:'POST',body:JSON.stringify({token:e.target.dataset.token,password:fd.get('password')})}); toast('Password reset successfully'); closeModal(); openAuth('login'); } catch(err){toast(err.message,'error');} return; }
+    if (e.target.id === 'uploadForm') { e.preventDefault(); submitUpload(e.target); return; }
+    if (e.target.id === 'bulkUploadForm') { e.preventDefault(); submitBulkUpload(e.target); return; }
+    if (e.target.id === 'profileForm') {
+      e.preventDefault();
+      if (!requireAuth()) return;
+      const fd = new FormData(e.target);
+      const avatarFile = fd.get('avatarFile');
+      const payload = { name: fd.get('name'), username: fd.get('username'), bio: fd.get('bio'), socialLinks: { instagram: fd.get('instagram') || '', youtube: fd.get('youtube') || '', twitter: fd.get('twitter') || '', website: fd.get('website') || '' } };
+      try {
+        localStorage.setItem('presethub_pending_profile', JSON.stringify(payload));
+        const r = await api('/auth/profile', { method: 'PUT', body: JSON.stringify(payload) });
+        localStorage.removeItem('presethub_pending_profile'); state.user = r.user; updateAuthUI();
+        if (avatarFile instanceof File && avatarFile.size) {
+          const id=makeId(); const record={id,kind:'avatar',method:'PUT',path:'/users/me/avatar',token:state.token,name:'profile image',fields:[],files:[{field:'avatar',file:avatarFile}]};
+          await queuePut(record); await processQueuedUpload(record,true);
+        } else toast('Profile updated');
+      } catch (err) { toast(err.message || 'Profile update failed. Your changes are saved and will retry when you return.', 'error'); }
+      return;
     }
-    if (window.history && window.history.replaceState) {
-      window.history.replaceState({}, document.title, '/');
+    if (e.target.id === 'editPresetForm') {
+      e.preventDefault();
+      try {
+        const fd = new FormData(e.target);
+        const files = []; for (const [k,v] of [...fd.entries()]) if (v instanceof File && v.size) files.push([k,v]);
+        const clean = new FormData(); for (const [k,v] of fd.entries()) if (!(v instanceof File)) clean.append(k,v); files.forEach(([k,v])=>clean.append(k,v,v.name));
+        const r = await api(`/presets/${e.target.dataset.id}`, { method:'PUT', body: clean });
+        toast('Preset updated'); closeModal(); openAccount(); await loadPresets(); await loadFeatured(true);
+      } catch(err){ toast(err.message,'error'); }
+      return;
     }
-  }, 500);
-}
+    if (e.target.id === 'reviewForm') { e.preventDefault(); submitReview(e.target); return; }
+    if (e.target.id === 'commentForm') { e.preventDefault(); submitComment(e.target); return; }
+    if (e.target.id === 'chatForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api(`/chat/with/${e.target.dataset.user}`,{method:'POST',body:JSON.stringify({text:fd.get('text')})}); e.target.reset(); const n=await api(`/chat/with/${e.target.dataset.user}`); const box=$('#chatMessages'); if(box){box.innerHTML=(n.messages||[]).map(m=>`<div class="chat-bubble ${m.senderId===state.user.id?'mine':'theirs'}"><p>${esc(m.text)}</p><small>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>`).join('');box.scrollTop=box.scrollHeight;} } catch(err){toast(err.message,'error');} return; }
+  });
 
-async function openShareModal(preset) {
-  const link = `${window.location.origin}/p/${preset.id}`;
-  const image = preset.previewImage ? new URL(preset.previewImage, window.location.origin).href : `${window.location.origin}/assets/images/og-image.png`;
-  try { await fetch(`${API_URL}/presets/${preset.id}/share`, {method:'POST',headers:token?{'Authorization':`Bearer ${token}`}:{}}); } catch (_) {}
-  const overlay=document.createElement('div'); overlay.className='modal-overlay active'; overlay.innerHTML=`<div class="modal share-modal"><button class="close" type="button">×</button><h2><i class="fas fa-share-nodes"></i> Share Preset</h2><div class="share-preview"><img src="${image}" alt="${escapeHTML(preset.name)}"><div><strong>${escapeHTML(preset.name)}</strong><small>⭐ ${Number(preset.avgRating||0).toFixed(1)} · 👁 ${preset.views||0} · ⬇ ${preset.downloads||0} · 💬 ${(preset.reviews||[]).length} · ↗ ${preset.shares||0}</small></div></div><div class="qr-wrap"><img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(link)}" alt="Scan to open on mobile"><span>Scan to open on mobile</span></div><div class="share-actions"><button class="btn btn-primary" data-share-copy="link"><i class="fas fa-link"></i> Copy short link</button><button class="btn btn-outline" data-share-copy="image"><i class="fas fa-image"></i> Copy image + link</button><button class="btn btn-outline" data-share-native><i class="fas fa-share-nodes"></i> Share</button></div></div>`; document.body.appendChild(overlay);
-  overlay.querySelector('.close').onclick=()=>overlay.remove();
-  overlay.querySelector('[data-share-copy=link]').onclick=async()=>{await navigator.clipboard.writeText(link);showToast('Short preset link copied','success');};
-  overlay.querySelector('[data-share-copy=image]').onclick=async()=>{try{const blob=await fetch(image).then(r=>r.blob());if(navigator.clipboard?.write&&window.ClipboardItem){await navigator.clipboard.write([new ClipboardItem({[blob.type]:blob})]);}await navigator.clipboard.writeText(link);showToast('Preview image and link copied','success');}catch(_){await navigator.clipboard.writeText(link);showToast('Image copy unavailable; link copied','info');}};
-  overlay.querySelector('[data-share-native]').onclick=()=>navigator.share?navigator.share({title:preset.name,text:`${preset.name} on PresetHub`,url:link}):navigator.clipboard.writeText(link).then(()=>showToast('Link copied','success'));
-}
-window.openShareModal=openShareModal;
+  // ============ SEARCH INPUT ============
+  $('#searchInput')?.addEventListener('input', e => {
+    clearTimeout(state.searchTimer);
+    state.searchTimer = setTimeout(() => suggestions(e.target.value.trim()), 220);
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.nav-search')) $('#searchSuggestions')?.setAttribute('hidden', '');
+  });
 
-document.addEventListener('change', e=>{if(e.target.matches('.preset-select')){e.stopPropagation();togglePresetSelection(e.target.dataset.id,e.target.checked);}});
-document.addEventListener('click', e=>{ const card=e.target.closest('.creator-card[data-creator-id]'); if(card && !e.target.closest('[data-creator-menu]')){ window.openProfile(card.dataset.creatorId); return; } const b=e.target.closest('[data-creator-menu]');if(!b)return;e.stopPropagation();const id=b.dataset.creatorMenu;const menu=document.createElement('div');menu.className='modal-overlay active';menu.innerHTML=`<div class="modal creator-menu-modal"><button class="close">×</button><h2><i class="fas fa-user"></i> Creator actions</h2><div class="menu-actions"><button class="btn btn-primary" data-menu="profile">Open profile</button><button class="btn btn-outline" data-menu="share">Share Profile link</button><button class="btn btn-outline" data-menu="invite">Invite / Refer friends</button><button class="btn btn-outline" data-menu="wishlist">Wishlist</button><button class="btn btn-outline" data-menu="downloads">Downloads</button></div></div>`;document.body.appendChild(menu);menu.querySelector('.close').onclick=()=>menu.remove();menu.querySelector('[data-menu=profile]').onclick=()=>{menu.remove();window.openProfile(id)};menu.querySelector('[data-menu=share]').onclick=async()=>{const u=`${window.location.origin}/?profile=${encodeURIComponent(id)}`;await navigator.clipboard.writeText(u);showToast('Profile link copied','success')};menu.querySelector('[data-menu=invite]').onclick=()=>{const u=`${window.location.origin}/?ref=${id}`;navigator.clipboard.writeText(u).then(()=>showToast('Invite link copied','success'))};});
+  // ============ FILTERS ============
+  $('#priceFilter')?.addEventListener('change', e => { state.price = e.target.value; loadPresets(true, true); });
+  $('#sortFilter')?.addEventListener('change', e => { state.sort = e.target.value; loadPresets(true, true); });
 
-// ============================================================
-// ===== INIT =====
-// ============================================================
-function init() {
-  initDOM();
+  // ============ MODAL CLOSE ============
+  $('#overlay')?.addEventListener('click', e => { if (e.target.id === 'overlay') closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
-  loadPresets();
-  loadLatestPresets();
-  loadHeroFeatured();
-  loadTopCreators();
-  handleUrlAction();
-
-  if (currentTheme === 'dark') {
-    if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
-  }
-
-  if (!navigator.onLine && offlineIndicator) {
-    offlineIndicator.style.display = 'inline-block';
-  }
-
-  if (navigator.onLine) {
-    syncOfflineQueue();
-  }
-
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js')
-      .then(() => console.log('✅ SW registered with offline support'))
-      .catch(err => console.error('❌ SW failed', err));
-  }
-
-  console.log('🚀 PresetHub frontend loaded with all features');
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
+  // ============ EXPORTS ============
+  window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats };
+  window.addEventListener('DOMContentLoaded', bootstrap);
+  window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); });
+  window.addEventListener('focus', () => { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); });
+  window.addEventListener('online', () => { setNetworkState(true, 'Back online — syncing latest data…'); resumeQueuedUploads().catch(()=>{}); flushPendingProfile().catch(()=>{}); refreshPublicData(); });
+  window.addEventListener('offline', () => setNetworkState(false, 'Network disconnected — showing saved data'));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeQueuedUploads().catch(()=>{}); });
+})();
