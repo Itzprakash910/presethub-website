@@ -6,7 +6,8 @@ const auth = require('../middleware/auth');
 const { optionalAuth } = require('../middleware/auth');
 const { Preset, User, Download, Share, Order } = require('../models');
 const { uploadFields, bulkUploadFields } = require('../middleware/upload');
-const { uploadToR2, deleteFromR2 } = require('../config/r2');
+const { uploadToR2, deleteFromR2, getStoredFileStream } = require('../config/r2');
+const jwt = require('jsonwebtoken');
 const { validate, presetValidation } = require('../utils/validators');
 const { createNotification } = require('./users');
 
@@ -282,15 +283,15 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
 
     const file = req.files?.file?.[0];
     const preview = req.files?.previewImage?.[0];
-    let fileUrl = '', previewImage = '';
+    let fileUrl = '', previewImage = '', fileStorageKey = '', previewStorageKey = '';
 
     if (file) {
-      const key = `presets/${uuidv4()}${path.extname(file.originalname)}`;
-      fileUrl = await uploadToR2(file.buffer, key, file.mimetype);
+      fileStorageKey = `presets/${uuidv4()}${path.extname(file.originalname).toLowerCase()}`;
+      fileUrl = await uploadToR2(file.buffer, fileStorageKey, file.mimetype);
     }
     if (preview) {
-      const key = `previews/${uuidv4()}${path.extname(preview.originalname)}`;
-      previewImage = await uploadToR2(preview.buffer, key, preview.mimetype);
+      previewStorageKey = `previews/${uuidv4()}${path.extname(preview.originalname).toLowerCase()}`;
+      previewImage = await uploadToR2(preview.buffer, previewStorageKey, preview.mimetype);
     }
 
     const preset = await Preset.create({
@@ -301,8 +302,8 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
       price: parseFloat(price) || 0,
       author: user.name,
       authorId: user._id,
-      fileUrl, previewImage,
-      status: 'approved',
+      fileUrl, fileStorageKey, previewImage, previewStorageKey,
+      status: process.env.AUTO_APPROVE_UPLOADS === 'true' ? 'approved' : 'pending',
       size: file ? file.size : 0,
       originalName: file ? file.originalname : '',
       uploadId: uploadId || undefined
@@ -315,42 +316,73 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
   }
 });
 
-// ===== DOWNLOAD =====
+// ===== SECURE DOWNLOAD =====
+// The API never returns the storage URL. It issues a short-lived signed ticket,
+// then streams the file after re-checking ownership/purchase permissions.
 router.post('/:id/download', optionalAuth, async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id))
-    return res.status(400).json({ error: 'Invalid ID' });
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
   const preset = await Preset.findOne({ _id: req.params.id, status: 'approved' });
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
   if (preset.price > 0) {
     if (!req.user) return res.status(401).json({ error: 'Please log in to purchase or download paid presets' });
-    if (preset.authorId.toString() === req.user.id) {
-      // Creator can download their own paid preset without purchasing it.
-    } else {
+    if (preset.authorId.toString() !== req.user.id) {
       const paid = await Order.findOne({ presetId: preset._id, userId: req.user.id, status: 'paid' });
       if (!paid) return res.status(403).json({ error: 'Please purchase this preset first' });
     }
   }
 
+  if (!preset.fileUrl) return res.status(404).json({ error: 'Preset file missing' });
+
   preset.downloads = (preset.downloads || 0) + 1;
   await preset.save();
-  if (req.user) await Download.create({ userId: req.user.id, presetId: preset._id });
-
-  if (req.user) await createNotification(req.user.id, 'download-complete',
-    `Download completed: \"${preset.name}\"`,
-    `/preset/${preset._id}/${slugify(preset.name)}/`);
-
-  if (req.user && preset.authorId.toString() !== req.user.id) {
-    const user = await User.findById(req.user.id).select('name').lean();
-    await createNotification(preset.authorId, 'download',
-      `${user?.name || 'Someone'} downloaded your preset "${preset.name}"`,
-      `/preset/${preset._id}`);
+  if (req.user) {
+    await Download.create({ userId: req.user.id, presetId: preset._id });
+    if (preset.authorId.toString() !== req.user.id) {
+      const user = await User.findById(req.user.id).select('name').lean();
+      await createNotification(preset.authorId, 'download', `${user?.name || 'Someone'} downloaded your preset "${preset.name}"`, `/preset/${preset._id}`);
+    }
   }
 
-  if (preset.fileUrl && preset.fileUrl.startsWith('http')) {
-    return res.json({ downloadUrl: preset.fileUrl, originalName: preset.originalName || `${slugify(preset.name)}.xmp` });
+  const token = jwt.sign(
+    { purpose: 'preset-download', presetId: preset._id.toString(), userId: req.user?.id || null },
+    process.env.JWT_SECRET,
+    { expiresIn: '2m' }
+  );
+  res.json({
+    downloadUrl: `${SITE_URL}/api/presets/${preset._id}/file?token=${encodeURIComponent(token)}`,
+    originalName: safeFilename(preset.originalName || `${slugify(preset.name)}.xmp`)
+  });
+});
+
+router.get('/:id/file', async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).end();
+    const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET);
+    if (payload.purpose !== 'preset-download' || payload.presetId !== req.params.id) return res.status(403).end();
+
+    const preset = await Preset.findOne({ _id: req.params.id, status: 'approved' }).lean();
+    if (!preset || !preset.fileUrl) return res.status(404).end();
+
+    if (Number(preset.price || 0) > 0) {
+      if (!payload.userId) return res.status(401).end();
+      if (String(preset.authorId) !== String(payload.userId)) {
+        const paid = await Order.exists({ presetId: preset._id, userId: payload.userId, status: 'paid' });
+        if (!paid) return res.status(403).end();
+      }
+    }
+
+    const stored = await getStoredFileStream(preset.fileUrl, preset.fileStorageKey, safeFilename(preset.originalName || `${slugify(preset.name)}.xmp`));
+    res.setHeader('Content-Type', stored.contentType || 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename(stored.filename)}"`);
+    if (stored.length) res.setHeader('Content-Length', String(stored.length));
+    stored.stream.on('error', next).pipe(res);
+  } catch (err) {
+    if (err?.name === 'TokenExpiredError' || err?.name === 'JsonWebTokenError') return res.status(403).end();
+    next(err);
   }
-  return res.status(404).json({ error: 'Preset file missing' });
 });
 
 // ===== BULK DOWNLOAD =====
@@ -376,7 +408,11 @@ router.post('/bulk-download', auth, async (req, res) => {
       skipped.push({ id: p._id.toString(), name: p.name, reason: 'File unavailable' });
       continue;
     }
-    downloads.push({ id: p._id.toString(), name: p.name, url: p.fileUrl, filename: safeFilename(p.originalName || `${slugify(p.name)}.xmp`) });
+    const token = jwt.sign(
+      { purpose: 'preset-download', presetId: p._id.toString(), userId: req.user.id },
+      process.env.JWT_SECRET, { expiresIn: '2m' }
+    );
+    downloads.push({ id: p._id.toString(), name: p.name, url: `${SITE_URL}/api/presets/${p._id}/file?token=${encodeURIComponent(token)}`, filename: safeFilename(p.originalName || `${slugify(p.name)}.xmp`) });
   }
   if (!downloads.length) return res.status(403).json({ error: 'No downloadable presets in selection', skipped });
   await Promise.all(downloads.map(d => Download.create({ userId: req.user.id, presetId: d.id })));
@@ -426,13 +462,15 @@ router.put('/:id', auth, uploadFields, async (req, res) => {
     const file = req.files?.file?.[0];
     const preview = req.files?.previewImage?.[0];
     if (file) {
-      const key = `presets/${uuidv4()}${path.extname(file.originalname)}`;
+      const key = `presets/${uuidv4()}${path.extname(file.originalname).toLowerCase()}`;
+      preset.fileStorageKey = key;
       preset.fileUrl = await uploadToR2(file.buffer, key, file.mimetype);
       preset.size = file.size;
       preset.originalName = file.originalname;
     }
     if (preview) {
-      const key = `previews/${uuidv4()}${path.extname(preview.originalname)}`;
+      const key = `previews/${uuidv4()}${path.extname(preview.originalname).toLowerCase()}`;
+      preset.previewStorageKey = key;
       preset.previewImage = await uploadToR2(preview.buffer, key, preview.mimetype);
     }
     await preset.save();
