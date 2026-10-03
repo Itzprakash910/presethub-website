@@ -30,6 +30,8 @@ const UserSchema = new Schema({
   following: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   wishlist: [{ type: Schema.Types.ObjectId, ref: 'Preset' }],
   notifications: { type: [NotificationSchema], default: [], validate: v => Array.isArray(v) && v.length <= 200 },
+  achievements: [{ key: { type: String }, label: String, icon: String, unlockedAt: { type: Date, default: Date.now } }],
+  pushSubscriptions: [{ endpoint: { type: String }, expirationTime: { type: Number, default: null }, keys: { p256dh: String, auth: String }, createdAt: { type: Date, default: Date.now } }],
   subscription: {
     tier: { type: String, default: 'free' },
     expiry: { type: Date, default: null },
@@ -74,7 +76,7 @@ const PresetSchema = new Schema({
   price: { type: Number, default: 0, min: 0, max: 999999.99 },
   author: { type: String, required: true },
   authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
+  status: { type: String, enum: ['approved', 'rejected', 'pending'], default: 'approved', index: true },
   fileUrl: { type: String, default: '' },
   fileStorageKey: { type: String, default: '' },
   previewImage: { type: String, default: '' },
@@ -175,6 +177,7 @@ const MessageSchema = new Schema({
 }, { timestamps: true });
 MessageSchema.index({ senderId: 1, receiverId: 1, createdAt: 1 });
 MessageSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+UserSchema.index({ 'pushSubscriptions.endpoint': 1 }, { sparse: true });
 
 const User = mongoose.model('User', UserSchema);
 const Preset = mongoose.model('Preset', PresetSchema);

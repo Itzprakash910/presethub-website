@@ -968,7 +968,7 @@ router.get('/presets', async (req, res) => {
     const filter = {};
 
     if (
-      ['approved', 'pending', 'rejected']
+      ['approved', 'rejected']
         .includes(req.query.status)
     ) {
       filter.status =
@@ -1039,7 +1039,7 @@ router.put('/presets/:id/status', async (req, res) => {
     } = req.body;
 
     if (
-      !['approved', 'rejected', 'pending']
+      !['approved', 'rejected']
         .includes(status)
     ) {
       return res.status(400).json({

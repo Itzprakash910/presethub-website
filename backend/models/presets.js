@@ -14,7 +14,7 @@ const { createNotification } = require('./users');
 const router = express.Router();
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
 // Uploads are published immediately by default. Set AUTO_APPROVE_UPLOADS=false only when manual moderation is desired.
-const AUTO_APPROVE_UPLOADS = String(process.env.AUTO_APPROVE_UPLOADS || 'true').toLowerCase() !== 'false';
+const AUTO_APPROVE_UPLOADS = true;
 
 function escapeRegex(v) { return String(v || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
@@ -189,7 +189,7 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
           fileUrl, previewImage,
           size: file.size,
           originalName: file.originalname,
-          status: AUTO_APPROVE_UPLOADS ? 'approved' : 'pending',
+          status: 'approved',
           bulkUploadBatch: batchId,
           uploadId
         });
@@ -319,7 +319,7 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
       author: user.name,
       authorId: user._id,
       fileUrl, fileStorageKey, previewImage, previewStorageKey,
-      status: AUTO_APPROVE_UPLOADS ? 'approved' : 'pending',
+      status: 'approved',
       size: file ? file.size : 0,
       originalName: file ? file.originalname : '',
       uploadId: uploadId || undefined
