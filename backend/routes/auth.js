@@ -3,7 +3,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
-const { User } = require('../models');
+const { User, Preset, Download, Share, ShortLink, ShareClick, Comment, Message, Order } = require('../models');
+const { deleteFromMongo } = require('../config/mongoStorage');
 const auth = require('../middleware/auth');
 const { validate, signupValidation, loginValidation, changePasswordValidation } = require('../utils/validators');
 
@@ -224,6 +225,38 @@ router.post('/reset-password', async (req, res) => {
     res.json({success:true,message:'Password reset successfully'});
   } catch(e){ res.status(500).json({error:'Password reset failed'}); }
 });
+router.delete('/account', auth, async (req, res) => {
+  try {
+    const password = String(req.body?.password || '');
+    if (!password) return res.status(400).json({ error: 'Enter your password to permanently delete the account' });
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role === 'admin') return res.status(403).json({ error: 'Admin accounts cannot be deleted from the user settings.' });
+    if (!user.password || !(await bcrypt.compare(password, user.password))) return res.status(401).json({ error: 'Password is incorrect' });
+
+    const avatarUrl = user.avatar || '';
+    const presets = await Preset.find({ authorId: user._id }).select('fileUrl previewImage').lean();
+    await deleteFromMongo(avatarUrl).catch(() => {});
+    await Promise.all(presets.flatMap(p => [deleteFromMongo(p.fileUrl), deleteFromMongo(p.previewImage)]));
+    const presetIds = presets.map(p => p._id);
+    await Promise.all([
+      Preset.deleteMany({ authorId: user._id }),
+      Download.deleteMany({ $or: [{ userId:user._id }, { presetId:{ $in:presetIds } }] }),
+      Share.deleteMany({ $or: [{ userId:user._id }, { presetId:{ $in:presetIds } }] }),
+      ShareClick.deleteMany({ $or: [{ userId:user._id }, { presetId:{ $in:presetIds } }] }),
+      ShortLink.deleteMany({ $or: [{ userId:user._id }, { presetId:{ $in:presetIds } }] }),
+      Comment.deleteMany({ $or: [{ userId:user._id }, { presetId:{ $in:presetIds } }] }),
+      Message.deleteMany({ $or:[{ senderId:user._id }, { receiverId:user._id }] }),
+      Order.deleteMany({ userId:user._id }),
+      User.updateMany({ followers:user._id }, { $pull:{ followers:user._id } }),
+      User.updateMany({ following:user._id }, { $pull:{ following:user._id } })
+    ]);
+    await User.deleteOne({ _id:user._id });
+    res.clearCookie('ph_auth', { httpOnly:true, secure:process.env.NODE_ENV === 'production', sameSite:'lax', path:'/' });
+    res.json({ success:true, message:'Your PresetHub account and associated data have been permanently deleted.' });
+  } catch (e) { console.error('Account deletion error:', e); res.status(500).json({ error:'Account deletion failed. Please try again.' }); }
+});
+
 router.post('/logout', auth, (req, res) => {
   res.clearCookie('ph_auth', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' });
   res.json({ success: true });

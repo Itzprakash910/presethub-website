@@ -9,7 +9,7 @@ const { uploadFields, bulkUploadFields } = require('../middleware/upload');
 const { uploadToMongo, deleteFromMongo, getStoredFileStream } = require('../config/mongoStorage');
 const jwt = require('jsonwebtoken');
 const { validate, presetValidation } = require('../utils/validators');
-const { createNotification } = require('./users');
+const { createNotification, evaluateAchievements } = require('../utils/notifications');
 
 const router = express.Router();
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
@@ -185,7 +185,7 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
           fileUrl, previewImage,
           size: file.size,
           originalName: file.originalname,
-          status: process.env.AUTO_APPROVE_UPLOADS === 'true' ? 'approved' : 'pending',
+          status: 'approved',
           bulkUploadBatch: batchId,
           uploadId
         });
@@ -311,13 +311,14 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
       author: user.name,
       authorId: user._id,
       fileUrl, fileStorageKey, previewImage, previewStorageKey,
-      status: process.env.AUTO_APPROVE_UPLOADS === 'true' ? 'approved' : 'pending',
+      status: 'approved',
       size: file ? file.size : 0,
       originalName: file ? file.originalname : '',
       uploadId: uploadId || undefined
     });
 
-    res.status(201).json({ ...toPublicPreset(preset.toObject()), fileUrl: preset.fileUrl, originalName: preset.originalName });
+    await createNotification(req.user.id, 'upload', `✅ Your preset “${preset.name}” is live now and visible on PresetHub.`, `/preset/${preset._id}/${slugify(preset.name)}/`, 'Preset published');
+    res.status(201).json({ ...toPublicPreset(preset.toObject()), fileUrl: preset.fileUrl, originalName: preset.originalName, published: true });
   } catch (err) {
     console.error('Upload error:', err);
     if (err?.code === 11000 && req.body?.uploadId) {
@@ -362,8 +363,9 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
       catch (e) { if (e?.code === 11000) counted = false; else throw e; }
     }
     if (counted && preset.authorId.toString() !== req.user.id) {
-      const user = await User.findById(req.user.id).select('name').lean();
-      await createNotification(preset.authorId, 'download', `${user?.name || 'Someone'} downloaded your preset "${preset.name}"`, `/preset/${preset._id}`);
+      const user = await User.findById(req.user.id).select('name username').lean();
+      await createNotification(preset.authorId, 'download', `⬇️ ${user?.name || user?.username || 'Someone'} downloaded your preset “${preset.name}”.`, `/preset/${preset._id}`, 'Preset download');
+      evaluateAchievements(preset.authorId).catch(() => {});
     }
   }
   if (counted) {
@@ -542,8 +544,9 @@ router.post('/:id/view', optionalAuth, async (req, res) => {
   const milestones = [50,100,150,200,250,500,1000,2000,5000,10000];
   const views = Number(fresh?.views || 0);
   if (milestones.includes(views) && fresh?.authorId) {
-    await createNotification(fresh.authorId, 'views-milestone', `🎉 Your preset "${fresh.name}" reached ${views} views!`, `/preset/${fresh._id}/${slugify(fresh.name)}/`);
+    await createNotification(fresh.authorId, 'views-milestone', `🎉 Your preset “${fresh.name}” reached ${views} views!`, `/preset/${fresh._id}/${slugify(fresh.name)}/`, 'Preset milestone');
   }
+  if (fresh?.authorId) evaluateAchievements(fresh.authorId).catch(() => {});
   res.json({ views, milestone: milestones.includes(views) ? views : null });
 });
 
@@ -561,7 +564,8 @@ router.post('/:id/like', auth, async (req, res, next) => {
     if (!alreadyLiked && preset.authorId.toString() !== req.user.id) {
       const user = await User.findById(req.user.id).select('name').lean();
       await createNotification(preset.authorId, 'like',
-        `${user?.name || 'Someone'} liked your preset "${preset.name}"`, `/preset/${preset._id}`);
+        `❤️ ${user?.name || 'Someone'} liked your preset “${preset.name}”.`, `/preset/${preset._id}`, 'New preset like');
+      evaluateAchievements(preset.authorId).catch(() => {});
     }
     res.json({ likes: fresh?.likes?.length || 0, liked: !alreadyLiked });
   } catch (e) { next(e); }
@@ -583,11 +587,12 @@ router.post('/:id/share', optionalAuth, async (req, res, next) => {
     if (req.user) {
       await Share.create({ presetId: preset._id, userId: req.user.id, platform: safePlatform });
       if (preset.authorId.toString() !== req.user.id) {
-        const user = await User.findById(req.user.id).select('name').lean();
+        const user = await User.findById(req.user.id).select('name username').lean();
         await createNotification(preset.authorId, 'share',
-          `${user?.name || 'Someone'} shared "${preset.name}" on ${safePlatform}`, `/preset/${preset._id}`);
+          `↗️ ${user?.name || user?.username || 'Someone'} shared “${preset.name}” on ${safePlatform}.`, `/preset/${preset._id}`, 'Preset shared');
       }
     }
+    evaluateAchievements(preset.authorId).catch(() => {});
     res.json({
       success: true, shares: fresh?.shares || 0, platform: safePlatform,
       shareUrl: `${SITE_URL}/preset/${preset._id}/${slugify(preset.name)}/`

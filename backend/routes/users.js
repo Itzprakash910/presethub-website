@@ -6,6 +6,7 @@ const auth = require('../middleware/auth');
 const { User, Preset, Download } = require('../models');
 const { uploadAvatar } = require('../middleware/upload');
 const { uploadToMongo } = require('../config/mongoStorage');
+const { createNotification, evaluateAchievements, sendWebPush } = require('../utils/notifications');
 
 const router = express.Router();
 function cleanSocialLinks(value) {
@@ -18,14 +19,6 @@ function cleanSocialLinks(value) {
 }
 
 
-async function createNotification(userId, type, message, link) {
-  if (!mongoose.Types.ObjectId.isValid(userId)) return;
-  const result = await User.updateOne(
-    { _id: userId, notifications: { $not: { $elemMatch: { message, type, read: false } } } },
-    { $push: { notifications: { $each: [{ type, message, link: link || '/', read: false, createdAt: new Date() }], $slice: -200 } } }
-  );
-  return result.modifiedCount > 0;
-}
 
 router.get('/', async (req, res) => {
   const users = await User.find({}).select('name username avatar followers').lean();
@@ -107,7 +100,7 @@ router.get('/top', async (req, res) => {
 
 router.get('/me/dashboard', auth, async (req, res) => {
   const [user, presets, downloads, unread] = await Promise.all([
-    User.findById(req.user.id).select('name username avatar followers following subscription notifications').lean(),
+    User.findById(req.user.id).select('name username avatar followers following subscription notifications achievements').lean(),
     Preset.find({ authorId: req.user.id }).sort({ createdAt: -1 }).limit(12).lean(),
     Download.countDocuments({ userId: req.user.id }),
     User.aggregate([
@@ -126,6 +119,7 @@ router.get('/me/dashboard', auth, async (req, res) => {
     downloads,
     unreadNotifications: unread[0]?.count || 0,
     stats: a,
+    achievements: user.achievements || [],
     presets: presets.map(p => ({ id: p._id.toString(), name: p.name, status: p.status, price: p.price, downloads: p.downloads, views: p.views, likes: (p.likes || []).length, shares: p.shares, previewImage: p.previewImage, createdAt: p.createdAt }))
   });
 });
@@ -247,7 +241,7 @@ router.get('/:id/follow-status', auth, async (req, res) => {
 router.get('/:id', async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
-  const user = await User.findById(req.params.id).select('name username avatar bio socialLinks verified followers following').lean();
+  const user = await User.findById(req.params.id).select('name username avatar bio socialLinks verified followers following achievements').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
   const stats = await Preset.aggregate([
     { $match: { authorId: user._id, status: 'approved' } },
@@ -258,7 +252,7 @@ router.get('/:id', async (req, res) => {
     id: user._id.toString(), name: user.name, username: user.username,
     avatar: user.avatar, bio: user.bio, socialLinks: user.socialLinks || {},
     verified: !!user.verified, totalPresets: s.count, totalDownloads: s.downloads,
-    followers: (user.followers || []).length, following: (user.following || []).length
+    followers: (user.followers || []).length, following: (user.following || []).length, achievements: user.achievements || []
   });
 });
 
@@ -303,11 +297,30 @@ router.post('/:id/follow', auth, async (req, res, next) => {
       User.updateOne({ _id: target._id }, { $addToSet: { followers: current._id } }),
       User.updateOne({ _id: current._id }, { $addToSet: { following: target._id } })
     ]);
-    await createNotification(target._id, 'follow', `${current.name || current.username || 'Someone'} started following you!`, `/profile/${current._id}`);
+    await createNotification(target._id, 'follow', `👋 ${current.name || current.username || 'Someone'} started following you! Open their profile to connect.`, `/profile/${current._id}`, 'New follower');
+    evaluateAchievements(target._id).catch(() => {});
     const fresh = await User.findById(target._id).select('followers').lean();
     res.json({ following: true, followersCount: fresh?.followers?.length || 0 });
   } catch (e) { next(e); }
 });;
+
+router.get('/push/public-key', auth, async (req, res) => {
+  res.json({ enabled: !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT), publicKey: process.env.VAPID_PUBLIC_KEY || '' });
+});
+
+router.post('/push/subscribe', auth, async (req, res) => {
+  const sub = req.body?.subscription;
+  if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return res.status(400).json({ error: 'Invalid push subscription' });
+  await User.updateOne({ _id: req.user.id }, { $pull: { pushSubscriptions: { endpoint: sub.endpoint } } });
+  await User.updateOne({ _id: req.user.id }, { $push: { pushSubscriptions: { endpoint: sub.endpoint, expirationTime: sub.expirationTime || null, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, createdAt: new Date() } } });
+  res.json({ success: true });
+});
+
+router.delete('/push/subscribe', auth, async (req, res) => {
+  const endpoint = String(req.body?.endpoint || '');
+  if (endpoint) await User.updateOne({ _id: req.user.id }, { $pull: { pushSubscriptions: { endpoint } } });
+  res.json({ success: true });
+});
 
 router.get('/:id/earnings', auth, async (req, res) => {
   if (req.user.id !== req.params.id && req.user.role !== 'admin')

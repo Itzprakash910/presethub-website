@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const { Comment, Preset, User } = require('../models');
-const { createNotification } = require('./users');
+const { createNotification, evaluateAchievements } = require('../utils/notifications');
 
 const router = express.Router();
 
@@ -26,7 +26,8 @@ router.post('/:presetId', auth, async (req, res, next) => {
     const parentId = req.body.parentId && mongoose.Types.ObjectId.isValid(req.body.parentId) ? req.body.parentId : null;
     const comment = await Comment.create({ presetId: preset._id, userId: user._id, userName: user.name || user.username || 'User', text, parentId });
     if (preset.authorId.toString() !== req.user.id) {
-      await createNotification(preset.authorId, 'comment', `${user.name || user.username || 'Someone'} commented on "${preset.name}"`, `/preset/${preset._id}`);
+      await createNotification(preset.authorId, 'comment', `💬 ${user.name || user.username || 'Someone'} commented on “${preset.name}”.`, `/preset/${preset._id}`, 'New comment');
+      evaluateAchievements(preset.authorId).catch(() => {});
     }
     if (parentId) {
       const parent = await Comment.findById(parentId).select('userId').lean();

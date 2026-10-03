@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const { Preset, User } = require('../models');
 const { body, validationResult } = require('express-validator');
-const { createNotification } = require('./users');
+const { createNotification, evaluateAchievements } = require('../utils/notifications');
 
 const router = express.Router();
 
@@ -48,8 +48,9 @@ router.post('/:presetId', auth, [
 
   if (preset.authorId.toString() !== req.user.id) {
     await createNotification(preset.authorId, 'review',
-      `${user.name} reviewed "${preset.name}" (${req.body.rating}★)`,
-      `/preset/${preset._id}`);
+      `⭐ ${user.name} reviewed “${preset.name}” (${req.body.rating}★).`,
+      `/preset/${preset._id}`, 'New review');
+    evaluateAchievements(preset.authorId).catch(() => {});
   }
 
   const review = preset.reviews[preset.reviews.length - 1];

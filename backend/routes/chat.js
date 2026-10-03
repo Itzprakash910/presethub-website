@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const { User, Message } = require('../models');
+const { createNotification } = require('../utils/notifications');
 
 const router = express.Router();
 const TTL = 24 * 60 * 60 * 1000;
@@ -43,7 +44,7 @@ router.get('/conversations', auth, async (req, res, next) => {
       const partner = m.senderId.toString() === req.user.id ? m.receiverId.toString() : m.senderId.toString();
       if (!seen.has(partner)) { seen.add(partner); ids.push(partner); }
     }
-    const users = await User.find({ _id: { $in: ids } }).select('name username avatar status').lean();
+    const users = await User.find({ _id: { $in: ids } }).select('name username avatar status followers').lean();
     const map = Object.fromEntries(users.map(u => [u._id.toString(), u]));
     const result = ids.map(id => {
       const partnerMessages = messages.filter(m => {
@@ -54,7 +55,7 @@ router.get('/conversations', auth, async (req, res, next) => {
       const unread = partnerMessages.filter(m => m.receiverId.toString()===req.user.id && !m.readAt).length;
       const u = map[id];
       if (!u) return null;
-      return { user:{id,name:u.name,username:u.username,avatar:u.avatar,status:u.status}, lastMessage:last?normalizeMessage(last):null, unread };
+      return { user:{id,name:u.name,username:u.username,avatar:u.avatar,status:u.status,followers:(u.followers||[]).length}, lastMessage:last?normalizeMessage(last):null, unread };
     }).filter(Boolean);
     res.json(result);
   } catch (e) { next(e); }
@@ -64,7 +65,7 @@ router.get('/with/:userId', auth, async (req,res,next)=>{
   try{
     if(!validId(req.params.userId)) return res.status(400).json({error:'Invalid user ID'});
     if(req.params.userId===req.user.id) return res.status(400).json({error:'Cannot chat with yourself'});
-    const other=await User.findById(req.params.userId).select('name username avatar followers status').lean();
+    const other=await User.findById(req.params.userId).select('name username avatar followers following status').lean();
     if(!other) return res.status(404).json({error:'User not found'});
     if (other.status === 'blocked' || other.status === 'deactivated') return res.status(403).json({error:'This account cannot receive messages'});
     const allowed=(other.followers||[]).some(id=>id.toString()===req.user.id);
@@ -77,7 +78,7 @@ router.get('/with/:userId', auth, async (req,res,next)=>{
       ], expiresAt:{$gt:new Date()}
     }).sort({createdAt:1}).limit(200).lean();
     await Message.updateMany({senderId:other._id,receiverId:req.user.id,readAt:null},{ $set:{readAt:new Date()} });
-    res.json({user:{id:other._id.toString(),name:other.name,username:other.username,avatar:other.avatar},messages:messages.map(normalizeMessage)});
+    res.json({user:{id:other._id.toString(),name:other.name,username:other.username,avatar:other.avatar,followers:(other.followers||[]).length},messages:messages.map(normalizeMessage)});
   }catch(e){next(e)}
 });
 
@@ -85,7 +86,7 @@ router.post('/with/:userId', auth, async (req,res,next)=>{
   try{
     if(!validId(req.params.userId)) return res.status(400).json({error:'Invalid user ID'});
     if(req.params.userId===req.user.id) return res.status(400).json({error:'Cannot message yourself'});
-    const other=await User.findById(req.params.userId).select('name username avatar followers status').lean();
+    const other=await User.findById(req.params.userId).select('name username avatar followers following status').lean();
     if(!other) return res.status(404).json({error:'User not found'});
     if (other.status === 'blocked' || other.status === 'deactivated') return res.status(403).json({error:'This account cannot receive messages'});
     const allowed=(other.followers||[]).some(id=>id.toString()===req.user.id);
@@ -93,6 +94,8 @@ router.post('/with/:userId', auth, async (req,res,next)=>{
     const text=String(req.body.text||'').trim().slice(0,1000);
     if(!text) return res.status(400).json({error:'Message cannot be empty'});
     const message=await Message.create({senderId:req.user.id,receiverId:other._id,text,expiresAt:new Date(Date.now()+TTL)});
+    const sender = await User.findById(req.user.id).select('name username').lean();
+    await createNotification(other._id, 'message', `💬 ${sender?.name || sender?.username || 'Someone'} sent you a message.`, `/profile/${req.user.id}`, 'New message');
     res.status(201).json(normalizeMessage(message));
   }catch(e){next(e)}
 });
