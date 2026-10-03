@@ -167,6 +167,7 @@ const MessageSchema = new Schema({
   senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   receiverId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   text: { type: String, required: true, maxlength: 1000, trim: true },
+  readAt: { type: Date, default: null, index: true },
   expiresAt: { type: Date, required: true, index: true }
 }, { timestamps: true });
 MessageSchema.index({ senderId: 1, receiverId: 1, createdAt: 1 });
