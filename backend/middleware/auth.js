@@ -120,32 +120,32 @@ const authenticate = async (req, res, next) => {
 const optionalAuth = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
+    const cookieToken = req.cookies?.ph_auth || '';
     const token = authHeader
       ? (authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader)
-      : (req.cookies?.ph_auth || '');
+      : cookieToken;
 
-    if (!token || token.length < 10) {
-      return next();
-    }
+    if (!token || token.length < 10) return next();
 
     const decoded = jwt.verify(token, JWT_SECRET);
+    if (!mongoose.Types.ObjectId.isValid(decoded.id)) return next();
 
-    if (!mongoose.Types.ObjectId.isValid(decoded.id)) {
-      return next();
-    }
+    const user = await User.findById(decoded.id).select('role status sessionVersion').lean();
+    if (!user || user.status === 'blocked' || user.status === 'deactivated') return next();
+
+    const tokenVersion = Number.isInteger(decoded.ver) ? decoded.ver : 0;
+    if (tokenVersion !== Number(user.sessionVersion || 0)) return next();
 
     req.user = {
       id: decoded.id,
       email: decoded.email,
-      role: decoded.role
+      role: user.role
     };
 
-    // Activity update for optional authenticated users.
     User.updateOne(
       { _id: decoded.id },
       { $set: { lastActive: new Date() } }
     ).catch(() => {});
-
   } catch (_) {}
 
   next();
