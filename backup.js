@@ -21,10 +21,17 @@ async function runBackup() {
     ['messages', Message.find({}).lean()]
   ].map(async ([name, query]) => [name, await query]));
   const data = Object.fromEntries(collections);
+  data.users = (data.users || []).map(u => {
+    const safe = { ...u };
+    delete safe.password; delete safe.token; delete safe.passwordResetTokenHash; delete safe.passwordResetExpires;
+    delete safe.pushSubscriptions; delete safe.sessionVersion;
+    return safe;
+  });
   data.exportedAt = new Date().toISOString();
   const date = new Date().toISOString().replace(/[:.]/g, '-');
   const dest = path.join(backupDir, `mongo_backup_${date}.json`);
-  fs.writeFileSync(dest, JSON.stringify(data, null, 2));
+  fs.writeFileSync(dest, JSON.stringify(data, null, 2), { mode: 0o600 });
+  try { fs.chmodSync(dest, 0o600); } catch (_) {}
   console.log(`✅ MongoDB backup saved: ${dest}`);
 
   const BOT_TOKEN = process.env.BOT_TOKEN;
