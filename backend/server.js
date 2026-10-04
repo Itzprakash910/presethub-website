@@ -39,7 +39,7 @@ if (!fs.existsSync(frontendRoot)) {
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
 const SITE_CREATOR = 'Omprakash (HeyOmii)';
 const SITE_SOCIAL = 'https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn';
-const ICONS_CSS = '/icons.css?v=2.9.3';
+const ICONS_CSS = '/icons.css?v=2.9.4';
 
 // ============ ENV CHECKS ============
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -77,7 +77,9 @@ async function ensureAdminUser() {
 
 async function autoPublishPendingPresets() {
   try {
-    const { Preset } = require('./models');
+    const { Preset, User } = require('./models');
+    // Remove obsolete plaintext Telegram/API tokens left by pre-v2.9 builds.
+    await User.collection.updateMany({ token: { $exists: true } }, { $unset: { token: '' } }).catch(() => {});
     const result = await Preset.updateMany(
       { status: 'pending' },
       { $set: { status: 'approved' } }
@@ -123,7 +125,7 @@ function ensureStructure() {
       shortcuts:[
         {name:'Upload Preset',short_name:'Upload',description:'Upload a new Lightroom preset',url:'/?action=upload',icons:[{src:'/assets/icons-pack/png/fa-upload.png',sizes:'64x64',type:'image/png'}]},
         {name:'Profile',short_name:'Profile',description:'Open your PresetHub profile',url:'/?action=profile',icons:[{src:'/assets/icons-pack/png/fa-user.png',sizes:'64x64',type:'image/png'}]},
-        {name:'Messages',short_name:'Messages',description:'Open your messages',url:'/?action=messages',icons:[{src:'/assets/icons-pack/svg/fa-message.svg',sizes:'64x64',type:'image/svg+xml'}]},
+        {name:'Messages',short_name:'Messages',description:'Open your messages',url:'/?action=messages',icons:[{src:'/assets/icons-pack/png/fa-envelope.png',sizes:'64x64',type:'image/png'}]},
         {name:'Notifications',short_name:'Notifications',description:'View your notifications',url:'/?action=notifications',icons:[{src:'/assets/icons-pack/png/fa-bell.png',sizes:'64x64',type:'image/png'}]},
         {name:'Logout',short_name:'Logout',description:'Log out of PresetHub',url:'/?action=logout',icons:[{src:'/assets/icons-pack/png/fa-right-from-bracket.png',sizes:'64x64',type:'image/png'}]}
       ]
@@ -203,6 +205,8 @@ app.use(helmet({
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      workerSrc: ["'self'", 'blob:'],
       upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
     }
   },
@@ -235,6 +239,7 @@ app.use(cookieParser());
 // Double-submit CSRF protection for cookie-authenticated state changes.
 // Bearer-token API clients remain supported for backwards compatibility.
 function ensureCsrfCookie(req, res, next) {
+  if (!req.path.startsWith('/api/')) return next();
   if (!req.cookies?.ph_csrf) {
     res.cookie('ph_csrf', crypto.randomBytes(24).toString('hex'), {
       httpOnly: false,
@@ -266,7 +271,7 @@ const apiLimiter = rateLimit({
 });
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 15,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many authentication attempts. Please try again later.' }
@@ -274,9 +279,21 @@ const authLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 app.use('/api/auth', authLimiter);
 
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many write requests. Please slow down.' }
+});
+app.use('/api/presets', writeLimiter);
+app.use('/api/comments', writeLimiter);
+app.use('/api/reviews', writeLimiter);
+app.use('/api/chat', writeLimiter);
+
 // ============ BODY PARSERS ============
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+app.use(express.json({ limit: '2mb', verify: (req, res, buf) => { if (req.originalUrl === '/api/payments/webhook') req.rawBody = Buffer.from(buf); } }));
+app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 1000 }));
 
 // ============ MONGODB GRIDFS MEDIA ============
 // ALL user-uploaded binary data is stored in MongoDB GridFS. There is no
@@ -294,6 +311,8 @@ app.get('/media/:id', require('./middleware/auth').optionalAuth, async (req, res
     if (!meta) return res.status(404).end();
 
     const kind = String(meta.metadata?.kind || 'legacy');
+    const contentType = String(meta.contentType || 'application/octet-stream').toLowerCase();
+    if (kind === 'legacy' && !contentType.startsWith('image/')) return res.status(404).end();
     if (kind === 'preset') {
       // Preset binaries are never public. Access is checked against MongoDB.
       const mediaUrl = `${SITE_URL}/media/${id.toString()}`;
@@ -310,7 +329,7 @@ app.get('/media/:id', require('./middleware/auth').optionalAuth, async (req, res
       }
     }
 
-    res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
+    res.setHeader('Content-Type', kind === 'preset' ? 'application/octet-stream' : (contentType.startsWith('image/') ? contentType : 'application/octet-stream'));
     res.setHeader('Cache-Control', kind === 'preset' ? 'private, no-store' : 'public, max-age=31536000, immutable');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (req.query.download === '1') {
@@ -386,7 +405,7 @@ function commonSeoHead({ title, description, canonical, image = `${SITE_URL}/ass
   const safeCanonical = escHtml(canonical);
   const safeImage = escHtml(image);
   const safeKeywords = escHtml(keywords);
-  return `<meta name="description" content="${safeDescription}"><meta name="keywords" content="${safeKeywords}"><meta name="author" content="${SITE_CREATOR}"><meta name="creator" content="${SITE_CREATOR}"><meta name="publisher" content="PresetHub"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#d4a373"><meta name="application-name" content="PresetHub"><meta property="og:site_name" content="PresetHub"><meta property="og:type" content="${escHtml(type)}"><meta property="og:locale" content="en_IN"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:url" content="${safeCanonical}"><meta property="og:image" content="${safeImage}"><meta property="og:image:secure_url" content="${safeImage}"><meta property="og:image:type" content="image/png"><meta property="og:image:alt" content="PresetHub preview"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}"><meta name="twitter:image" content="${safeImage}"><link rel="canonical" href="${safeCanonical}"><link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon"><link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png"><link rel="apple-touch-icon" href="/assets/icons/icon-192.png"><link rel="stylesheet" href="${ICONS_CSS}"><link rel="stylesheet" href="/style.css?v=2.9.3"><link rel="stylesheet" href="/cookie-consent.css?v=2.9.3"><link rel="me" href="${SITE_SOCIAL}">`;
+  return `<meta name="description" content="${safeDescription}"><meta name="keywords" content="${safeKeywords}"><meta name="author" content="${SITE_CREATOR}"><meta name="creator" content="${SITE_CREATOR}"><meta name="publisher" content="PresetHub"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#d4a373"><meta name="application-name" content="PresetHub"><meta property="og:site_name" content="PresetHub"><meta property="og:type" content="${escHtml(type)}"><meta property="og:locale" content="en_IN"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:url" content="${safeCanonical}"><meta property="og:image" content="${safeImage}"><meta property="og:image:secure_url" content="${safeImage}"><meta property="og:image:type" content="image/png"><meta property="og:image:alt" content="PresetHub preview"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}"><meta name="twitter:image" content="${safeImage}"><link rel="canonical" href="${safeCanonical}"><link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon"><link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png"><link rel="apple-touch-icon" href="/assets/icons/icon-192.png"><link rel="stylesheet" href="${ICONS_CSS}"><link rel="stylesheet" href="/style.css?v=2.9.4"><link rel="stylesheet" href="/cookie-consent.css?v=2.9.4"><link rel="me" href="${SITE_SOCIAL}">`;
 }
 
 function adsenseHead() {
@@ -465,7 +484,7 @@ ${commonSeoHead({ title: `${p.name} Lightroom Preset | PresetHub`, description, 
 <section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(preview)}" alt="${escHtml(p.name)} Lightroom preset preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">${escHtml(p.category || 'LIGHTROOM PRESET')}</span><h1>${escHtml(p.name)}</h1><p class="author">By ${escHtml(p.author || 'Creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-price ${price===0?'free':''}">${price===0?'Free':`₹${price.toFixed(2)}`}</div><div class="seo-tags">${(p.tags||[]).slice(0,10).map(t=>`<span>${escHtml(t)}</span>`).join('')}</div><div class="seo-actions"><a class="btn btn-primary" href="/"><i class="fas fa-download"></i> Open &amp; Download</a><a class="btn btn-outline" href="#details"><i class="fas fa-circle-info"></i> Show Details</a><a class="btn btn-outline" href="/profile/${p.authorId}/${slugify(author?.username || author?.name || p.author)}/"><i class="fas fa-user"></i> Creator</a></div></div></section>
 <div class="seo-info-grid"><div class="seo-info-card"><b>${Number(p.downloads||0)}</b><span>Downloads</span></div><div class="seo-info-card"><b>${Number(p.views||0)}</b><span>Views</span></div><div class="seo-info-card"><b>${Number(p.avgRating||0).toFixed(1)}</b><span>Rating</span></div><div class="seo-info-card"><b>${Number((p.likes||[]).length)}</b><span>Likes</span></div><div class="seo-info-card"><b>${Number(commentsCount)}</b><span>Comments</span></div><div class="seo-info-card"><b>${Number(p.shares||0)}</b><span>Shares</span></div></div><section id="details" class="seo-details"><h2>Preset Details</h2><p>${escHtml(p.description || 'A Lightroom preset published on PresetHub.')}</p><div class="seo-tags">${(p.tags||[]).slice(0,10).map(t=>`<span>#${escHtml(t)}</span>`).join('')}</div></section>
 <section class="seo-related"><div class="profile-section-head"><h2>More ${escHtml(p.category || 'Lightroom')} Presets</h2><a class="btn btn-outline btn-sm" href="/?q=${encodeURIComponent(p.category || '')}">View all</a></div><div class="seo-related-grid">${related.map(r=>`<a class="seo-related-card" href="/preset/${r._id}/${slugify(r.name)}/"><img src="${escHtml(seoAssetUrl(r.previewImage))}" alt="${escHtml(r.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(r.name)}</h3><p>${escHtml(r.author||'Creator')} · ${Number(r.price||0)===0?'Free':`₹${Number(r.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No related presets yet.</p>'}</div></section>
-<footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=2.9.1" defer></script></div></main></body></html>`;
+<footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=2.9.4" defer></script></div></main></body></html>`;
     res.type('html').send(html);
   } catch (e) { next(e); }
 });
@@ -479,7 +498,7 @@ app.get('/profile/:id/:slug?/', async (req, res, next) => {
     const presets = await Preset.find({ authorId:u._id, status:'approved' }).sort({createdAt:-1}).lean();
     const canonical = `${SITE_URL}/profile/${u._id}/${slugify(u.username || u.name)}/`;
     const avatar = seoAssetUrl(u.avatar); const description=(u.bio || `Lightroom presets by ${u.name || u.username} on PresetHub.`).slice(0,155);
-    const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${adsenseHead()}<title>${escHtml(u.name||u.username)} Presets &amp; Lightroom Presets | PresetHub</title>${commonSeoHead({ title: `${u.name||u.username} Presets | PresetHub`, description, canonical, image: avatar, type: 'profile', keywords: `${u.name||u.username}, Lightroom presets, preset creator, ${SITE_CREATOR}, PresetHub` })}<script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"ProfilePage","name":u.name||u.username,"url":canonical,"mainEntity":{"@type":"Person","name":u.name||u.username,"image":avatar,"sameAs":(u.socialLinks && Object.values(u.socialLinks).filter(Boolean).slice(0,4)) || []}})}</script></head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(avatar)}" alt="${escHtml(u.name||'Creator')} profile" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">CREATOR PROFILE</span><h1>${escHtml(u.name||u.username)}</h1><p class="author">@${escHtml(u.username||'creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-info-grid" style="margin:12px 0"><div class="seo-info-card"><b>${presets.length}</b><span>Presets</span></div><div class="seo-info-card"><b>${presets.reduce((a,p)=>a+Number(p.downloads||0),0)}</b><span>Downloads</span></div></div><a class="btn btn-primary" href="/"><i class="fas fa-arrow-left"></i> Open PresetHub</a></div></section><section class="seo-related"><div class="profile-section-head"><h2>Published Presets</h2><span>${presets.length} presets</span></div><div class="seo-related-grid">${presets.map(p=>`<a class="seo-related-card" href="/preset/${p._id}/${slugify(p.name)}/"><img src="${escHtml(seoAssetUrl(p.previewImage))}" alt="${escHtml(p.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(p.name)}</h3><p>${escHtml(p.category||'General')} · ${Number(p.price||0)===0?'Free':`₹${Number(p.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No published presets yet.</p>'}</div></section><footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=2.9.1" defer></script></div></main></body></html>`;
+    const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${adsenseHead()}<title>${escHtml(u.name||u.username)} Presets &amp; Lightroom Presets | PresetHub</title>${commonSeoHead({ title: `${u.name||u.username} Presets | PresetHub`, description, canonical, image: avatar, type: 'profile', keywords: `${u.name||u.username}, Lightroom presets, preset creator, ${SITE_CREATOR}, PresetHub` })}<script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"ProfilePage","name":u.name||u.username,"url":canonical,"mainEntity":{"@type":"Person","name":u.name||u.username,"image":avatar,"sameAs":(u.socialLinks && Object.values(u.socialLinks).filter(Boolean).slice(0,4)) || []}})}</script></head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(avatar)}" alt="${escHtml(u.name||'Creator')} profile" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">CREATOR PROFILE</span><h1>${escHtml(u.name||u.username)}</h1><p class="author">@${escHtml(u.username||'creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-info-grid" style="margin:12px 0"><div class="seo-info-card"><b>${presets.length}</b><span>Presets</span></div><div class="seo-info-card"><b>${presets.reduce((a,p)=>a+Number(p.downloads||0),0)}</b><span>Downloads</span></div></div><a class="btn btn-primary" href="/"><i class="fas fa-arrow-left"></i> Open PresetHub</a></div></section><section class="seo-related"><div class="profile-section-head"><h2>Published Presets</h2><span>${presets.length} presets</span></div><div class="seo-related-grid">${presets.map(p=>`<a class="seo-related-card" href="/preset/${p._id}/${slugify(p.name)}/"><img src="${escHtml(seoAssetUrl(p.previewImage))}" alt="${escHtml(p.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(p.name)}</h3><p>${escHtml(p.category||'General')} · ${Number(p.price||0)===0?'Free':`₹${Number(p.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No published presets yet.</p>'}</div></section><footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=2.9.4" defer></script></div></main></body></html>`;
     res.type('html').send(html);
   } catch(e){ next(e); }
 });

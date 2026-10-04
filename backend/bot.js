@@ -18,6 +18,7 @@ let botStarting = false;
 let bot = null;
 const loginStates = new Map();
 const uploadStates = new Map();
+const telegramApiTokens = new Map();
 
 function mainMenu(user) {
   const rows = [
@@ -42,8 +43,8 @@ function safeText(v, max = 800) {
   return String(v ?? '').replace(/[<>]/g, '').slice(0, max);
 }
 function money(v) { return Number(v || 0) <= 0 ? 'Free' : `₹${Number(v).toFixed(2)}`; }
-function apiHeaders(user) { return user?.token ? { Authorization: `Bearer ${user.token}` } : {}; }
-function loggedIn(ctx) { return !!(ctx.dbUser?.token); }
+function apiHeaders(user) { const token = user?.telegramId ? telegramApiTokens.get(String(user.telegramId)) : ''; return token ? { Authorization: `Bearer ${token}` } : {}; }
+function loggedIn(ctx) { return !!(ctx.dbUser?.telegramId && telegramApiTokens.has(String(ctx.dbUser.telegramId))); }
 function requireLogin(ctx) {
   if (!loggedIn(ctx)) { ctx.reply('🔐 पहले `/login` करें या website पर account बनाएं।', { parse_mode: 'Markdown' }); return false; }
   return true;
@@ -78,13 +79,14 @@ async function linkTelegramId(userId, telegramId, token, ctx) {
   const user = await User.findById(userId);
   if (!user) throw new Error('User not found');
   user.telegramId = String(telegramId);
-  user.token = token;
+  if (token) telegramApiTokens.set(String(telegramId), token);
   user.telegram = { firstName: ctx.from.first_name || '', lastName: ctx.from.last_name || '', username: ctx.from.username || '', languageCode: ctx.from.language_code || '' };
   user.lastActive = new Date();
   await user.save();
   return user;
 }
 async function unlinkTelegramId(telegramId) {
+  telegramApiTokens.delete(String(telegramId));
   await User.updateOne({ telegramId: String(telegramId) }, { $unset: { telegramId: 1, token: 1 } });
 }
 
@@ -335,7 +337,7 @@ function registerHandlers() {
     if(login){
       if(login.step==='email'){ login.email=text.toLowerCase(); login.step='password'; return ctx.reply('🔑 Password भेजें। (यह केवल temporary bot session में रहेगा)'); }
       if(login.step==='password'){
-        try { const r=await axios.post(`${API_BASE}/auth/login`,{email:login.email,password:text}); await linkTelegramId(r.data.user.id,ctx.from.id,r.data.token,ctx); loginStates.delete(chatId); ctx.dbUser=await getUserByTelegramId(ctx.from.id); return ctx.reply(`✅ Login successful — ${safeText(r.data.user.name)}`,mainMenu(ctx.dbUser)); }
+        try { const r=await axios.post(`${API_BASE}/auth/login`,{email:login.email,password:text}); const setCookie = r.headers?.['set-cookie']?.find(x => x.startsWith('ph_auth=')) || ''; const token = setCookie.split(';',1)[0].replace(/^ph_auth=/,''); if(!token) throw new Error('Login session unavailable'); await linkTelegramId(r.data.user.id,ctx.from.id,token,ctx); loginStates.delete(chatId); ctx.dbUser=await getUserByTelegramId(ctx.from.id); return ctx.reply(`✅ Login successful — ${safeText(r.data.user.name)}`,mainMenu(ctx.dbUser)); }
         catch(e){ loginStates.delete(chatId); return ctx.reply('❌ Email/password गलत है या server unavailable है।'); }
       }
     }
