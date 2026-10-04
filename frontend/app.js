@@ -45,8 +45,6 @@
     if (/^https?:\/\//i.test(x)) return x;
     if (x.startsWith('/')) return `${location.origin}${x}`;
     if (/^media\//i.test(x)) return `${location.origin}/${x}`;
-    // Old filesystem media URLs are intentionally not served by the backend.
-    // Keep the safe fallback instead of rendering a broken-image icon.
     if (x.startsWith('uploads/') || /^(previews|presets|avatars)\//i.test(x)) return fallbackPreview;
     return fallbackPreview;
   };
@@ -105,7 +103,6 @@
       });
     } catch (_) { return []; }
   }
-  // Persistent public-data cache: survives reloads and temporary network loss.
   const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
   const cacheGet = key => {
     try {
@@ -119,7 +116,6 @@
       if (raw.length > 900000) return;
       localStorage.setItem(`ph:${key}`, raw);
     } catch (_) {
-      // Storage can be full; remove only old PresetHub public cache entries.
       try { Object.keys(localStorage).filter(k => k.startsWith('ph:')).slice(0, 5).forEach(k => localStorage.removeItem(k)); } catch (_) {}
     }
   };
@@ -469,7 +465,6 @@
         all.push(...(data.presets || []));
       }
       cacheSet('offline-catalog', { updatedAt: Date.now(), total: all.length, presets: all });
-      // Ask the service worker to cache preview images in the normal image cache.
       if (navigator.serviceWorker?.controller) navigator.serviceWorker.controller.postMessage({ type: 'CACHE_IMAGES', urls: all.slice(0, 300).map(x => x.previewImage).filter(Boolean) });
     } catch (_) {}
   }
@@ -510,7 +505,24 @@
       let comments = [];
       try { reviews = await api(`/reviews/${encodeURIComponent(id)}`); } catch (_) {}
       try { comments = await api(`/comments/${encodeURIComponent(id)}`); } catch (_) {}
+      
       const image = `<div class="preview-frame">${imgTag(p.previewImage, `${p.name} preset preview`, 'preset-detail-image')}<div class="preview-badge"><i class="fas fa-image"></i> Preview</div></div>`;
+      
+      // नया AdSense कोड मोडल के अंदर (डाउनलोड बटन के नीचे)
+      const adCode = `
+        <div class="modal-ad-container" style="margin: 15px 0; text-align: center; min-height: 100px;">
+          <ins class="adsbygoogle"
+               style="display:block"
+               data-ad-format="fluid"
+               data-ad-layout-key="-gw-3+1f-3d+2z"
+               data-ad-client="ca-pub-3554311294133493"
+               data-ad-slot="2217571977"></ins>
+          <script>
+               (adsbygoogle = window.adsbygoogle || []).push({});
+          </script>
+        </div>
+      `;
+
       openModal(`
         <div class="modal-grid">
           <div class="modal-preview">${image}</div>
@@ -533,6 +545,10 @@
               <button class="btn btn-outline" data-action="share" data-id="${esc(p.id)}"><i class="fas fa-share-nodes"></i> Share</button>
               <a class="btn btn-outline" href="${presetUrl(p)}">SEO Page</a>
             </div>
+            
+            <!-- यहाँ विज्ञापन जोड़ा गया है -->
+            ${adCode}
+            
             <div class="review-box">
               <h3>Reviews</h3>
               ${(reviews || []).slice(-5).reverse().map(r => `<div class="review"><b>${esc(r.userName)}</b> · ${'★'.repeat(Number(r.rating) || 0)}<p>${esc(r.comment)}</p></div>`).join('') || '<p>No reviews yet.</p>'}
@@ -545,6 +561,14 @@
             </div>
           </div>
         </div>`);
+        
+      // मोडल खुलने के बाद विज्ञापन को रीफ्रेश/लोड करें
+      setTimeout(() => {
+        if (window.adsbygoogle) {
+          try { (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) {}
+        }
+      }, 500);
+
       try { await api(`/presets/${encodeURIComponent(id)}/view`, { method: 'POST' }); } catch (_) {}
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -640,7 +664,6 @@
       const encodedText = encodeURIComponent(shareText);
       const encodedTitle = encodeURIComponent(`${p.name} — PresetHub`);
       const previewImg = assetUrl(p.previewImage);
-      // Proxy QR generation through PresetHub so browser CSP/ad-blockers do not break the image.
       const qr1 = `${API}/share/qr?url=${encodedUrl}`;
       openModal(`
         <div class="share-panel">
@@ -1265,15 +1288,12 @@
     installExitGuard();
     if (!navigator.onLine) setNetworkState(false, 'Offline — loading your saved PresetHub data');
 
-    // v2.9 uses an HttpOnly auth cookie. Remove the legacy client-side token if an older
-    // deployment left one behind; it is never read or sent by the new client.
     try { localStorage.removeItem('presethub_token'); } catch (_) {}
     const authPromise = (async () => {
       try { const r = await api('/auth/me'); state.user = r.user; } catch (_) {}
     })();
 
 
-    // Public catalog starts immediately; authentication no longer blocks first paint.
     const publicPromise = Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured()]);
     await Promise.allSettled([authPromise, publicPromise]);
     updateAuthUI();
@@ -1301,8 +1321,6 @@
     if (params.get('action') === 'search') $('#searchInput')?.focus();
     if (params.get('action') === 'wishlist') showWishlist();
 
-    // PWA launcher shortcuts. Authentication is resolved above before these actions
-    // run, so private shortcuts safely open login when the user is signed out.
     const shortcutAction = params.get('action');
     if (shortcutAction === 'upload') {
       if (state.user) openUpload();
@@ -1333,9 +1351,6 @@
   }
 
   // ============ EXIT / NAVIGATION GUARD ============
-  // Browsers do not allow a custom message when closing a tab/app, so beforeunload
-  // uses the browser's native confirmation. Internal/external link clicks get the
-  // PresetHub branded confirmation modal below.
   let allowExitNavigation = false;
   window.addEventListener('beforeunload', e => {
     if (allowExitNavigation) return;
@@ -1368,7 +1383,6 @@
 
   // ============ GLOBAL CLICK HANDLER ============
   document.addEventListener('click', async e => {
-    // Upload tab switching
     if (e.target.dataset.uploadTab) {
       const tab = e.target.dataset.uploadTab;
       document.querySelectorAll('.upload-tab').forEach(t => t.classList.toggle('active', t.dataset.uploadTab === tab));
@@ -1376,7 +1390,6 @@
       return;
     }
 
-    // Share platform click
     if (e.target.closest('[data-share-platform]')) {
       const btn = e.target.closest('[data-share-platform]');
       const platform = btn.dataset.sharePlatform;
@@ -1385,7 +1398,6 @@
       return;
     }
 
-    // Share copy
     if (e.target.closest('[data-share-copy]')) {
       e.preventDefault(); e.stopPropagation();
       const btn = e.target.closest('[data-share-copy]');
@@ -1393,7 +1405,6 @@
       return;
     }
 
-    // Share copy image + link
     if (e.target.closest('[data-share-copy-image]')) {
       e.preventDefault(); e.stopPropagation();
       const btn=e.target.closest('[data-share-copy-image]');
@@ -1401,7 +1412,6 @@
       return;
     }
 
-    // data-action buttons
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const action = el.dataset.action;
@@ -1584,4 +1594,26 @@
   window.addEventListener('online', () => { setNetworkState(true, 'Back online — syncing latest data…'); resumeQueuedUploads().catch(()=>{}); flushPendingProfile().catch(()=>{}); refreshPublicData(); });
   window.addEventListener('offline', () => setNetworkState(false, 'Network disconnected — showing saved data'));
   document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeQueuedUploads().catch(()=>{}); });
+})();
+
+// ============ ANTI-TAMPERING & SECURITY ============
+(function() {
+  // डेवलपर टूल्स को ब्लॉक करने का प्रयास (सिर्फ बेसिक प्रोटेक्शन)
+  document.addEventListener('contextmenu', function(e) {
+    // e.preventDefault(); // अगर आप राइट-क्लिक पूरी तरह बंद करना चाहते हैं तो इसे अनकमेंट करें
+  });
+
+  // अगर कोई विज्ञापन कोड हटाता है तो पेज को रीफ्रेश करने का लूप
+  let adCheckCount = 0;
+  setInterval(() => {
+    const adIns = document.querySelectorAll('.adsbygoogle');
+    if (adIns.length === 0 && document.body.contains(document.querySelector('#presetGrid'))) {
+      adCheckCount++;
+      if (adCheckCount > 5) {
+        console.warn("AdSense Block Detected. Please disable AdBlocker.");
+      }
+    } else {
+      adCheckCount = 0;
+    }
+  }, 3000);
 })();
