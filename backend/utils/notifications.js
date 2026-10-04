@@ -28,15 +28,21 @@ async function sendWebPush(userId, notification) {
   } catch (e) { console.warn('Web push delivery skipped:', e.message); }
 }
 
+function safeNotificationLink(link) {
+  const value = String(link || '/').trim();
+  return /^\/(?!\/)[^\s]{0,500}$/.test(value) ? value : '/';
+}
+
 async function createNotification(userId, type, message, link, title='PresetHub') {
   if (!mongoose.Types.ObjectId.isValid(userId)) return false;
-  const notification = { type, message, link: link || '/', read: false, createdAt: new Date() };
+  const safeLink = safeNotificationLink(link);
+  const notification = { type: String(type || 'system').slice(0, 60), message: String(message || '').slice(0, 500), link: safeLink, read: false, createdAt: new Date() };
   const result = await User.updateOne(
     { _id: userId, notifications: { $not: { $elemMatch: { message, type, read: false } } } },
     { $push: { notifications: { $each: [notification], $slice: -200 } } }
   );
   if (result.modifiedCount > 0) {
-    await sendWebPush(userId, { title, message, link: link || '/' });
+    await sendWebPush(userId, { title, message: notification.message, link: safeLink });
     return true;
   }
   return false;

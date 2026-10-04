@@ -9,7 +9,7 @@ const validate = (validations) => async (req, res, next) => {
 
 const signupValidation = [
   body('email').isEmail().withMessage('Invalid email').normalizeEmail().trim(),
-  body('password').isLength({ min: 8 }).withMessage('Password must be 8+ characters')
+  body('password').isLength({ min: 10, max: 128 }).withMessage('Password must be 10–128 characters')
     .matches(/\d/).withMessage('Password needs a number')
     .matches(/[A-Z]/).withMessage('Password needs uppercase')
     .matches(/[a-z]/).withMessage('Password needs lowercase'),
@@ -42,7 +42,7 @@ const profileValidation = [
 
 const changePasswordValidation = [
   body('currentPassword').notEmpty(),
-  body('newPassword').isLength({ min: 8 })
+  body('newPassword').isLength({ min: 10, max: 128 })
     .matches(/\d/).matches(/[A-Z]/).matches(/[a-z]/)
 ];
 
