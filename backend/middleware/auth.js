@@ -53,13 +53,18 @@ const authenticate = async (req, res, next) => {
     }
 
     const user = await User.findById(decoded.id)
-      .select('role status')
+      .select('role status sessionVersion')
       .lean();
 
     if (!user) {
       return res.status(401).json({
         error: 'User no longer exists.'
       });
+    }
+
+    const tokenVersion = Number.isInteger(decoded.ver) ? decoded.ver : 0;
+    if (tokenVersion !== Number(user.sessionVersion || 0)) {
+      return res.status(401).json({ error: 'Session expired. Please log in again.', code: 'SESSION_EXPIRED' });
     }
 
     if (user.status === 'blocked' || user.status === 'deactivated') {
