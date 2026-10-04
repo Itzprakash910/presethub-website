@@ -136,6 +136,7 @@ const DownloadSchema = new Schema({
   presetId: { type: Schema.Types.ObjectId, ref: 'Preset', required: true, index: true },
   downloadedAt: { type: Date, default: Date.now, index: true },
 });
+DownloadSchema.index({ userId: 1, presetId: 1 });
 
 // ========== SHARE ==========
 const ShareSchema = new Schema({
@@ -168,6 +169,27 @@ const ShareClickSchema = new Schema({
 });
 
 
+
+// ========== HOME AD / PROMOTION ==========
+const HomeAdSchema = new Schema({
+  title: { type: String, required: true, trim: true, maxlength: 120 },
+  description: { type: String, default: '', trim: true, maxlength: 500 },
+  imageUrl: { type: String, default: '', trim: true, maxlength: 1000 },
+  linkUrl: { type: String, default: '/', trim: true, maxlength: 500 },
+  productName: { type: String, default: '', trim: true, maxlength: 120 },
+  originalPrice: { type: Number, default: 0, min: 0, max: 99999999 },
+  salePrice: { type: Number, default: 0, min: 0, max: 99999999 },
+  discountPercent: { type: Number, default: 0, min: 0, max: 100 },
+  badge: { type: String, default: 'Featured', trim: true, maxlength: 40 },
+  active: { type: Boolean, default: true, index: true },
+  startsAt: { type: Date, default: null },
+  endsAt: { type: Date, default: null },
+  impressions: { type: Number, default: 0 },
+  clicks: { type: Number, default: 0 },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+}, { timestamps: true });
+HomeAdSchema.index({ active: 1, startsAt: 1, endsAt: 1, createdAt: -1 });
+
 // ========== MESSAGE ==========
 const MessageSchema = new Schema({
   senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -190,5 +212,6 @@ const ShareClick = mongoose.model('ShareClick', ShareClickSchema);
 const Comment = mongoose.model('Comment', CommentSchema);
 
 const Message = mongoose.model('Message', MessageSchema);
+const HomeAd = mongoose.model('HomeAd', HomeAdSchema);
 
-module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message };
+module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd };
