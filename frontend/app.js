@@ -1,4 +1,4 @@
-/* PresetHub Frontend — production client v2.9.1 */
+/* PresetHub Frontend — production client v2.9.4 */
 (() => {
   'use strict';
 
@@ -1270,7 +1270,7 @@
 
   function registerSW() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=2.9.2', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
+      navigator.serviceWorker.register('/sw.js?v=2.9.4', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (sessionStorage.getItem('ph-sw-refreshed') === '1') return;
         sessionStorage.setItem('ph-sw-refreshed', '1');

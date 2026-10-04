@@ -59,9 +59,9 @@
       "url": "/?action=messages",
       "icons": [
         {
-          "src": "/assets/icons-pack/svg/fa-message.svg",
+          "src": "/assets/icons-pack/png/fa-envelope.png",
           "sizes": "64x64",
-          "type": "image/svg+xml"
+          "type": "image/png"
         }
       ]
     },

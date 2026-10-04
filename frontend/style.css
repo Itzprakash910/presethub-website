@@ -1230,7 +1230,7 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
   .message-thread-avatar{width:46px;height:46px}
 }
 
-/* v2.9.1 UI cleanup: keep PresetHub brand and overflow menu visually separated. */
+/* v2.9.4 UI cleanup: keep PresetHub brand and overflow menu visually separated. */
 .brand-cluster{gap:18px}
 .nav-menu-btn{margin-left:2px}
 .creator-menu-grid,.site-menu-grid{gap:12px}
@@ -1238,7 +1238,7 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
 
 .share-qr .qr-status{display:block;margin-top:8px;color:var(--muted);font-size:.75rem}
 
-/* v2.9.2 account/message/notification polish */
+/* v2.9.4 account/message/notification polish */
 .site-menu-grid{gap:12px;padding:6px}
 .site-menu-item{min-height:48px;gap:10px}
 .account-menu-hint{padding:12px 14px;border:1px solid var(--border);background:var(--input-bg);border-radius:14px;color:var(--muted);font-size:.8rem;line-height:1.5;margin:14px 0}
@@ -1262,3 +1262,36 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
 @media(max-width:700px){.message-thread{grid-template-columns:46px minmax(0,1fr) auto}.message-profile-link,.message-profile-link .avatar-shell,.message-profile-link .avatar-fallback{width:46px;height:46px}.notification-head{align-items:flex-start;flex-direction:column}}
 
 .message-thread{grid-template-columns:minmax(145px,1fr) minmax(0,1.5fr);}.message-profile-link{display:flex;align-items:center;gap:9px;text-align:left;width:100%;height:auto;min-height:52px}.message-profile-link>span{min-width:0;display:flex;flex-direction:column}.message-profile-link b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.message-profile-link small{color:var(--muted);font-size:.7rem}.message-thread-open{width:100%;}.message-thread-main>span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:560px){.message-thread{grid-template-columns:1fr auto}.message-profile-link>span{display:none}.message-profile-link{width:46px}.message-profile-link .avatar-shell,.message-profile-link .avatar-fallback{width:46px;height:46px}}
+
+
+/* v2.9.4 responsive header/menu hardening */
+.nav-menu-btn{position:relative;z-index:3;flex:0 0 42px!important;width:42px!important;height:42px!important;display:grid!important;place-items:center!important;padding:0!important;margin:0!important}
+.nav-menu-btn i{font-size:1.35rem;display:block}
+.brand-cluster{flex:0 1 auto;min-width:0!important;white-space:nowrap}
+.brand-cluster .logo{min-width:0}
+.brand-cluster .logo span{white-space:nowrap}
+@media(max-width:640px){
+  header{padding:9px 0 10px}
+  .nav{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 10px;flex-wrap:nowrap}
+  .brand-cluster{grid-column:1;grid-row:1;gap:7px!important;min-width:0!important;overflow:hidden}
+  .brand-cluster .logo{font-size:clamp(1.22rem,5.5vw,1.5rem);gap:4px;min-width:0;overflow:hidden}
+  .brand-cluster .logo .brand-logo{width:34px;height:34px;flex:0 0 34px}
+  .nav-menu-btn{width:38px!important;height:38px!important;flex-basis:38px!important;border-radius:12px!important}
+  .nav-menu-btn i{font-size:1.25rem}
+  .nav-search{grid-column:1/-1;grid-row:2;width:100%;min-width:0;flex:none;margin:0}
+  .nav-search input{min-width:0;padding:9px 0;font-size:.88rem}
+  .nav-search button{padding:8px 12px;font-size:.78rem}
+  .nav-actions{grid-column:2;grid-row:1;min-width:0;gap:4px!important;justify-content:flex-end;white-space:nowrap}
+  .nav-actions .btn-sm{padding:7px 8px;font-size:.72rem}
+  .nav-actions .icon-btn,.nav-actions .message-btn{width:38px;height:38px;flex:0 0 38px}
+  .nav-actions .user-avatar{width:38px;height:38px;flex:0 0 38px}
+}
+@media(max-width:360px){
+  .nav{gap:7px}
+  .brand-cluster .logo{font-size:1.15rem}
+  .brand-cluster .logo .brand-logo{width:31px;height:31px;flex-basis:31px}
+  .nav-menu-btn{width:36px!important;height:36px!important;flex-basis:36px!important}
+  .nav-actions .icon-btn,.nav-actions .message-btn,.nav-actions .user-avatar{width:36px;height:36px;flex-basis:36px}
+  .nav-actions .btn-sm{padding:6px 6px;font-size:.68rem}
+  .nav-search button{padding:8px 9px}
+}

@@ -20,8 +20,9 @@
 .fas.fa-crown{mask-image:url('/assets/icons-pack/svg/fa-crown.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-crown.svg');}
 .fas.fa-cubes{mask-image:url('/assets/icons-pack/svg/fa-cubes.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-cubes.svg');}
 .fas.fa-download{mask-image:url('/assets/icons-pack/svg/fa-download.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-download.svg');}
-.fas.fa-ellipsis{mask-image:url('/assets/icons-pack/svg/fa-hashtag.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-hashtag.svg');}
-.fas.fa-ellipsis-vertical{mask-image:url('/assets/icons-pack/svg/fa-hashtag.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-hashtag.svg');}
+.fas.fa-ellipsis,.fas.fa-ellipsis-vertical{mask-image:none!important;-webkit-mask-image:none!important;background:none!important;position:relative;width:1.1em;height:1.1em;}
+.fas.fa-ellipsis::before{content:'•••';font-family:Arial,sans-serif;font-size:.9em;letter-spacing:.08em;line-height:1;position:absolute;inset:0;display:grid;place-items:center;color:currentColor;}
+.fas.fa-ellipsis-vertical::before{content:'⋮';font-family:Arial,sans-serif;font-size:1.55em;line-height:.8;position:absolute;inset:0;display:grid;place-items:center;color:currentColor;}
 .fas.fa-envelope{mask-image:url('/assets/icons-pack/svg/fa-envelope.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-envelope.svg');}
 .fas.fa-eye{mask-image:url('/assets/icons-pack/svg/fa-eye.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-eye.svg');}
 .fas.fa-globe{mask-image:url('/assets/icons-pack/svg/fa-globe.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-globe.svg');}

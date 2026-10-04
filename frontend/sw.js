@@ -1,11 +1,11 @@
-const STATIC_CACHE = 'presethub-static-v12';
-const API_CACHE = 'presethub-api-v5';
-const IMAGE_CACHE = 'presethub-images-v5';
+const STATIC_CACHE = 'presethub-static-v13';
+const API_CACHE = 'presethub-api-v6';
+const IMAGE_CACHE = 'presethub-images-v6';
 const CORE = [
-  '/', '/index.html', '/manifest.json', '/icons.css?v=2.9.3', '/style.css?v=2.9.3', '/app.js?v=2.9.3',
+  '/', '/index.html', '/manifest.json', '/icons.css?v=2.9.4', '/style.css?v=2.9.4', '/app.js?v=2.9.4',
   '/privacy.html', '/terms.html', '/about.html', '/blog.html',
   '/creator-program.html', '/faq.html', '/contact.html',
-  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=2.9.2', '/cookie-consent.js?v=2.9.2', '/status.js?v=2.9.3', '/download-app.js?v=2.9.2'
+  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=2.9.4', '/cookie-consent.js?v=2.9.4', '/status.js?v=2.9.4', '/download-app.js?v=2.9.4'
 ];
 
 self.addEventListener('install', e => e.waitUntil(
