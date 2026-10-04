@@ -4,9 +4,10 @@ const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 
 const {
-  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message
+  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd
 } = require('../models');
 const { deleteFromMongo } = require('../config/mongoStorage');
+const { createNotification, sendWebPush } = require('../utils/notifications');
 
 const router = express.Router();
 
@@ -64,6 +65,44 @@ function paginate(page, limit) {
 
 function validObjectId(id) {
   return mongoose.Types.ObjectId.isValid(id);
+}
+
+function cleanHttpUrl(value) {
+  const v = String(value || '').trim().slice(0, 1000);
+  if (!v) return '';
+  if (/^\/(?!\/)/.test(v)) return v;
+  try {
+    const u = new URL(v);
+    if (!['http:', 'https:'].includes(u.protocol)) return '';
+    return u.toString();
+  } catch (_) { return ''; }
+}
+
+function adPayload(body, existing = {}) {
+  const title = String(body.title ?? existing.title ?? '').trim().slice(0, 120);
+  if (!title) throw new Error('Ad title is required');
+  const imageUrl = cleanHttpUrl(body.imageUrl ?? existing.imageUrl);
+  const linkUrl = cleanHttpUrl(body.linkUrl ?? existing.linkUrl ?? '/');
+  if (body.imageUrl && !imageUrl) throw new Error('Invalid ad image URL');
+  if (body.linkUrl && !linkUrl) throw new Error('Invalid ad link URL');
+  const originalPrice = Math.max(0, Number(body.originalPrice ?? existing.originalPrice ?? 0) || 0);
+  const salePrice = Math.max(0, Number(body.salePrice ?? existing.salePrice ?? 0) || 0);
+  let discountPercent = Math.max(0, Math.min(100, Number(body.discountPercent ?? existing.discountPercent ?? 0) || 0));
+  if (!discountPercent && originalPrice > 0 && salePrice > 0 && salePrice < originalPrice) {
+    discountPercent = Math.round((1 - salePrice / originalPrice) * 100);
+  }
+  return {
+    title,
+    description: String(body.description ?? existing.description ?? '').trim().slice(0, 500),
+    imageUrl,
+    linkUrl: linkUrl || '/',
+    productName: String(body.productName ?? existing.productName ?? '').trim().slice(0, 120),
+    originalPrice, salePrice, discountPercent,
+    badge: String(body.badge ?? existing.badge ?? 'Featured').trim().slice(0, 40) || 'Featured',
+    active: body.active === undefined ? (existing.active ?? true) : Boolean(body.active),
+    startsAt: body.startsAt ? new Date(body.startsAt) : (existing.startsAt || null),
+    endsAt: body.endsAt ? new Date(body.endsAt) : (existing.endsAt || null),
+  };
 }
 
 
@@ -835,22 +874,7 @@ router.post('/notifications/user/:id', async (req, res) => {
     }
 
 
-    user.notifications.push({
-      type,
-      message,
-      link,
-      read: false,
-      createdAt: new Date()
-    });
-
-    // Keep latest 100 notifications.
-    if (user.notifications.length > 100) {
-      user.notifications =
-        user.notifications.slice(-100);
-    }
-
-    await user.save();
-
+    await createNotification(user._id, type, message, link, 'PresetHub');
 
     res.json({
       success: true,
@@ -921,28 +945,19 @@ router.post('/notifications/all', async (req, res) => {
 
 
     const result = await User.updateMany(
-      {
-        status: {
-          $ne: 'deactivated'
-        }
-      },
-      {
-        $push: {
-          notifications: {
-            $each: [notification],
-            $slice: -100
-          }
-        }
-      }
+      { status: { $ne: 'deactivated' } },
+      { $push: { notifications: { $each: [notification], $slice: -100 } } }
     );
 
+    // Deliver background Web Push where users have enabled it. In-app notifications
+    // are already written in one efficient MongoDB update above.
+    const pushUsers = await User.find({ status: { $ne: 'deactivated' }, 'pushSubscriptions.0': { $exists: true } }).select('_id').lean();
+    const pushPayload = { title: 'PresetHub', message, link };
+    for (let i = 0; i < pushUsers.length; i += 10) {
+      await Promise.allSettled(pushUsers.slice(i, i + 10).map(u => sendWebPush(u._id, pushPayload)));
+    }
 
-    res.json({
-      success: true,
-      message: 'Notification sent to users',
-      modified:
-        result.modifiedCount
-    });
+    res.json({ success: true, message: 'Notification sent to users', modified: result.modifiedCount, pushEligible: pushUsers.length });
 
   } catch (err) {
 
@@ -957,6 +972,57 @@ router.post('/notifications/all', async (req, res) => {
   }
 });
 
+
+// ============================================================
+// HOME AD MANAGEMENT
+// ============================================================
+
+router.get('/ads', async (req, res) => {
+  try {
+    const ads = await HomeAd.find({}).sort({ createdAt: -1 }).limit(100).lean();
+    res.json({ items: ads.map(a => ({ ...a, id: a._id.toString() })) });
+  } catch (err) {
+    console.error('Admin ads error:', err);
+    res.status(500).json({ error: 'Failed to load ads' });
+  }
+});
+
+router.post('/ads', async (req, res) => {
+  try {
+    const payload = adPayload(req.body || {});
+    const ad = await HomeAd.create({ ...payload, createdBy: req.user.id });
+    res.status(201).json({ success: true, ad: { ...ad.toObject(), id: ad._id.toString() } });
+  } catch (err) {
+    console.error('Create ad error:', err);
+    res.status(400).json({ error: err.message || 'Failed to create ad' });
+  }
+});
+
+router.put('/ads/:id', async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ad ID' });
+    const ad = await HomeAd.findById(req.params.id);
+    if (!ad) return res.status(404).json({ error: 'Ad not found' });
+    Object.assign(ad, adPayload(req.body || {}, ad.toObject()));
+    await ad.save();
+    res.json({ success: true, ad: { ...ad.toObject(), id: ad._id.toString() } });
+  } catch (err) {
+    console.error('Update ad error:', err);
+    res.status(400).json({ error: err.message || 'Failed to update ad' });
+  }
+});
+
+router.delete('/ads/:id', async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ad ID' });
+    const result = await HomeAd.deleteOne({ _id: req.params.id });
+    if (!result.deletedCount) return res.status(404).json({ error: 'Ad not found' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete ad error:', err);
+    res.status(500).json({ error: 'Failed to delete ad' });
+  }
+});
 
 // ============================================================
 // PRESET MANAGEMENT

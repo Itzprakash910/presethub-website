@@ -9,7 +9,7 @@ router.get('/', async (req,res,next)=>{
     const re=new RegExp(escapeRegex(q),'i');
     const [presets,users,categories]=await Promise.all([
       Preset.find({status:'approved',$or:[{name:re},{author:re},{tags:re},{description:re},{category:re}]}).sort({downloads:-1,createdAt:-1}).limit(8).lean(),
-      User.aggregate([{ $match:{ $or:[{name:re},{username:re}] } },{ $lookup:{from:'presets',localField:'_id',foreignField:'authorId',as:'presets'} },{ $project:{name:1,username:1,avatar:1,presetCount:{ $size:{ $filter:{input:'$presets',as:'p',cond:{ $eq:['$$p.status','approved'] } } } } } },{ $limit:5 }]),
+      User.aggregate([{ $match:{ status:'active', $or:[{name:re},{username:re}] } },{ $lookup:{from:'presets',localField:'_id',foreignField:'authorId',as:'presets'} },{ $project:{name:1,username:1,avatar:1,presetCount:{ $size:{ $filter:{input:'$presets',as:'p',cond:{ $eq:['$$p.status','approved'] } } } } } },{ $limit:5 }]),
       Preset.aggregate([{ $match:{status:'approved'} },{ $unwind:'$tags' },{ $match:{tags:re} },{ $group:{_id:'$tags',count:{$sum:1}} },{ $sort:{count:-1} },{ $limit:5}])
     ]);
     const categoryCounts=await Preset.aggregate([{ $match:{status:'approved',category:re} },{ $group:{_id:'$category',count:{$sum:1}} },{ $sort:{count:-1} },{ $limit:5}]);

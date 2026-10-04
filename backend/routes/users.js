@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
 });
 
 router.get('/me', auth, async (req, res) => {
-  const user = await User.findById(req.user.id).select('-password').lean();
+  const user = await User.findById(req.user.id).select('-password -passwordResetTokenHash -passwordResetExpires -pushSubscriptions -sessionVersion -token').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ ...user, id: user._id.toString() });
 });
@@ -90,6 +90,7 @@ router.put('/me/avatar', auth, uploadAvatar, async (req, res) => {
 
 router.get('/top', async (req, res) => {
   const top = await User.aggregate([
+    { $match: { status: 'active' } },
     { $lookup: { from: 'presets', localField: '_id', foreignField: 'authorId', as: 'presets' } },
     { $addFields: { approved: { $filter: { input: '$presets', as: 'p', cond: { $eq: ['$$p.status', 'approved'] } } } } },
     { $project: {
@@ -246,7 +247,7 @@ router.post('/notifications/read-all', auth, async (req, res) => {
 router.get('/:id/follow-status', auth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
-  const target = await User.findById(req.params.id).select('followers').lean();
+  const target = await User.findOne({ _id: req.params.id, status: 'active' }).select('followers').lean();
   if (!target) return res.status(404).json({ error: 'User not found' });
   res.json({ following: (target.followers || []).some(id => id.toString() === req.user.id) });
 });
@@ -272,6 +273,8 @@ router.get('/:id', async (req, res) => {
 router.get('/:id/presets', async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
+  const owner = await User.findOne({ _id: req.params.id, status: 'active' }).select('_id').lean();
+  if (!owner) return res.status(404).json({ error: 'User not found' });
   const presets = await Preset.find({ authorId: req.params.id, status: 'approved' }).lean();
   res.json(presets.map(p => ({
     id: p._id.toString(), name: p.name, description: p.description,
@@ -291,7 +294,7 @@ router.post('/:id/follow', auth, async (req, res, next) => {
     if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot follow self' });
 
     const [target, current] = await Promise.all([
-      User.findById(req.params.id).select('name username followers').lean(),
+      User.findOne({ _id: req.params.id, status: 'active' }).select('name username followers').lean(),
       User.findById(req.user.id).select('name username following').lean()
     ]);
     if (!target || !current) return res.status(404).json({ error: 'User not found' });

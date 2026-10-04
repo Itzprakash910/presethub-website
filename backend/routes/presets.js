@@ -262,7 +262,7 @@ router.get('/global-search', async (req, res) => {
       Preset.find({ status: 'approved', $or: [
         { name: rx }, { author: rx }, { description: rx }, { category: rx }, { tags: { $in: [rx] } }
       ] }).sort({ downloads: -1, updatedAt: -1 }).limit(12).lean(),
-      User.find({ $or: [{ name: rx }, { username: rx }] }).select('name username avatar followers').limit(8).lean(),
+      User.find({ status: 'active', $or: [{ name: rx }, { username: rx }] }).select('name username avatar followers').limit(8).lean(),
       Preset.aggregate([{ $match: { status: 'approved', category: rx } }, { $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 8 }]),
       Preset.aggregate([{ $match: { status: 'approved', tags: { $elemMatch: { $regex: safeQ, $options: 'i' } } } }, { $unwind: '$tags' }, { $match: { tags: { $regex: safeQ, $options: 'i' } } }, { $group: { _id: '$tags', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 12 }])
     ]);
@@ -387,7 +387,7 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
   }
 
   const token = jwt.sign(
-    { purpose: 'preset-download', presetId: preset._id.toString(), userId: req.user?.id || null },
+    { purpose: 'preset-download', presetId: preset._id.toString(), userId: req.user?.id || null, ver: req.user ? Number((await User.findById(req.user.id).select('sessionVersion').lean())?.sessionVersion || 0) : 0 },
     process.env.JWT_SECRET,
     { expiresIn: '2m' }
   );
@@ -405,6 +405,13 @@ router.get('/:id/file', async (req, res, next) => {
 
     const preset = await Preset.findOne({ _id: req.params.id, status: 'approved' }).lean();
     if (!preset || !preset.fileUrl) return res.status(404).end();
+
+    if (payload.userId) {
+      if (!mongoose.Types.ObjectId.isValid(payload.userId)) return res.status(403).end();
+      const ticketUser = await User.findById(payload.userId).select('status sessionVersion').lean();
+      if (!ticketUser || ticketUser.status === 'blocked' || ticketUser.status === 'deactivated') return res.status(403).end();
+      if (Number.isInteger(payload.ver) && Number(payload.ver) !== Number(ticketUser.sessionVersion || 0)) return res.status(403).end();
+    }
 
     if (Number(preset.price || 0) > 0) {
       if (!payload.userId) return res.status(401).end();
@@ -440,6 +447,8 @@ router.post('/bulk-download', auth, async (req, res) => {
   const owned = new Set(paid.map(o => o.presetId.toString()));
   const downloads = [];
   const skipped = [];
+  const downloadUser = await User.findById(req.user.id).select('sessionVersion').lean();
+  const sessionVersion = Number(downloadUser?.sessionVersion || 0);
   for (const p of presets) {
     const requiresPayment = Number(p.price || 0) > 0 && p.authorId.toString() !== req.user.id;
     if (requiresPayment && !owned.has(p._id.toString())) {
@@ -451,7 +460,7 @@ router.post('/bulk-download', auth, async (req, res) => {
       continue;
     }
     const token = jwt.sign(
-      { purpose: 'preset-download', presetId: p._id.toString(), userId: req.user.id },
+      { purpose: 'preset-download', presetId: p._id.toString(), userId: req.user.id, ver: sessionVersion },
       process.env.JWT_SECRET, { expiresIn: '2m' }
     );
     downloads.push({ id: p._id.toString(), name: p.name, url: `${SITE_URL}/api/presets/${p._id}/file?token=${encodeURIComponent(token)}`, filename: safeFilename(p.originalName || `${slugify(p.name)}.xmp`) });
