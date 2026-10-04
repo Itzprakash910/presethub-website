@@ -2,6 +2,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { connectDB } = require('../config/db');
 const { User, Preset, Order, Download } = require('../models');
 
@@ -27,7 +28,7 @@ async function migrate() {
 
       const newUser = await User.create({
         email: u.email || `migrated_${Date.now()}_${Math.random()}@placeholder.local`,
-        password: u.password || await bcrypt.hash('ChangeMe123!', 12),
+        password: u.password || await bcrypt.hash(crypto.randomBytes(32).toString('base64url'), 12),
         name: u.name || u.username || 'User',
         username: u.username,
         role: u.role || 'user',
@@ -63,7 +64,7 @@ async function migrate() {
         })),
         views: p.views || 0, shares: p.shares || 0,
         adImpressions: p.adImpressions || 0, totalRevenue: p.totalRevenue || 0,
-        status: p.status || 'pending',
+        status: p.status === 'rejected' ? 'rejected' : 'approved',
         createdAt: p.createdAt || new Date()
       });
       count++;
