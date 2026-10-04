@@ -1,10 +1,11 @@
 const express = require('express');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const auth = require('../middleware/auth');
 const { User, Preset, Download } = require('../models');
-const { uploadAvatar } = require('../middleware/upload');
+const { uploadAvatar, validateParsedUploads, safeImageContentType } = require('../middleware/upload');
 const { uploadToMongo } = require('../config/mongoStorage');
 const { createNotification, evaluateAchievements, sendWebPush } = require('../utils/notifications');
 
@@ -21,7 +22,7 @@ function cleanSocialLinks(value) {
 
 
 router.get('/', async (req, res) => {
-  const users = await User.find({}).select('name username avatar followers').lean();
+  const users = await User.find({ status: 'active' }).select('name username avatar followers').limit(500).lean();
   const counts = await Preset.aggregate([
     { $match: { status: 'approved' } },
     { $group: { _id: '$authorId', count: { $sum: 1 } } }
@@ -46,18 +47,21 @@ router.put('/me', auth, async (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   if (username && username !== user.username) {
+    if (!/^[a-zA-Z0-9_]{3,30}$/.test(String(username).trim())) return res.status(400).json({ error: 'Invalid username' });
     if (await User.exists({ username: username.toLowerCase(), _id: { $ne: user._id } }))
       return res.status(409).json({ error: 'Username taken' });
     user.username = username.toLowerCase();
   }
   if (email && email !== user.email) {
-    if (await User.exists({ email: email.toLowerCase(), _id: { $ne: user._id } }))
+    const normalizedEmail = String(email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'Invalid email' });
+    if (await User.exists({ email: normalizedEmail, _id: { $ne: user._id } }))
       return res.status(409).json({ error: 'Email taken' });
-    user.email = email.toLowerCase();
+    user.email = normalizedEmail;
   }
-  if (name) user.name = name;
-  if (bio !== undefined) user.bio = bio;
-  if (avatar) user.avatar = avatar;
+  if (name) user.name = String(name).trim().slice(0, 50);
+  if (bio !== undefined) user.bio = String(bio).trim().slice(0, 500);
+  if (avatar) { const av = String(avatar).trim(); if (!/^\/media\/[a-f0-9]{24}$/i.test(av)) return res.status(400).json({ error: 'Invalid avatar media URL' }); user.avatar = av; }
   if (socialLinks) user.socialLinks = { ...(user.socialLinks?.toObject?.() || {}), ...cleanSocialLinks(socialLinks) };
 
   await user.save();
@@ -70,14 +74,16 @@ router.put('/me', auth, async (req, res) => {
 router.put('/me/avatar', auth, uploadAvatar, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No profile image selected' });
+    validateParsedUploads(req);
     if (req.file.size > 5 * 1024 * 1024) return res.status(400).json({ error: 'Profile image must be 5MB or smaller' });
     const key = `avatars/${uuidv4()}${path.extname(req.file.originalname).toLowerCase()}`;
-    const url = await uploadToMongo(req.file.buffer, key, req.file.mimetype, { kind: 'avatar', userId: req.user.id });
+    const url = await uploadToMongo(req.file.buffer, key, safeImageContentType(req.file), { kind: 'avatar', userId: req.user.id });
     if (!url) throw new Error('Storage returned no URL');
     await User.updateOne({ _id: req.user.id }, { avatar: url });
     res.json({ success: true, avatar: url, message: 'Profile image updated' });
   } catch (e) {
     console.error('Avatar error:', e);
+    if (/Invalid image|extension does not match|Only JPG|No profile image/i.test(String(e.message || ''))) return res.status(400).json({ error: e.message });
     res.status(500).json({ error: 'Profile image upload failed. Please try again.' });
   }
 });
@@ -128,7 +134,13 @@ router.get('/me/downloads', auth, async (req, res) => {
   const downloads = await Download.find({ userId: req.user.id }).select('presetId').lean();
   const ids = [...new Set(downloads.map(d => d.presetId.toString()))];
   const presets = await Preset.find({ _id: { $in: ids }, status: 'approved' }).lean();
-  res.json(presets.map(p => ({ ...p, id: p._id.toString(), authorId: p.authorId.toString() })));
+  res.json(presets.map(p => ({
+    id: p._id.toString(), name: p.name, description: p.description || '', category: p.category || 'General',
+    tags: Array.isArray(p.tags) ? p.tags.slice(0,10) : [], price: p.price, author: p.author, authorId: p.authorId.toString(),
+    createdAt: p.createdAt, updatedAt: p.updatedAt, downloads: p.downloads || 0, avgRating: p.avgRating || 0,
+    previewImage: p.previewImage, views: p.views || 0, likesCount: (p.likes || []).length, shares: p.shares || 0,
+    reviews: (p.reviews || []).map(r => ({ id: r._id.toString(), userName: r.userName, rating: r.rating, comment: r.comment, createdAt: r.createdAt, helpful: r.helpful || 0 }))
+  })));
 });
 
 router.post('/me/wishlist/:presetId', auth, async (req, res) => {
@@ -147,7 +159,7 @@ router.post('/me/wishlist/:presetId', auth, async (req, res) => {
 router.get('/me/wishlist/presets', auth, async (req, res) => {
   const user = await User.findById(req.user.id).select('wishlist').lean();
   const presets = await Preset.find({ _id: { $in: user?.wishlist || [] }, status: 'approved' }).lean();
-  res.json(presets.map(p => ({ ...p, id: p._id.toString(), authorId: p.authorId.toString() })));
+  res.json(presets.map(p => ({ id:p._id.toString(), name:p.name, description:p.description||'', category:p.category||'General', tags:p.tags||[], price:p.price, author:p.author, authorId:p.authorId.toString(), createdAt:p.createdAt, updatedAt:p.updatedAt, downloads:p.downloads||0, avgRating:p.avgRating||0, previewImage:p.previewImage, views:p.views||0, likesCount:(p.likes||[]).length, shares:p.shares||0 })));
 });
 
 router.get('/me/subscription', auth, async (req, res) => {
@@ -197,7 +209,8 @@ router.post('/referrals/generate', auth, async (req, res) => {
     let code = '';
     for (let attempt = 0; attempt < 8; attempt++) {
       code = '';
-      for (let i = 0; i < 8; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+      const bytes = crypto.randomBytes(8);
+      for (let i = 0; i < 8; i++) code += chars.charAt(bytes[i] % chars.length);
       if (!(await User.exists({ 'referral.code': code }))) break;
     }
     user.referral.code = code;
@@ -241,7 +254,7 @@ router.get('/:id/follow-status', auth, async (req, res) => {
 router.get('/:id', async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
-  const user = await User.findById(req.params.id).select('name username avatar bio socialLinks verified followers following achievements').lean();
+  const user = await User.findOne({ _id: req.params.id, status: 'active' }).select('name username avatar bio socialLinks verified followers following achievements').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
   const stats = await Preset.aggregate([
     { $match: { authorId: user._id, status: 'approved' } },
@@ -323,6 +336,7 @@ router.delete('/push/subscribe', auth, async (req, res) => {
 });
 
 router.get('/:id/earnings', auth, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
   if (req.user.id !== req.params.id && req.user.role !== 'admin')
     return res.status(403).json({ error: 'Unauthorized' });
   if (!mongoose.Types.ObjectId.isValid(req.params.id))

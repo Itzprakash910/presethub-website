@@ -24,6 +24,10 @@ router.post('/:presetId', auth, async (req, res, next) => {
     const user = await User.findById(req.user.id).select('name username').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     const parentId = req.body.parentId && mongoose.Types.ObjectId.isValid(req.body.parentId) ? req.body.parentId : null;
+    if (parentId) {
+      const parent = await Comment.findOne({ _id: parentId, presetId: preset._id }).select('_id').lean();
+      if (!parent) return res.status(400).json({ error: 'Invalid parent comment' });
+    }
     const comment = await Comment.create({ presetId: preset._id, userId: user._id, userName: user.name || user.username || 'User', text, parentId });
     if (preset.authorId.toString() !== req.user.id) {
       await createNotification(preset.authorId, 'comment', `💬 ${user.name || user.username || 'Someone'} commented on “${preset.name}”.`, `/preset/${preset._id}`, 'New comment');

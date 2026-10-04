@@ -5,7 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const auth = require('../middleware/auth');
 const { optionalAuth } = require('../middleware/auth');
 const { Preset, User, Download, Share, Order } = require('../models');
-const { uploadFields, bulkUploadFields } = require('../middleware/upload');
+const { uploadFields, bulkUploadFields, validateParsedUploads, safeImageContentType } = require('../middleware/upload');
 const { uploadToMongo, deleteFromMongo, getStoredFileStream } = require('../config/mongoStorage');
 const jwt = require('jsonwebtoken');
 const { validate, presetValidation } = require('../utils/validators');
@@ -123,6 +123,7 @@ router.get('/search', async (req, res) => {
 // ===== BULK UPLOAD (BEFORE /:id) =====
 router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
   try {
+    validateParsedUploads(req);
     const user = await User.findById(req.user.id).select('name').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -150,6 +151,8 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
 
     for (let i = 0; i < presetFiles.length; i++) {
       const file = presetFiles[i];
+      let createdFileUrl = '';
+      let createdPreviewUrl = '';
       try {
         const fileBase = path.basename(file.originalname, path.extname(file.originalname)).toLowerCase();
         const displayName = path.basename(file.originalname, path.extname(file.originalname))
@@ -165,12 +168,14 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
         const previewFile = previewMap[fileBase] || previewFiles[i];
 
         const fileKey = `presets/${uuidv4()}${path.extname(file.originalname)}`;
-        const fileUrl = await uploadToMongo(file.buffer, fileKey, file.mimetype, { kind: 'preset', presetUpload: true });
+        const fileUrl = await uploadToMongo(file.buffer, fileKey, 'application/octet-stream', { kind: 'preset', presetUpload: true });
+        createdFileUrl = fileUrl;
 
         let previewImage = '';
         if (previewFile) {
           const pKey = `previews/${uuidv4()}${path.extname(previewFile.originalname)}`;
-          previewImage = await uploadToMongo(previewFile.buffer, pKey, previewFile.mimetype, { kind: 'preview' });
+          previewImage = await uploadToMongo(previewFile.buffer, pKey, safeImageContentType(previewFile), { kind: 'preview' });
+          createdPreviewUrl = previewImage;
           delete previewMap[fileBase];
         }
 
@@ -192,11 +197,16 @@ router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
 
         created.push({ id: preset._id.toString(), name: preset.name, hasPreview: !!previewImage });
       } catch (err) {
+        await Promise.all([createdFileUrl ? deleteFromMongo(createdFileUrl).catch(() => {}) : Promise.resolve(), createdPreviewUrl ? deleteFromMongo(createdPreviewUrl).catch(() => {}) : Promise.resolve()]);
         console.error('Bulk file failed:', file.originalname, err.message);
         failed.push({ file: file.originalname, error: err.message });
       }
     }
 
+    if (created.length) {
+      await createNotification(req.user.id, 'upload', `✅ ${created.length} preset(s) are live now on PresetHub.`, '/?action=profile', 'Presets published');
+      evaluateAchievements(req.user.id).catch(() => {});
+    }
     res.status(201).json({
       success: true,
       created: created.length,
@@ -279,7 +289,10 @@ router.get('/:id', async (req, res) => {
 
 // ===== SINGLE UPLOAD =====
 router.post('/', auth, uploadFields, validate(presetValidation), async (req, res) => {
+  let fileStorageKey = '';
+  let previewStorageKey = '';
   try {
+    validateParsedUploads(req);
     const { name, description, category, tags, price } = req.body;
     const uploadId = String(req.body.uploadId || '').trim().slice(0, 100);
     if (uploadId) {
@@ -291,15 +304,15 @@ router.post('/', auth, uploadFields, validate(presetValidation), async (req, res
 
     const file = req.files?.file?.[0];
     const preview = req.files?.previewImage?.[0];
-    let fileUrl = '', previewImage = '', fileStorageKey = '', previewStorageKey = '';
+    let fileUrl = '', previewImage = '';
 
     if (file) {
       fileStorageKey = `presets/${uuidv4()}${path.extname(file.originalname).toLowerCase()}`;
-      fileUrl = await uploadToMongo(file.buffer, fileStorageKey, file.mimetype, { kind: 'preset' });
+      fileUrl = await uploadToMongo(file.buffer, fileStorageKey, 'application/octet-stream', { kind: 'preset' });
     }
     if (preview) {
       previewStorageKey = `previews/${uuidv4()}${path.extname(preview.originalname).toLowerCase()}`;
-      previewImage = await uploadToMongo(preview.buffer, previewStorageKey, preview.mimetype, { kind: 'preview' });
+      previewImage = await uploadToMongo(preview.buffer, previewStorageKey, safeImageContentType(preview), { kind: 'preview' });
     }
 
     const preset = await Preset.create({
@@ -402,7 +415,7 @@ router.get('/:id/file', async (req, res, next) => {
     }
 
     const stored = await getStoredFileStream(preset.fileUrl, preset.fileStorageKey, safeFilename(preset.originalName || `${slugify(preset.name)}.xmp`));
-    res.setHeader('Content-Type', stored.contentType || 'application/octet-stream');
+    res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename(stored.filename)}"`);
@@ -458,6 +471,14 @@ router.post('/bulk-download', auth, async (req, res) => {
   }
   if (uniqueDownloads.length) {
     await Preset.updateMany({ _id: { $in: uniqueDownloads } }, { $inc: { downloads: 1 } });
+    const affected = await Preset.find({ _id: { $in: uniqueDownloads } }).select('_id name authorId').lean();
+    const actor = await User.findById(req.user.id).select('name username').lean();
+    for (const p of affected) {
+      if (String(p.authorId) !== String(req.user.id)) {
+        await createNotification(p.authorId, 'download', `⬇️ ${actor?.name || actor?.username || 'Someone'} downloaded your preset “${p.name}”.`, `/preset/${p._id}`, 'Preset download');
+        evaluateAchievements(p.authorId).catch(() => {});
+      }
+    }
   }
   res.json({ success: true, downloads, skipped, count: downloads.length });
 });
@@ -488,7 +509,10 @@ router.delete('/:id', auth, async (req, res) => {
 
 // ===== UPDATE =====
 router.put('/:id', auth, uploadFields, async (req, res) => {
+  let newFileUrl = '';
+  let newPreviewUrl = '';
   try {
+    validateParsedUploads(req);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
     const preset = await Preset.findById(req.params.id);
     if (!preset) return res.status(404).json({ error: 'Preset not found' });
@@ -501,24 +525,33 @@ router.put('/:id', auth, uploadFields, async (req, res) => {
     if (tags !== undefined) preset.tags = (typeof tags === 'string' ? tags.split(',') : tags).map(t => String(t).trim().toLowerCase()).filter(Boolean).slice(0, 10);
     if (price !== undefined && price !== '') preset.price = Math.max(0, Math.min(999999.99, parseFloat(price) || 0));
 
+    const oldFileUrl = preset.fileUrl;
+    const oldPreviewUrl = preset.previewImage;
     const file = req.files?.file?.[0];
     const preview = req.files?.previewImage?.[0];
     if (file) {
       const key = `presets/${uuidv4()}${path.extname(file.originalname).toLowerCase()}`;
       preset.fileStorageKey = key;
-      preset.fileUrl = await uploadToMongo(file.buffer, key, file.mimetype, { kind: 'preset' });
+      preset.fileUrl = await uploadToMongo(file.buffer, key, 'application/octet-stream', { kind: 'preset' });
+      newFileUrl = preset.fileUrl;
       preset.size = file.size;
       preset.originalName = file.originalname;
     }
     if (preview) {
       const key = `previews/${uuidv4()}${path.extname(preview.originalname).toLowerCase()}`;
       preset.previewStorageKey = key;
-      preset.previewImage = await uploadToMongo(preview.buffer, key, preview.mimetype, { kind: 'preview' });
+      preset.previewImage = await uploadToMongo(preview.buffer, key, safeImageContentType(preview), { kind: 'preview' });
+      newPreviewUrl = preset.previewImage;
     }
     await preset.save();
+    if (file && oldFileUrl && oldFileUrl !== preset.fileUrl) await deleteFromMongo(oldFileUrl).catch(() => {});
+    if (preview && oldPreviewUrl && oldPreviewUrl !== preset.previewImage) await deleteFromMongo(oldPreviewUrl).catch(() => {});
     res.json({ ...toPublicPreset(preset.toObject()), fileUrl: preset.fileUrl, originalName: preset.originalName });
   } catch (err) {
+    if (newFileUrl) await deleteFromMongo(newFileUrl).catch(() => {});
+    if (newPreviewUrl) await deleteFromMongo(newPreviewUrl).catch(() => {});
     console.error('Preset update error:', err);
+    if (/Invalid image|extension does not match|Only JPG|Unsupported preset|Invalid ZIP|Bulk upload total/i.test(String(err.message || ''))) return res.status(400).json({ error: err.message });
     res.status(500).json({ error: 'Preset update failed' });
   }
 });

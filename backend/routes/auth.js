@@ -5,6 +5,15 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { User, Preset, Download, Share, ShortLink, ShareClick, Comment, Message, Order } = require('../models');
 const { deleteFromMongo } = require('../config/mongoStorage');
+
+function strongPassword(value) {
+  const p = String(value || '');
+  return p.length >= 10 && p.length <= 128 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /\d/.test(p);
+}
+
+function signUserToken(user) {
+  return jwt.sign({ id: user._id.toString(), email: user.email, role: user.role, ver: Number(user.sessionVersion || 0) }, JWT_SECRET, { expiresIn: '7d' });
+}
 const auth = require('../middleware/auth');
 const { validate, signupValidation, loginValidation, changePasswordValidation } = require('../utils/validators');
 
@@ -86,7 +95,7 @@ router.post('/signup', validate(signupValidation), async (req, res) => {
 
     await user.save();
 
-    const token = jwt.sign({ id: user._id.toString(), email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signUserToken(user);
 
     setAuthCookie(res, token);
     res.status(201).json({
@@ -113,7 +122,7 @@ router.post('/login', validate(loginValidation), async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-    if (!await bcrypt.compare(req.body.password, user.password)) {
+    if (user.status === 'blocked' || user.status === 'deactivated' || !await bcrypt.compare(req.body.password, user.password)) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -121,7 +130,7 @@ router.post('/login', validate(loginValidation), async (req, res) => {
     user.lastActive = new Date();
     await user.save();
 
-    const token = jwt.sign({ id: user._id.toString(), email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signUserToken(user);
 
     setAuthCookie(res, token);
     res.json({
@@ -140,7 +149,7 @@ router.post('/login', validate(loginValidation), async (req, res) => {
 
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password').lean();
+    const user = await User.findById(req.user.id).select('-password -token -passwordResetTokenHash -passwordResetExpires -pushSubscriptions -sessionVersion').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ success: true, user: { ...user, id: user._id.toString() } });
   } catch (e) { res.status(500).json({ error: 'Failed' }); }
@@ -153,18 +162,28 @@ router.put('/profile', auth, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     if (username && username !== user.username) {
+      if (!/^[a-zA-Z0-9_]{3,30}$/.test(String(username).trim())) return res.status(400).json({ error: 'Invalid username' });
       if (await User.exists({ username: username.toLowerCase(), _id: { $ne: user._id } }))
         return res.status(409).json({ error: 'Username taken' });
       user.username = username.toLowerCase().trim();
     }
-    if (name) user.name = name.trim();
-    if (bio !== undefined) user.bio = bio.trim();
-    if (avatar !== undefined) user.avatar = avatar;
+    if (name) user.name = String(name).trim().slice(0, 50);
+    if (bio !== undefined) user.bio = String(bio).trim().slice(0, 500);
+    if (avatar !== undefined) {
+      const av = String(avatar || '').trim();
+      if (av && !/^\/media\/[a-f0-9]{24}$/i.test(av)) return res.status(400).json({ error: 'Invalid avatar media URL' });
+      user.avatar = av;
+    }
     if (socialLinks) user.socialLinks = { ...(user.socialLinks?.toObject?.() || {}), ...cleanSocialLinks(socialLinks) };
 
     await user.save();
     const safe = user.toObject();
     delete safe.password;
+    delete safe.token;
+    delete safe.passwordResetTokenHash;
+    delete safe.passwordResetExpires;
+    delete safe.pushSubscriptions;
+    delete safe.sessionVersion;
     safe.id = safe._id.toString();
     res.json({ success: true, user: safe });
   } catch (e) { res.status(500).json({ error: 'Failed' }); }
@@ -178,7 +197,9 @@ router.put('/change-password', auth, validate(changePasswordValidation), async (
     if (!await bcrypt.compare(req.body.currentPassword, user.password))
       return res.status(401).json({ error: 'Current password incorrect' });
 
+    if (!strongPassword(req.body.newPassword)) return res.status(400).json({ error: 'New password must be 10+ characters and include uppercase, lowercase and a number' });
     user.password = await bcrypt.hash(req.body.newPassword, 12);
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
     await user.save();
     res.json({ success: true, message: 'Password changed' });
   } catch (e) { res.status(500).json({ error: 'Failed' }); }
@@ -214,13 +235,14 @@ router.post('/reset-password', async (req, res) => {
   try {
     const token = String(req.body.token || '').trim();
     const password = String(req.body.password || '');
-    if (!token || password.length < 8) return res.status(400).json({error:'Valid reset token and 8+ character password are required'});
+    if (!token || !strongPassword(password)) return res.status(400).json({error:'Valid reset token and a strong 10+ character password are required'});
     const hash = crypto.createHash('sha256').update(token).digest('hex');
     const user = await User.findOne({passwordResetTokenHash:hash,passwordResetExpires:{$gt:new Date()}});
     if (!user) return res.status(400).json({error:'Reset link is invalid or expired'});
     user.password = await bcrypt.hash(password, 12);
     user.passwordResetTokenHash = '';
     user.passwordResetExpires = null;
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
     await user.save();
     res.json({success:true,message:'Password reset successfully'});
   } catch(e){ res.status(500).json({error:'Password reset failed'}); }
@@ -249,7 +271,8 @@ router.delete('/account', auth, async (req, res) => {
       Message.deleteMany({ $or:[{ senderId:user._id }, { receiverId:user._id }] }),
       Order.deleteMany({ userId:user._id }),
       User.updateMany({ followers:user._id }, { $pull:{ followers:user._id } }),
-      User.updateMany({ following:user._id }, { $pull:{ following:user._id } })
+      User.updateMany({ following:user._id }, { $pull:{ following:user._id } }),
+      User.updateMany({ 'referral.referredBy': user._id }, { $set:{ 'referral.referredBy': null } })
     ]);
     await User.deleteOne({ _id:user._id });
     res.clearCookie('ph_auth', { httpOnly:true, secure:process.env.NODE_ENV === 'production', sameSite:'lax', path:'/' });
@@ -262,7 +285,9 @@ router.post('/logout', auth, (req, res) => {
   res.json({ success: true });
 });
 router.post('/refresh-token', auth, async (req, res) => {
-  const token = jwt.sign({ id: req.user.id, email: req.user.email, role: req.user.role }, JWT_SECRET, { expiresIn: '7d' });
+  const user = await User.findById(req.user.id).select('email role sessionVersion').lean();
+  if (!user) return res.status(401).json({ error: 'User not found' });
+  const token = signUserToken(user);
   setAuthCookie(res, token);
   res.json({ success: true });
 });

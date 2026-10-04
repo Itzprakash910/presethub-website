@@ -64,7 +64,11 @@ router.post('/:presetId/reviews/:reviewId/helpful', auth, async (req, res) => {
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
   const review = preset.reviews.id(req.params.reviewId);
   if (!review) return res.status(404).json({ error: 'Review not found' });
+  const voter = String(req.user.id);
+  const already = (review.helpfulBy || []).some(id => String(id) === voter);
+  if (already) return res.json({ helpful: review.helpful || 0, alreadyHelpful: true });
   review.helpful = (review.helpful || 0) + 1;
+  review.helpfulBy = [...(review.helpfulBy || []), req.user.id];
   await preset.save();
   res.json({ helpful: review.helpful });
 });

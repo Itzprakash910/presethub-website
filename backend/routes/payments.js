@@ -30,7 +30,7 @@ router.post('/create-order', auth, ensureRazorpay, async (req, res) => {
       return res.status(400).json({ error: 'Invalid preset ID' });
 
     const preset = await Preset.findById(presetId);
-    if (!preset) return res.status(404).json({ error: 'Preset not found' });
+    if (!preset || preset.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
     if (preset.price <= 0) return res.status(400).json({ error: 'Preset is free' });
 
     if (await Order.exists({ presetId, userId: req.user.id, status: 'paid' }))
@@ -93,7 +93,8 @@ router.post('/webhook', express.json({ type: 'application/json' }), async (req, 
     if (!RAZORPAY_KEY_SECRET) return res.status(503).end();
     const sig = req.headers['x-razorpay-signature'];
     if (!sig) return res.status(400).end();
-    const expected = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET).update(JSON.stringify(req.body)).digest('hex');
+    const raw = req.rawBody || Buffer.from(JSON.stringify(req.body));
+    const expected = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET).update(raw).digest('hex');
     if (expected !== sig) return res.status(400).end();
 
     const event = req.body?.event;

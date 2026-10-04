@@ -4,11 +4,9 @@ const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 
 const {
-  User,
-  Preset,
-  Order,
-  Download
+  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message
 } = require('../models');
+const { deleteFromMongo } = require('../config/mongoStorage');
 
 const router = express.Router();
 
@@ -345,7 +343,7 @@ router.get('/users', async (req, res) => {
     ] = await Promise.all([
 
       User.find(filter)
-        .select('-password -token')
+        .select('-password -token -passwordResetTokenHash -passwordResetExpires -pushSubscriptions -sessionVersion')
         .sort({
           createdAt: -1
         })
@@ -617,7 +615,7 @@ router.get('/users/:id/details', async (req, res) => {
     const user = await User.findById(
       req.params.id
     )
-      .select('-password -token')
+      .select('-password -token -passwordResetTokenHash -passwordResetExpires -pushSubscriptions -sessionVersion')
       .lean();
 
     if (!user) {
@@ -808,6 +806,12 @@ router.post('/notifications/user/:id', async (req, res) => {
       req.body.link || '/'
     ).trim();
 
+    if (link.length > 500 || !/^\/(?!\/)[^\s]{0,500}$/.test(link)) {
+      return res.status(400).json({
+        error: 'Notification link must be an internal PresetHub path'
+      });
+    }
+
     if (!message) {
       return res.status(400).json({
         error: 'Notification message is required'
@@ -886,6 +890,12 @@ router.post('/notifications/all', async (req, res) => {
     const link = String(
       req.body.link || '/'
     ).trim();
+
+    if (link.length > 500 || !/^\/(?!\/)[^\s]{0,500}$/.test(link)) {
+      return res.status(400).json({
+        error: 'Notification link must be an internal PresetHub path'
+      });
+    }
 
     if (!message) {
       return res.status(400).json({
@@ -1525,6 +1535,10 @@ router.put('/users/:id/status', async (req, res) => {
       });
     }
 
+    if (user.role === 'admin' && user._id.toString() === req.user.id) {
+      return res.status(400).json({ error: 'Cannot change your own admin status' });
+    }
+
     if (
       user.role === 'admin' &&
       user._id.toString() !== req.user.id
@@ -1591,9 +1605,23 @@ router.delete('/users/:id', async (req, res) => {
     }
 
 
-    await User.deleteOne({
-      _id: user._id
-    });
+    const presets = await Preset.find({ authorId: user._id }).select('_id fileUrl previewImage').lean();
+    const presetIds = presets.map(p => p._id);
+    await Promise.all(presets.flatMap(p => [deleteFromMongo(p.fileUrl), deleteFromMongo(p.previewImage)]));
+    await Promise.all([
+      Preset.deleteMany({ authorId: user._id }),
+      Download.deleteMany({ $or: [{ userId: user._id }, { presetId: { $in: presetIds } }] }),
+      Share.deleteMany({ $or: [{ userId: user._id }, { presetId: { $in: presetIds } }] }),
+      ShareClick.deleteMany({ $or: [{ userId: user._id }, { presetId: { $in: presetIds } }] }),
+      ShortLink.deleteMany({ $or: [{ userId: user._id }, { presetId: { $in: presetIds } }] }),
+      Comment.deleteMany({ $or: [{ userId: user._id }, { presetId: { $in: presetIds } }] }),
+      Message.deleteMany({ $or: [{ senderId: user._id }, { receiverId: user._id }] }),
+      Order.deleteMany({ userId: user._id }),
+      User.updateMany({ followers: user._id }, { $pull: { followers: user._id } }),
+      User.updateMany({ following: user._id }, { $pull: { following: user._id } }),
+      User.updateMany({ 'referral.referredBy': user._id }, { $set: { 'referral.referredBy': null } })
+    ]);
+    await User.deleteOne({ _id: user._id });
 
 
     res.json({
