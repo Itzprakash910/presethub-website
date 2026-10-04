@@ -1,7 +1,7 @@
 {
   "name": "presethub-backend",
-  "version": "2.9.4",
-  "description": "PresetHub production backend — MongoDB + GridFS media storage + PWA + SEO + integrated Telegram bot",
+  "version": "2.9.6",
+  "description": "PresetHub production backend \u2014 MongoDB + GridFS media storage + PWA + SEO + integrated Telegram bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -26,10 +26,11 @@
     "mongoose": "^8.9.0",
     "morgan": "^1.10.0",
     "multer": "^2.0.0",
-    "razorpay": "^2.9.5",
+    "razorpay": "^2.9.6",
     "telegraf": "^4.16.3",
     "uuid": "^9.0.1",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "express-async-errors": "^3.1.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
