@@ -5,52 +5,81 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
   <title>Admin Panel – PresetHub</title>
-<meta name="author" content="Omprakash (HeyOmii)">
-<meta name="application-name" content="PresetHub">
-<meta name="theme-color" content="#d4a373">
-<link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon">
-<link rel="manifest" href="/manifest.json">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/icons.css?v=2.9.4">
-  <link rel="stylesheet" href="/style.css?v=2.9.4">
-  <link rel="stylesheet" href="admin.css">
-  <link rel="stylesheet" href="/cookie-consent.css?v=2.9.4">
+  <meta name="author" content="PresetHub">
+  <meta name="application-name" content="PresetHub">
+  <meta name="theme-color" content="#d4a373">
+  <link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/icons.css?v=2.9.6">
+  <link rel="stylesheet" href="/style.css?v=2.9.6">
+  <link rel="stylesheet" href="/admin.css?v=2.9.6">
+  <link rel="stylesheet" href="/cookie-consent.css?v=2.9.6">
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
-  <main id="main" class="admin-container">
-    <div class="admin-head"><div><span class="eyebrow">SECURE CONSOLE</span><h1><i class="fas fa-crown" aria-hidden="true"></i> Admin Dashboard</h1><p>PresetHub platform management</p></div><div class="admin-head-actions"><button id="adminHome" class="btn btn-outline"><i class="fas fa-house"></i> Website</button><button id="themeAdmin" class="btn btn-outline" title="Toggle theme"><i class="fas fa-moon"></i></button><button id="refreshAdmin" class="btn btn-primary"><i class="fas fa-rotate"></i> Refresh</button></div></div>
-    <div id="message" role="status" aria-live="polite"></div>
+<a class="skip-link" href="#main">Skip to content</a>
+<main id="main" class="admin-container">
+  <div class="admin-head">
+    <div><span class="eyebrow">SECURE CONSOLE</span><h1><i class="fas fa-crown" aria-hidden="true"></i> Admin Dashboard</h1><p>Platform monitoring, users, presets, promotions और announcements.</p></div>
+    <div class="admin-head-actions"><button id="adminHome" class="btn btn-outline"><i class="fas fa-house"></i> Website</button><button id="themeAdmin" class="btn btn-outline" title="Toggle theme" aria-label="Toggle theme"><i class="fas fa-moon"></i></button><button id="refreshAdmin" class="btn btn-primary"><i class="fas fa-rotate"></i> Refresh</button></div>
+  </div>
+  <div id="message" role="status" aria-live="polite"></div>
 
-    <section class="admin-card">
-      <h2><i class="fas fa-chart-simple" aria-hidden="true"></i> Platform Analytics</h2>
-      <div class="stats-grid" id="analytics"><div class="skeleton" style="height:80px"></div></div>
-    </section>
+  <section class="admin-card">
+    <div class="admin-section-head"><div><span class="eyebrow">MONITORING</span><h2><i class="fas fa-chart-simple"></i> Platform Analytics</h2></div></div>
+    <div class="stats-grid" id="analytics"><div class="skeleton" style="height:80px"></div></div>
+  </section>
 
-    <section class="admin-card">
-      <h2><i class="fas fa-cubes" aria-hidden="true"></i> Presets</h2>
-      <div id="presetsList"><div class="skeleton" style="height:120px"></div></div>
-    </section>
+  <section class="admin-card admin-tools-grid">
+    <div>
+      <span class="eyebrow">ANNOUNCEMENTS</span><h2><i class="fas fa-bell"></i> Send notification</h2>
+      <form id="broadcastForm" class="admin-form">
+        <label>Message<input name="message" maxlength="500" required placeholder="नई feature की जानकारी…"></label>
+        <label>Internal link<input name="link" maxlength="500" value="/"></label>
+        <label>Type<select name="type"><option value="announcement">Announcement</option><option value="feature">New feature</option><option value="admin">Admin</option></select></label>
+        <button class="btn btn-primary" type="submit"><i class="fas fa-bell"></i> सभी users को भेजें</button>
+      </form>
+    </div>
+    <div>
+      <span class="eyebrow">PROMOTION</span><h2><i class="fas fa-image"></i> Personal ad / product</h2>
+      <form id="adForm" class="admin-form">
+        <input type="hidden" name="id">
+        <label>Title<input name="title" maxlength="120" required placeholder="PresetHub Summer Sale"></label>
+        <label>Description<textarea name="description" maxlength="500" rows="3" placeholder="छोटी description…"></textarea></label>
+        <label>Photo URL<input name="imageUrl" maxlength="1000" placeholder="https://… या /media/…"></label>
+        <label>Product name<input name="productName" maxlength="120" placeholder="Premium Preset Pack"></label>
+        <div class="admin-form-row"><label>Original price<input name="originalPrice" type="number" min="0" step="0.01"></label><label>Sale price<input name="salePrice" type="number" min="0" step="0.01"></label></div>
+        <div class="admin-form-row"><label>Discount %<input name="discountPercent" type="number" min="0" max="100" step="1"></label><label>Badge<input name="badge" maxlength="40" value="Featured"></label></div>
+        <label>Link<input name="linkUrl" maxlength="500" value="/"></label>
+        <label class="check-row"><input name="active" type="checkbox" checked> Home पर दिखाएँ</label>
+        <div class="admin-form-actions"><button class="btn btn-primary" type="submit"><i class="fas fa-check"></i> Save ad</button><button class="btn btn-outline" id="clearAd" type="button">Clear</button></div>
+      </form>
+    </div>
+  </section>
 
-    <section class="admin-card">
-      <h2><i class="fas fa-users" aria-hidden="true"></i> Users</h2>
-      <div class="table-wrap" id="usersList"><div class="skeleton" style="height:120px"></div></div>
-    </section>
-  </main>
-  <script src="admin.js"></script>
+  <section class="admin-card">
+    <div class="admin-section-head"><div><span class="eyebrow">LIVE PROMOTIONS</span><h2><i class="fas fa-bolt"></i> Home ads</h2></div></div>
+    <div id="adsList" class="admin-ad-list"><div class="skeleton" style="height:120px"></div></div>
+  </section>
 
+  <section class="admin-card">
+    <div class="admin-section-head"><div><span class="eyebrow">CONTENT</span><h2><i class="fas fa-cubes"></i> Presets</h2></div><span class="admin-note">Uploads are live immediately; status controls are for admin moderation only.</span></div>
+    <div id="presetsList"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+
+  <section class="admin-card">
+    <div class="admin-section-head"><div><span class="eyebrow">ACCOUNT CONTROL</span><h2><i class="fas fa-users"></i> Users</h2></div><input id="userSearch" class="admin-search" placeholder="Search name, username, email…" autocomplete="off"></div>
+    <div class="table-wrap" id="usersList"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+</main>
 <footer class="site-footer">
   <div class="container footer-grid">
-    <div class="footer-brand"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><p>Free and premium Lightroom presets for photographers and creators.</p></div>
+    <div class="footer-brand"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><p>Admin console for the PresetHub Lightroom presets marketplace.</p></div>
     <div class="footer-col"><h4>PresetHub</h4><ul><li><a href="/">Home</a></li><li><a href="/about.html">About</a></li><li><a href="/faq.html">FAQ</a></li><li><a href="/creator-program.html">Creators</a></li></ul></div>
-    <div class="footer-col"><h4>Guides</h4><ul><li><a href="/download-guide.html">Download Guide</a></li><li><a href="/lightroom-guide.html">Lightroom Guide</a></li><li><a href="/blog.html">Blog</a></li><li><a href="/download-app.html">Install App</a></li></ul></div>
-    <div class="footer-col"><h4>Legal</h4><ul><li><a href="/privacy.html">Privacy</a></li><li><a href="/cookies.html">Cookies</a></li><li><a href="/terms.html">Terms</a></li><li><a href="/contact.html">Contact</a></li></ul></div>
+    <div class="footer-col"><h4>Guides</h4><ul><li><a href="/download-guide.html">Download Guide</a></li><li><a href="/lightroom-guide.html">Lightroom Guide</a></li><li><a href="/blog.html">Blog</a></li><li><a href="/download-app.html"><i class="fas fa-download"></i> Install App</a></li></ul></div>
+    <div class="footer-col"><h4>Contact</h4><ul><li><a href="/contact.html">Contact PresetHub</a></li><li><a href="https://t.me/presethub_bot" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram"></i> Telegram Bot</a></li><li><a href="/security.txt">Security</a></li></ul></div>
   </div>
-  <div class="container footer-bottom"><span>© PresetHub</span><span>Website by <a href="https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn" target="_blank" rel="me noopener noreferrer">Omprakash (HeyOmii)</a></span><span class="socials"><a href="https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn" target="_blank" rel="me noopener noreferrer" aria-label="Instagram"><i class="fab fa-instagram"></i></a><a href="/contact.html" aria-label="Contact"><i class="fas fa-envelope"></i></a></span></div>
+  <div class="container footer-bottom"><span>© PresetHub</span><span>Secure Admin Console</span></div>
 </footer>
-
-<script src="/cookie-consent.js?v=2.9.4" defer></script>
+<script src="/admin.js?v=2.9.6"></script>
+<script src="/cookie-consent.js?v=2.9.6" defer></script>
 </body>
 </html>

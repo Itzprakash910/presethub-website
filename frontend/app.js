@@ -1,4 +1,4 @@
-/* PresetHub Frontend — production client v2.9.4 */
+/* PresetHub Frontend — production client v2.9.6 */
 (() => {
   'use strict';
 
@@ -395,6 +395,24 @@
     }
   }
 
+  async function loadHomeAd() {
+    const slot = $('#homeAdSlot');
+    if (!slot) return;
+    try {
+      const r = await api('/ads/home');
+      const a = r.ad;
+      if (!a) { slot.hidden = true; slot.innerHTML = ''; return; }
+      const price = Number(a.salePrice || 0);
+      const original = Number(a.originalPrice || 0);
+      const discount = Number(a.discountPercent || 0);
+      const priceHtml = (price > 0 || original > 0)
+        ? `<div class="home-ad-price">${price > 0 ? `<strong>${money(price)}</strong>` : ''}${original > 0 && original > price ? `<del>${money(original)}</del>` : ''}${discount > 0 ? `<span class="home-ad-discount">${discount}% OFF</span>` : ''}</div>` : '';
+      const image = a.imageUrl ? `<img src="${esc(assetUrl(a.imageUrl))}" alt="${esc(a.title)}" loading="lazy" decoding="async" onerror="this.closest('.home-ad-media')?.remove()">` : '';
+      slot.innerHTML = `<article class="home-ad-card"><div class="home-ad-media" ${image ? '' : 'hidden'}>${image}</div><div class="home-ad-copy"><span class="home-ad-badge">${esc(a.badge || 'Featured')}</span><h3>${esc(a.title)}</h3>${a.productName ? `<strong>${esc(a.productName)}</strong>` : ''}${a.description ? `<p>${esc(a.description)}</p>` : ''}${priceHtml}<div class="home-ad-actions"><a class="btn btn-primary btn-sm" href="${esc(a.linkUrl || '/') }" data-ad-click="${esc(a.id)}">देखें</a></div></div></article>`;
+      slot.hidden = false;
+    } catch (_) { slot.hidden = true; }
+  }
+
   // ============ LOAD PRESETS ============
   async function loadPresets(reset = true, force = false) {
     if (reset) state.page = 1;
@@ -664,7 +682,7 @@
       const encodedText = encodeURIComponent(shareText);
       const encodedTitle = encodeURIComponent(`${p.name} — PresetHub`);
       const previewImg = assetUrl(p.previewImage);
-      const qr1 = `${API}/share/qr?url=${encodedUrl}`;
+      const qr1 = `https://quickchart.io/qr?text=${encodedUrl}&size=220&margin=2`;
       openModal(`
         <div class="share-panel">
           <div class="share-title"><div><span class="eyebrow">PresetHub</span><h2><i class="fas fa-share-nodes"></i> Share Preset</h2></div><button class="share-close" data-action="close" aria-label="Close"><i class="fas fa-xmark"></i></button></div>
@@ -693,9 +711,7 @@
   }
 
   function trackShare(presetId, platform) {
-    const headers = new Headers({ 'Content-Type': 'application/json' });
-    if (state.token) headers.set('Authorization', `Bearer ${state.token}`);
-    fetch(`${API}/presets/${presetId}/share`, { method:'POST', headers, body:JSON.stringify({platform}) }).catch(()=>{});
+    api(`/presets/${encodeURIComponent(presetId)}/share`, { method: 'POST', body: JSON.stringify({ platform }) }).catch(() => {});
   }
 
   function openSharePlatform(platform, url, text, title) {
@@ -1207,6 +1223,7 @@
   function openSiteMenu() {
     const u = state.user;
     const items = u ? [
+      ...(u.role === 'admin' ? [['fa-crown','Admin Panel','admin-panel']] : []),
       ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-pen','Edit Profile','edit-profile'],
       ['fa-heart','Wishlist','wishlist-page'], ['fa-download','Downloads','downloads'], ['fa-bell','Notifications','notifications'],
       ['fa-message','Messages','messages'], ['fa-link','Share Links','my-shares'], ['fa-key','Change Password','change-password'],
@@ -1270,7 +1287,7 @@
 
   function registerSW() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=2.9.4', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
+      navigator.serviceWorker.register('/sw.js?v=2.9.6', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (sessionStorage.getItem('ph-sw-refreshed') === '1') return;
         sessionStorage.setItem('ph-sw-refreshed', '1');
@@ -1294,7 +1311,7 @@
     })();
 
 
-    const publicPromise = Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured()]);
+    const publicPromise = Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured(), loadHomeAd()]);
     await Promise.allSettled([authPromise, publicPromise]);
     updateAuthUI();
     if (state.user) {
@@ -1496,6 +1513,7 @@
       return;
     }
     if (action === 'install') { installPWA(); return; }
+    if (action === 'admin-panel') { if (state.user?.role === 'admin') location.href='/admin.html'; return; }
     if (action === 'settings') { showSettingsMenu(); return; }
     if (action === 'theme') {
       document.body.classList.toggle('dark');
@@ -1570,6 +1588,11 @@
   });
 
   // ============ SEARCH INPUT ============
+  document.addEventListener('click', e => {
+    const ad = e.target.closest('[data-ad-click]');
+    if (ad) api(`/ads/${encodeURIComponent(ad.dataset.adClick)}/click`, { method: 'POST' }).catch(() => {});
+  }, { passive: true });
+
   $('#searchInput')?.addEventListener('input', e => {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => suggestions(e.target.value.trim()), 220);

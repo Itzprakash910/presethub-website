@@ -1230,7 +1230,7 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
   .message-thread-avatar{width:46px;height:46px}
 }
 
-/* v2.9.4 UI cleanup: keep PresetHub brand and overflow menu visually separated. */
+/* v2.9.6 UI cleanup: keep PresetHub brand and overflow menu visually separated. */
 .brand-cluster{gap:18px}
 .nav-menu-btn{margin-left:2px}
 .creator-menu-grid,.site-menu-grid{gap:12px}
@@ -1238,7 +1238,7 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
 
 .share-qr .qr-status{display:block;margin-top:8px;color:var(--muted);font-size:.75rem}
 
-/* v2.9.4 account/message/notification polish */
+/* v2.9.6 account/message/notification polish */
 .site-menu-grid{gap:12px;padding:6px}
 .site-menu-item{min-height:48px;gap:10px}
 .account-menu-hint{padding:12px 14px;border:1px solid var(--border);background:var(--input-bg);border-radius:14px;color:var(--muted);font-size:.8rem;line-height:1.5;margin:14px 0}
@@ -1264,7 +1264,7 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
 .message-thread{grid-template-columns:minmax(145px,1fr) minmax(0,1.5fr);}.message-profile-link{display:flex;align-items:center;gap:9px;text-align:left;width:100%;height:auto;min-height:52px}.message-profile-link>span{min-width:0;display:flex;flex-direction:column}.message-profile-link b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.message-profile-link small{color:var(--muted);font-size:.7rem}.message-thread-open{width:100%;}.message-thread-main>span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:560px){.message-thread{grid-template-columns:1fr auto}.message-profile-link>span{display:none}.message-profile-link{width:46px}.message-profile-link .avatar-shell,.message-profile-link .avatar-fallback{width:46px;height:46px}}
 
 
-/* v2.9.4 responsive header/menu hardening */
+/* v2.9.6 responsive header/menu hardening */
 .nav-menu-btn{position:relative;z-index:3;flex:0 0 42px!important;width:42px!important;height:42px!important;display:grid!important;place-items:center!important;padding:0!important;margin:0!important}
 .nav-menu-btn i{font-size:1.35rem;display:block}
 .brand-cluster{flex:0 1 auto;min-width:0!important;white-space:nowrap}
@@ -1294,4 +1294,40 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
   .nav-actions .icon-btn,.nav-actions .message-btn,.nav-actions .user-avatar{width:36px;height:36px;flex-basis:36px}
   .nav-actions .btn-sm{padding:6px 6px;font-size:.68rem}
   .nav-search button{padding:8px 9px}
+}
+
+/* ===== v2.9.6 HEADER / MOBILE ORDER ===== */
+.brand-cluster{flex:0 0 auto;min-width:max-content}
+.nav-actions{display:flex;align-items:center;gap:8px;min-width:0}
+.nav-actions #userSection{display:flex;align-items:center;gap:8px;min-width:0}
+.nav-actions .nav-menu-btn{order:4}
+.nav-actions .user-avatar{order:1}
+.nav-actions #messageButton{order:2}
+.nav-actions #notificationButton{order:3}
+
+/* Search results: subtle 2% surface + strong blur so text stays readable. */
+.search-entity-results{background:color-mix(in srgb,var(--card-bg) 2%,transparent)!important;backdrop-filter:blur(22px) saturate(125%);-webkit-backdrop-filter:blur(22px) saturate(125%);border-color:color-mix(in srgb,var(--border) 70%,transparent);box-shadow:0 18px 50px rgba(0,0,0,.14)}
+.search-entity{background:color-mix(in srgb,var(--input-bg) 18%,transparent)!important;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+#searchSuggestions{background:color-mix(in srgb,var(--card-bg) 2%,transparent)!important;backdrop-filter:blur(20px) saturate(125%);-webkit-backdrop-filter:blur(20px) saturate(125%);border:1px solid color-mix(in srgb,var(--border) 70%,transparent);box-shadow:0 18px 45px rgba(0,0,0,.14)}
+
+/* Home promotion / admin personal ad */
+.home-ad-slot{margin:18px auto 28px;max-width:1100px}
+.home-ad-card{display:grid;grid-template-columns:minmax(160px,34%) 1fr;overflow:hidden;border:1px solid color-mix(in srgb,var(--border) 70%,transparent);border-radius:24px;background:var(--card-bg);box-shadow:0 14px 40px rgba(0,0,0,.09)}
+.home-ad-media{min-height:190px;background:var(--input-bg);overflow:hidden}.home-ad-media img{display:block;width:100%;height:100%;object-fit:cover;aspect-ratio:16/9}
+.home-ad-copy{padding:22px;display:flex;flex-direction:column;justify-content:center;gap:8px}.home-ad-copy h3{margin:0;font-size:clamp(1.2rem,2.8vw,1.7rem)}.home-ad-copy p{margin:0;color:var(--muted);line-height:1.55}.home-ad-badge{display:inline-flex;width:max-content;padding:5px 9px;border-radius:999px;background:var(--accent);color:#1e1e1e;font:800 .72rem/1 Inter,sans-serif;text-transform:uppercase;letter-spacing:.05em}.home-ad-price{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.home-ad-price strong{font-size:1.2rem}.home-ad-price del{color:var(--muted)}.home-ad-discount{font-weight:800;color:#15803d}.home-ad-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:5px}
+
+@media(max-width:760px){
+  .nav{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 8px}
+  .brand-cluster{grid-column:1;grid-row:1;min-width:0;overflow:hidden}
+  .brand-cluster .logo{font-size:clamp(1.18rem,5.4vw,1.5rem);gap:5px;min-width:0}
+  .brand-cluster .logo span{white-space:nowrap}.brand-logo{width:36px;height:36px;flex:0 0 36px}
+  .nav-actions{grid-column:2;grid-row:1;gap:4px!important;justify-content:flex-end;white-space:nowrap}
+  .nav-actions #userSection{gap:4px!important}
+  .nav-actions .icon-btn,.nav-actions .user-avatar,.nav-menu-btn{width:38px!important;height:38px!important;flex:0 0 38px!important}
+  .nav-menu-btn{margin:0!important}.nav-menu-btn i{font-size:1.18rem}
+  .nav-search{grid-column:1/-1;grid-row:2;width:100%;margin-top:2px}
+  .home-ad-card{grid-template-columns:1fr}.home-ad-media{min-height:0}.home-ad-media img{max-height:230px}.home-ad-copy{padding:18px}
+}
+@media(max-width:420px){
+  .nav-actions{gap:3px!important}.nav-actions #userSection{gap:3px!important}.nav-actions .icon-btn,.nav-actions .user-avatar,.nav-menu-btn{width:35px!important;height:35px!important;flex-basis:35px!important}.brand-logo{width:32px;height:32px;flex-basis:32px}.brand-cluster .logo{font-size:1.08rem;gap:4px}.nav-search input{font-size:.92rem}
 }

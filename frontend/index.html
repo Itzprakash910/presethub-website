@@ -45,9 +45,9 @@
   {"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://presethub.site/#website","name":"PresetHub","alternateName":"Preset Hub","url":"https://presethub.site/","potentialAction":{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://presethub.site/?q={search_term_string}"},"query-input":"required name=search_term_string"}},{"@type":"Organization","@id":"https://presethub.site/#organization","name":"PresetHub","url":"https://presethub.site/","logo":"https://presethub.site/assets/icons/icon-512.png","sameAs":["https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"]},{"@type":"Person","@id":"https://presethub.site/#omprakash","name":"Omprakash","alternateName":"HeyOmii","url":"https://presethub.site/","sameAs":["https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn"]},{"@type":"WebPage","@id":"https://presethub.site/#webpage","url":"https://presethub.site/","name":"PresetHub – Free & Premium Lightroom Presets Marketplace","description":"Discover, preview, download and sell Lightroom presets on PresetHub. Search by preset name, creator, category or tag and find free and premium Lightroom presets.","isPartOf":{"@id":"https://presethub.site/#website"},"publisher":{"@id":"https://presethub.site/#organization"}}]}
   </script>
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/icons.css?v=2.9.4">
-  <link rel="stylesheet" href="/style.css?v=2.9.4">
-  <link rel="stylesheet" href="/cookie-consent.css?v=2.9.4">
+  <link rel="stylesheet" href="/icons.css?v=2.9.6">
+  <link rel="stylesheet" href="/style.css?v=2.9.6">
+  <link rel="stylesheet" href="/cookie-consent.css?v=2.9.6">
 </head>
 <body>
 <a class="skip-link" href="#presets">Skip to presets</a>
@@ -56,7 +56,6 @@
   <div class="container nav">
     <div class="brand-cluster">
       <a class="logo" href="/" aria-label="PresetHub home"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub P logo">Preset<span>Hub</span></a>
-      <button class="icon-btn nav-menu-btn" data-action="site-menu" aria-label="Open PresetHub menu" title="PresetHub menu"><i class="fas fa-ellipsis-vertical" aria-hidden="true"></i></button>
     </div>
     <form class="nav-search" id="searchForm" role="search" autocomplete="off">
       <input id="searchInput" type="search" placeholder="प्रीसेट, क्रिएटर या टैग खोजें…" aria-label="Search presets" maxlength="100">
@@ -69,14 +68,14 @@
         <button class="btn btn-primary btn-sm" data-action="signup">साइन अप</button>
       </div>
       <div id="userSection">
-        <a class="btn btn-outline btn-sm hidden" id="adminLink" href="/admin.html">Admin</a>
+        <button class="user-avatar" id="avatar" data-action="account" title="मेरा प्रोफ़ाइल" aria-label="My profile"></button>
         <button class="icon-btn message-btn" id="messageButton" data-action="messages" title="Messages" aria-label="Messages">
           <i class="fas fa-message" aria-hidden="true"></i><span class="unread-badge" id="messageBadge" hidden>0</span>
         </button>
         <button class="icon-btn message-btn" id="notificationButton" data-action="notifications" title="Notifications" aria-label="Notifications">
           <i class="fas fa-bell" aria-hidden="true"></i><span class="unread-badge" id="notificationBadge" hidden>0</span>
         </button>
-        <button class="user-avatar" id="avatar" data-action="account" title="मेरा अकाउंट" aria-label="My account"></button>
+        <button class="icon-btn nav-menu-btn" data-action="site-menu" aria-label="Open PresetHub menu" title="PresetHub menu"><i class="fas fa-ellipsis-vertical" aria-hidden="true"></i></button>
       </div>
     </div>
   </div>
@@ -142,6 +141,7 @@
       </span>
     </h2>
     <div class="bulk-toolbar" id="bulkToolbar" hidden><span><b id="selectedCount">0</b> selected</span><button class="btn btn-primary btn-sm" data-action="bulk-download"><i class="fas fa-download"></i> Download selected</button><button class="btn btn-outline btn-sm" data-action="clear-selection">Clear</button></div>
+    <div id="homeAdSlot" class="home-ad-slot" hidden aria-label="PresetHub promotion"></div>
     <div class="preset-grid" id="presetGrid" aria-live="polite"></div>
 
     <h2 class="section-title">Top Creators</h2>
@@ -162,7 +162,7 @@
       </div>
     </div>
     <div class="footer-col"><h4>Explore</h4><ul><li><a href="/#presets">All Presets</a></li><li><a href="/#categories">Categories</a></li><li><a href="/#creators">Top Creators</a></li><li><a href="/creator-program.html">Creator Program</a></li></ul></div>
-    <div class="footer-col"><h4>Help</h4><ul><li><a href="/faq.html">FAQ</a></li><li><a href="/download-guide.html">Download Guide</a></li><li><a href="/lightroom-guide.html">Lightroom Guide</a></li><li><a href="/contact.html">Contact</a></li></ul></div>
+    <div class="footer-col"><h4>Help</h4><ul><li><a href="/faq.html">FAQ</a></li><li><a href="/download-guide.html">Download Guide</a></li><li><a href="/lightroom-guide.html">Lightroom Guide</a></li><li><a href="/contact.html">Contact</a></li><li><a href="/download-app.html"><i class="fas fa-download" aria-hidden="true"></i> Install App</a></li><li><a href="https://t.me/presethub_bot" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram" aria-hidden="true"></i> Telegram Bot</a></li></ul></div>
     <div class="footer-col"><h4>Legal</h4><ul><li><a href="/privacy.html">Privacy Policy</a></li><li><a href="/terms.html">Terms</a></li><li><a href="/security.txt">Security</a></li><li><a href="/about.html">About PresetHub</a></li></ul></div>
   </div>
   <div class="container footer-bottom"><span>© PresetHub</span><span>Made for photographers <i class="fas fa-camera" aria-hidden="true"></i></span><span>Website by <a href="https://www.instagram.com/heyomii_____08/" target="_blank" rel="noopener noreferrer">@HeyOmii</a></span></div>
@@ -172,8 +172,8 @@
   <div class="exit-confirm-card">
     <div class="exit-confirm-icon"><i class="fas fa-arrow-right-from-bracket" aria-hidden="true"></i></div>
     <span class="eyebrow">PRESETHUB</span>
-    <h2 id="exitConfirmTitle">क्या आप बाहर निकलना चाहते हैं?</h2>
-    <p>आप PresetHub से बाहर जा रहे हैं। अगर आप अभी बाहर निकलते हैं तो खुले हुए changes या pending actions बाद में continue हो सकते हैं।</p>
+    <h2 id="exitConfirmTitle">PresetHub से बाहर जाना है?</h2>
+    <p>क्या आप सच में बाहर निकलना चाहते हैं? अगर आपने कोई काम शुरू किया है, तो पहले उसे पूरा करके रहना बेहतर रहेगा।</p>
     <div class="exit-confirm-actions">
       <button class="btn btn-outline" data-action="cancel-exit">नहीं, यहीं रहें</button>
       <button class="btn btn-primary" data-action="confirm-exit">हाँ, बाहर जाएँ</button>
@@ -185,7 +185,7 @@
   <div class="modal"><button class="close" data-action="close" aria-label="Close">×</button><div id="modalBody"></div></div>
 </div>
 <div id="toastBox" aria-live="polite"></div>
-<script src="/app.js?v=2.9.4"></script>
-<script src="/cookie-consent.js?v=2.9.4" defer></script>
+<script src="/app.js?v=2.9.6"></script>
+<script src="/cookie-consent.js?v=2.9.6" defer></script>
 </body>
 </html>

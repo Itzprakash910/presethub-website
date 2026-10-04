@@ -1,6 +1,5 @@
 /* PresetHub local icon pack — cached by the service worker. Font Awesome CDN is intentionally not required. */
 .fas,.far,.fab{display:inline-block;width:1em;height:1em;line-height:1;vertical-align:-.125em;font-style:normal;font-weight:900;background-color:currentColor;mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;mask-position:center;-webkit-mask-position:center;mask-size:contain;-webkit-mask-size:contain;}
-.fas.example{mask-image:url('/assets/icons-pack/svg/example.svg');-webkit-mask-image:url('/assets/icons-pack/svg/example.svg');}
 .fas.fa-arrow-right{mask-image:url('/assets/icons-pack/svg/fa-arrow-right.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-arrow-right.svg');}
 .fas.fa-arrow-right-from-bracket{mask-image:url('/assets/icons-pack/svg/fa-right-from-bracket.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-right-from-bracket.svg');}
 .fas.fa-arrow-up-right-from-square{mask-image:url('/assets/icons-pack/svg/fa-arrow-right.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-arrow-right.svg');}
