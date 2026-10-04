@@ -3,10 +3,10 @@ const { Schema } = mongoose;
 
 // ========== NOTIFICATION ==========
 const NotificationSchema = new Schema({
-  type: { type: String, required: true },
-  message: { type: String, required: true },
+  type: { type: String, required: true, maxlength: 60 },
+  message: { type: String, required: true, maxlength: 500 },
   read: { type: Boolean, default: false },
-  link: { type: String, default: '/' },
+  link: { type: String, default: '/', maxlength: 500 },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -49,13 +49,13 @@ const UserSchema = new Schema({
   telegram: {
     firstName: String, lastName: String, username: String, languageCode: String,
   },
-  token: { type: String, default: '' },
   passwordResetTokenHash: { type: String, default: '' },
   passwordResetExpires: { type: Date, default: null },
   lastActive: { type: Date, default: Date.now },
   commandsCount: { type: Number, default: 0 },
   lastLogin: { type: Date },
   status: { type: String, enum: ['active', 'blocked', 'deactivated'], default: 'active' },
+  sessionVersion: { type: Number, default: 0 },
 }, { timestamps: true });
 
 // ========== PRESET ==========
@@ -65,6 +65,7 @@ const ReviewSchema = new Schema({
   rating: { type: Number, min: 1, max: 5, required: true },
   comment: { type: String, required: true, maxlength: 500 },
   helpful: { type: Number, default: 0 },
+  helpfulBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -76,7 +77,7 @@ const PresetSchema = new Schema({
   price: { type: Number, default: 0, min: 0, max: 999999.99 },
   author: { type: String, required: true },
   authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  status: { type: String, enum: ['approved', 'rejected', 'pending'], default: 'approved', index: true },
+  status: { type: String, enum: ['approved', 'rejected'], default: 'approved', index: true },
   fileUrl: { type: String, default: '' },
   fileStorageKey: { type: String, default: '' },
   previewImage: { type: String, default: '' },
