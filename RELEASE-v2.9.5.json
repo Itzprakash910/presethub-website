@@ -1,0 +1,17 @@
+{
+  "project": "PresetHub",
+  "version": "2.9.6",
+  "release": "mobile-header-admin-ads-notifications",
+  "security": "hardened",
+  "production_runtime_verified": false,
+  "changes": [
+    "profile/avatar moved beside brand and search area on mobile",
+    "three-dots menu moved to the former profile/action position",
+    "search results use 2% translucent background and blur",
+    "footer Install App and Telegram Bot links",
+    "admin personal home ads with product pricing/discounts",
+    "admin broadcast and individual notifications",
+    "admin user block/activate/delete/details controls",
+    "unused source-assets-pack removed"
+  ]
+}

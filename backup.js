@@ -4,7 +4,7 @@ const path = require('path');
 const axios = require('axios');
 const FormData = require('form-data');
 const { connectDB } = require('./backend/config/db');
-const { User, Preset, Order, Download, Share, Comment, Message } = require('./backend/models');
+const { User, Preset, Order, Download, Share, Comment, Message, HomeAd } = require('./backend/models');
 
 const backupDir = path.join(__dirname, 'backups');
 
@@ -18,7 +18,8 @@ async function runBackup() {
     ['downloads', Download.find({}).lean()],
     ['shares', Share.find({}).lean()],
     ['comments', Comment.find({}).lean()],
-    ['messages', Message.find({}).lean()]
+    ['messages', Message.find({}).lean()],
+    ['homeAds', HomeAd.find({}).lean()]
   ].map(async ([name, query]) => [name, await query]));
   const data = Object.fromEntries(collections);
   data.users = (data.users || []).map(u => {

@@ -1,0 +1,32 @@
+{
+  "name": "PresetHub",
+  "version": "2.9.6",
+  "release": "FINAL-COMPLETE",
+  "source": "PresetHub-v2.9.5-FINAL-COMPLETE.zip",
+  "files": 236,
+  "security_audit": "SECURITY-AUDIT-v2.9.6.md",
+  "deploy_notes": "DEPLOY-NOTES-v2.9.6.md",
+  "validation": {
+    "javascript_syntax": "PASS",
+    "json_parse": "PASS",
+    "html_duplicate_ids": "PASS",
+    "css_braces": "PASS",
+    "local_html_assets": "PASS",
+    "hardcoded_supplied_credentials": "PASS",
+    "fontawesome_cdn": "PASS",
+    "dangerous_runtime_sinks_scan": "PASS",
+    "zip_integrity": "PASS"
+  },
+  "key_fixes": [
+    "optionalAuth now rejects blocked/deactivated users and stale session versions",
+    "signed download tickets bind authenticated users to session version",
+    "sanitized /api/users/me sensitive fields",
+    "active-user filtering for public search/creator/SEO endpoints",
+    "mounted /api/search compatibility route",
+    "share analytics now uses CSRF-aware API helper",
+    "share QR no longer calls missing /api/share/qr endpoint",
+    "async Express route errors are forwarded with express-async-errors",
+    "download compound lookup index added",
+    "Telegram bot duplicate error message removed"
+  ]
+}
