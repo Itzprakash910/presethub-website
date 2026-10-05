@@ -55,26 +55,32 @@
     const u=await api(`/admin/users?page=${userPage}&limit=${userLimit}${q}`);
     $('#usersList').innerHTML=`<table class="user-table"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Activity</th><th>Creator stats</th><th>Control</th></tr></thead><tbody>${(u.items||[]).map(x=>{
       const blocked=x.status==='blocked'||x.status==='deactivated';
-      return `<tr><td><b>${esc(x.name||x.username||'')}</b><br><small>@${esc(x.username||'user')} · ${esc(x.email||'')}</small></td><td>${esc(x.role||'user')}</td><td><span class="status-badge status-${esc(x.status||'active')}">${esc(x.status||'active')}</span>${x.online?'<small> · online</small>':''}</td><td>${fmt(x.stats?.userDownloads)} downloads · ${fmt(x.stats?.totalOrders)} orders · ₹${Number(x.stats?.totalSpent||0).toFixed(0)} spent</td><td>${fmt(x.stats?.totalPresets)} presets · ${fmt(x.stats?.views)} views · ${fmt(x.stats?.downloads)} downloads · ₹${Number(x.stats?.creatorRevenue||0).toFixed(0)}</td><td class="actions"><button class="btn btn-sm btn-outline" data-user-details="${esc(x.id)}">Details</button>${x.role!=='admin'?`<button class="btn btn-sm ${blocked?'btn-outline':'btn-danger'}" data-user-status="${esc(x.id)}" data-next-status="${blocked?'active':'blocked'}">${blocked?'Activate':'Block'}</button><button class="btn btn-sm btn-danger" data-user-delete="${esc(x.id)}">Delete</button><button class="btn btn-sm btn-outline" data-user-notify="${esc(x.id)}">Notify</button>`:''}</td></tr>`;
+      return `<tr><td><b>${esc(x.name||x.username||'')}</b><br><small>@${esc(x.username||'user')} · ${esc(x.email||'')}</small></td><td>${esc(x.role||'user')}</td><td><span class="status-badge status-${esc(x.status||'active')}">${esc(x.status||'active')}</span>${x.online?'<small> · online</small>':''}</td><td>${fmt(x.stats?.userDownloads)} downloads · ${fmt(x.stats?.totalOrders)} orders · ₹${Number(x.stats?.totalSpent||0).toFixed(0)} spent</td><td>${fmt(x.stats?.totalPresets)} presets · ${fmt(x.stats?.views)} views · ${fmt(x.stats?.downloads)} downloads · ₹${Number(x.stats?.creatorRevenue||0).toFixed(0)}</td><td class="actions"><button class="btn btn-sm btn-outline" data-user-details="${esc(x.id)}">Details</button><button class="btn btn-sm btn-outline" data-user-reset="${esc(x.id)}">Reset password</button>${x.role!=='admin'?`<button class="btn btn-sm ${blocked?'btn-outline':'btn-danger'}" data-user-status="${esc(x.id)}" data-next-status="${blocked?'active':'blocked'}">${blocked?'Activate':'Block'}</button><button class="btn btn-sm btn-danger" data-user-delete="${esc(x.id)}">Delete</button><button class="btn btn-sm btn-outline" data-user-notify="${esc(x.id)}">Notify</button>`:''}</td></tr>`;
     }).join('')}</tbody></table><div class="admin-pagination"><span>Page ${u.page||1} / ${u.totalPages||1}</span><button class="btn btn-sm btn-outline" data-user-page="prev" ${userPage<=1?'disabled':''}>Previous</button><button class="btn btn-sm btn-outline" data-user-page="next" ${userPage>=(u.totalPages||1)?'disabled':''}>Next</button></div>`;
   }
 
   async function loadAds(){
     const r=await api('/admin/ads');
-    $('#adsList').innerHTML=(r.items||[]).map(a=>`<div class="admin-ad-item"><img src="${esc(a.imageUrl||'/assets/images/og-image.png')}" alt="" loading="lazy" onerror="this.src='/assets/images/og-image.png'"><div class="admin-ad-meta"><b>${esc(a.title)}</b><small>${esc(a.productName||'')} · ${a.active?'LIVE':'OFF'} · ${fmt(a.impressions)} impressions · ${fmt(a.clicks)} clicks</small><br><small>${esc(a.description||'')}</small></div><div class="admin-ad-actions"><button class="btn btn-sm btn-outline" data-ad-edit="${esc(a.id)}">Edit</button><button class="btn btn-sm btn-danger" data-ad-delete="${esc(a.id)}">Delete</button></div></div>`).join('')||'<p>No ads created yet.</p>';
+    $('#adsList').innerHTML=(r.items||[]).map(a=>`<div class="admin-ad-item"><img src="${esc(a.imageUrl||'/assets/images/og-image.png')}" alt="" loading="lazy" onerror="this.src='/assets/images/og-image.png'"><div class="admin-ad-meta"><b>${esc(a.title)}</b><small>${esc(a.productName||'')} · ${esc(a.adType||'personal')} · ${a.active?'LIVE':'OFF'} · ${fmt(a.impressions)} impressions · ${fmt(a.clicks)} clicks</small><br><small>${esc(a.description||'')}</small></div><div class="admin-ad-actions"><button class="btn btn-sm btn-outline" data-ad-edit="${esc(a.id)}">Edit</button><button class="btn btn-sm btn-danger" data-ad-delete="${esc(a.id)}">Delete</button></div></div>`).join('')||'<p>No ads created yet.</p>';
     window.__adminAds=r.items||[];
   }
 
   function clearAdForm(){
-    const f=$('#adForm'); if(!f) return; f.reset(); f.id.value=''; f.active.checked=true; f.badge.value='Featured'; f.linkUrl.value='/';
+    const f=$('#adForm'); if(!f) return; f.reset(); f.id.value=''; f.adType.value='personal'; f.active.checked=true; f.badge.value='Featured'; f.linkUrl.value='/';
   }
   function fillAdForm(a){
-    const f=$('#adForm'); if(!f) return; f.id.value=a.id; f.title.value=a.title||''; f.description.value=a.description||''; f.imageUrl.value=a.imageUrl||''; f.productName.value=a.productName||''; f.originalPrice.value=a.originalPrice||0; f.salePrice.value=a.salePrice||0; f.discountPercent.value=a.discountPercent||0; f.badge.value=a.badge||'Featured'; f.linkUrl.value=a.linkUrl||'/'; f.active.checked=!!a.active; f.scrollIntoView({behavior:'smooth',block:'center'});
+    const f=$('#adForm'); if(!f) return; f.id.value=a.id; f.title.value=a.title||''; f.adType.value=a.adType||'personal'; f.description.value=a.description||''; f.imageUrl.value=a.imageUrl||''; f.productName.value=a.productName||''; f.originalPrice.value=a.originalPrice||0; f.salePrice.value=a.salePrice||0; f.discountPercent.value=a.discountPercent||0; f.badge.value=a.badge||'Featured'; f.linkUrl.value=a.linkUrl||'/'; f.active.checked=!!a.active; f.scrollIntoView({behavior:'smooth',block:'center'});
+  }
+
+  async function loadSupport(){
+    const status=$('#supportStatus')?.value||'open';
+    const r=await api(`/admin/support-requests?status=${encodeURIComponent(status)}`);
+    $('#supportList').innerHTML=(r.items||[]).map(x=>`<div class="support-item"><div><b>${esc(x.type||'other')}</b> <span class="status-badge status-${esc(x.status)}">${esc(x.status)}</span><p>${esc(x.message)}</p><small>${esc(x.name||'User')} · ${esc(x.email||x.telegramId||'')} · ${new Date(x.createdAt).toLocaleString('en-IN')}</small>${x.adminNote?`<br><small>Admin: ${esc(x.adminNote)}</small>`:''}</div><div class="actions"><select data-support-status="${esc(x.id)}"><option value="open" ${x.status==='open'?'selected':''}>Open</option><option value="in_progress" ${x.status==='in_progress'?'selected':''}>In progress</option><option value="resolved" ${x.status==='resolved'?'selected':''}>Resolved</option><option value="rejected" ${x.status==='rejected'?'selected':''}>Rejected</option></select><button class="btn btn-sm btn-outline" data-support-update="${esc(x.id)}">Save</button>${x.userId?`<button class="btn btn-sm btn-outline" data-support-reset="${esc(x.userId)}">Reset password</button>`:''}</div></div>`).join('')||'<p>No support requests.</p>';
   }
 
   async function load(){
     if(busy)return; setLoading(true);
-    try{await Promise.all([loadOverview(),loadPresets(),loadUsers($('#userSearch')?.value.trim()||''),loadAds()]);msg('Admin data refreshed');}
+    try{await Promise.all([loadOverview(),loadPresets(),loadUsers($('#userSearch')?.value.trim()||''),loadAds(),loadSupport()]);msg('Admin data refreshed');}
     catch(e){msg(e.message,'error'); if(/Authentication|Admin|login/i.test(e.message)) setTimeout(()=>location.href='/',800);}
     finally{setLoading(false);}
   }
@@ -83,24 +89,31 @@
   $('#adminHome')?.addEventListener('click',()=>location.href='/');
   $('#themeAdmin')?.addEventListener('click',()=>{document.body.classList.toggle('dark');localStorage.setItem('presethub_theme',document.body.classList.contains('dark')?'dark':'light');const i=$('#themeAdmin i');if(i)i.className=document.body.classList.contains('dark')?'fas fa-sun':'fas fa-moon';});
   $('#clearAd')?.addEventListener('click',clearAdForm);
+  $('#supportStatus')?.addEventListener('change',()=>loadSupport().catch(x=>msg(x.message,'error')));
   $('#userSearch')?.addEventListener('input',e=>{clearTimeout(userTimer);userPage=1;userTimer=setTimeout(()=>loadUsers(e.target.value.trim()).catch(x=>msg(x.message,'error')),280);});
 
   $('#broadcastForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.currentTarget;const data=Object.fromEntries(new FormData(f).entries());try{await api('/admin/notifications/all',{method:'POST',body:JSON.stringify(data)});f.reset();f.link.value='/';msg('Notification सभी active users को भेज दी गई');}catch(x){msg(x.message,'error');}});
 
-  $('#adForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.currentTarget;const data=Object.fromEntries(new FormData(f).entries());data.active=f.active.checked;['originalPrice','salePrice','discountPercent'].forEach(k=>data[k]=Number(data[k]||0));const id=data.id;delete data.id;try{await api(id?`/admin/ads/${encodeURIComponent(id)}`:'/admin/ads',{method:id?'PUT':'POST',body:JSON.stringify(data)});clearAdForm();await loadAds();msg(id?'Ad updated':'Ad created and ready for home screen');}catch(x){msg(x.message,'error');}});
+  $('#adForm')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.currentTarget;const data=new FormData(f);data.set('active',f.active.checked?'true':'false');['originalPrice','salePrice','discountPercent'].forEach(k=>data.set(k,String(Number(data.get(k)||0))));const id=data.get('id');data.delete('id');try{await api(id?`/admin/ads/${encodeURIComponent(id)}`:'/admin/ads',{method:id?'PUT':'POST',body:data});clearAdForm();await loadAds();msg(id?'Ad updated':'Ad created and ready for home screen');}catch(x){msg(x.message,'error');}});
 
   document.addEventListener('click',async e=>{
     const p=e.target.closest('[data-preset]');
     const ud=e.target.closest('[data-user-details]');
     const us=e.target.closest('[data-user-status]');
     const del=e.target.closest('[data-user-delete]');
+    const ur=e.target.closest('[data-user-reset]');
     const un=e.target.closest('[data-user-notify]');
     const ae=e.target.closest('[data-ad-edit]');
     const ax=e.target.closest('[data-ad-delete]');
     const pg=e.target.closest('[data-user-page]');
+    const su=e.target.closest('[data-support-update]');
+    const sr=e.target.closest('[data-support-reset]');
     try{
       if(p){await api(`/admin/presets/${p.dataset.preset}/status`,{method:'PUT',body:JSON.stringify({status:p.dataset.status})});msg('Preset status updated');return loadPresets();}
       if(ud){const r=await api(`/admin/users/${ud.dataset.userDetails}/details`);const u=r.user||r;alert(`User: ${u.name||''}\nEmail: ${u.email||''}\nRole: ${u.role||''}\nStatus: ${u.status||''}\nFollowers: ${r.profile?.followers||0}\nFollowing: ${r.profile?.following||0}\nPresets: ${(r.presets||[]).length}\nOrders: ${r.payments?.totalOrders||0}\nSpent: ₹${Number(r.payments?.totalSpent||0).toFixed(2)}\nDownloads: ${(r.downloads||[]).length}`);return;}
+      if(ur){if(!confirm('Generate a new temporary password for this user? Their existing sessions will be invalidated.'))return;const r=await api(`/admin/users/${ur.dataset.userReset}/reset-password`,{method:'POST'});alert(`Temporary password (shown once):\n\n${r.temporaryPassword}`);return;}
+      if(su){const sel=document.querySelector(`[data-support-status="${CSS.escape(su.dataset.supportUpdate)}"]`);const status=sel?.value||'open';const note=prompt('Admin note (optional):','');await api(`/admin/support-requests/${su.dataset.supportUpdate}`,{method:'PUT',body:JSON.stringify({status,adminNote:note||''})});msg('Support request updated');return loadSupport();}
+      if(sr){if(!confirm('Generate a temporary password for this user?'))return;const r=await api(`/admin/users/${sr.dataset.supportReset}/reset-password`,{method:'POST'});alert(`Temporary password (shown once):\n\n${r.temporaryPassword}`);return;}
       if(us){await api(`/admin/users/${us.dataset.userStatus}/status`,{method:'PUT',body:JSON.stringify({status:us.dataset.nextStatus})});msg(`User ${us.dataset.nextStatus}`);return loadUsers($('#userSearch')?.value.trim()||'');}
       if(del){if(!confirm('इस user को permanently delete करना है? यह वापस नहीं होगा।'))return;await api(`/admin/users/${del.dataset.userDelete}`,{method:'DELETE'});msg('User permanently deleted');return loadUsers($('#userSearch')?.value.trim()||'');}
       if(un){const text=prompt('User को कौन सा message भेजना है?','PresetHub से नई जानकारी');if(!text)return;await api(`/admin/notifications/user/${un.dataset.userNotify}`,{method:'POST',body:JSON.stringify({message:text,link:'/',type:'admin'})});msg('User notification sent');return;}

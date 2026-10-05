@@ -1,4 +1,4 @@
-/* PresetHub Frontend — production client v2.9.6 */
+/* PresetHub Frontend — production client v3.0.0 */
 (() => {
   'use strict';
 
@@ -27,6 +27,7 @@
     messageTimer: null,
     notificationTimer: null,
     notificationIds: new Set(),
+    creatorLocation: null,
   };
 
   const $ = (s, r = document) => r.querySelector(s);
@@ -408,7 +409,7 @@
       const priceHtml = (price > 0 || original > 0)
         ? `<div class="home-ad-price">${price > 0 ? `<strong>${money(price)}</strong>` : ''}${original > 0 && original > price ? `<del>${money(original)}</del>` : ''}${discount > 0 ? `<span class="home-ad-discount">${discount}% OFF</span>` : ''}</div>` : '';
       const image = a.imageUrl ? `<img src="${esc(assetUrl(a.imageUrl))}" alt="${esc(a.title)}" loading="lazy" decoding="async" onerror="this.closest('.home-ad-media')?.remove()">` : '';
-      slot.innerHTML = `<article class="home-ad-card"><div class="home-ad-media" ${image ? '' : 'hidden'}>${image}</div><div class="home-ad-copy"><span class="home-ad-badge">${esc(a.badge || 'Featured')}</span><h3>${esc(a.title)}</h3>${a.productName ? `<strong>${esc(a.productName)}</strong>` : ''}${a.description ? `<p>${esc(a.description)}</p>` : ''}${priceHtml}<div class="home-ad-actions"><a class="btn btn-primary btn-sm" href="${esc(a.linkUrl || '/') }" data-ad-click="${esc(a.id)}">देखें</a></div></div></article>`;
+      slot.innerHTML = `<article class="home-ad-card"><div class="home-ad-media" ${image ? '' : 'hidden'}>${image}</div><div class="home-ad-copy"><span class="home-ad-badge">${esc(a.adType === 'sponsor' ? 'Sponsored' : (a.badge || 'Featured'))}</span><h3>${esc(a.title)}</h3>${a.productName ? `<strong>${esc(a.productName)}</strong>` : ''}${a.description ? `<p>${esc(a.description)}</p>` : ''}${priceHtml}<div class="home-ad-actions"><a class="btn btn-primary btn-sm" href="${esc(a.linkUrl || '/') }" data-ad-click="${esc(a.id)}">देखें</a></div></div></article>`;
       slot.hidden = false;
     } catch (_) { slot.hidden = true; }
   }
@@ -495,24 +496,40 @@
       <button class="creator-main" data-action="profile" data-id="${esc(u.id)}" aria-label="Open ${esc(name)} profile">
         <span class="creator-avatar">${avatar}</span>
         <span class="creator-identity"><b>${esc(name)}</b><small>@${esc(u.username || 'creator')}</small></span>
-        <span class="creator-badge"><i class="fas fa-check"></i> Creator</span>
+        <span class="creator-badge"><i class="fas fa-check"></i> Creator</span>${u.distanceKm != null ? `<span class="creator-distance"><i class="fas fa-location-dot"></i> ${Number(u.distanceKm).toFixed(1)} km away</span>` : ''}
         <span class="creator-stats"><span>${Number(u.presetCount||0)} presets</span><span>${Number(u.totalDownloads||0)} downloads</span><span>${Number(u.followers||0)} followers</span></span>
       </button>
       <button class="creator-menu-btn" data-action="creator-menu" data-id="${esc(u.id)}" aria-label="More options for ${esc(name)}" title="More options"><i class="fas fa-ellipsis"></i></button>
     </article>`;
   }
 
-  async function loadCreators() {
-    const cached = cacheGet('creators');
+  function savedCreatorLocation() {
+    try { const x = JSON.parse(localStorage.getItem('ph:creator-location') || 'null'); if (x && Number.isFinite(x.lat) && Number.isFinite(x.lng) && Date.now() - Number(x.t || 0) < 30*24*60*60*1000) return x; } catch (_) {}
+    return null;
+  }
+  async function loadCreators(force = false) {
+    const cached = !force ? cacheGet('creators') : null;
     if (cached) { state.creators = cached; const el = $('#creators'); if (el) el.innerHTML = (cached || []).map(creatorCard).join(''); }
     try {
-      const creators = await api('/users/top');
-      state.creators = creators;
-      cacheSet('creators', creators);
-      const el = $('#creators');
-      if (el) el.innerHTML = (creators || []).map(creatorCard).join('');
+      const loc = state.creatorLocation || savedCreatorLocation();
+      const qs = loc ? `?lat=${encodeURIComponent(loc.lat)}&lng=${encodeURIComponent(loc.lng)}` : '';
+      const creators = await api(`/users/top${qs}`);
+      state.creators = creators; cacheSet('creators', creators);
+      const el = $('#creators'); if (el) el.innerHTML = (creators || []).map(creatorCard).join('');
+      const hint = $('#creatorLocationHint'); if (hint) hint.textContent = loc ? 'Nearest profiles first · then highest reach' : 'Highest reach first · tap the location button for nearby profiles';
     } catch (_) {}
   }
+  function enableNearbyCreators() {
+    if (!navigator.geolocation) return toast('Location is not supported by this browser.', 'info');
+    const hint = $('#creatorLocationHint'); if (hint) hint.textContent = 'Finding creators near you…';
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const loc = { lat:Number(pos.coords.latitude), lng:Number(pos.coords.longitude), t:Date.now() }; state.creatorLocation = loc;
+      try { localStorage.setItem('ph:creator-location', JSON.stringify(loc)); } catch (_) {}
+      if (state.user) api('/users/me/location',{method:'POST',body:JSON.stringify({lat:loc.lat,lng:loc.lng})}).catch(()=>{});
+      await loadCreators(true); toast('Nearby creator suggestions updated');
+    }, err => { if (hint) hint.textContent='Highest reach first · location access was not granted'; toast(err.code===1?'Location permission was denied.':'Could not get your location.','info'); }, {enableHighAccuracy:false,timeout:8000,maximumAge:10*60*1000});
+  }
+  function scrollCreators(direction) { const el=$('#creators'); if(el) el.scrollBy({left:direction*Math.max(240,el.clientWidth*.78),behavior:'smooth'}); }
 
   // ============ SHOW PRESET MODAL ============
   async function showPreset(id) {
@@ -874,6 +891,10 @@
   }
 
   // ============ AUTH ============
+  function passwordField(name, label, autocomplete, extra='') {
+    return `<div class="form-group password-field"><label>${label}</label><div class="password-input-wrap"><input type="password" name="${name}" ${extra} autocomplete="${autocomplete}"><button type="button" class="password-toggle" data-action="toggle-password" aria-label="Show password" title="Show password"><i class="fas fa-eye"></i></button></div></div>`;
+  }
+  function togglePassword(button) { const input=button.closest('.password-input-wrap')?.querySelector('input'); if(!input)return; const show=input.type==='password'; input.type=show?'text':'password'; button.setAttribute('aria-label',show?'Hide password':'Show password'); button.title=show?'Hide password':'Show password'; const icon=button.querySelector('i'); if(icon) icon.className=`fas ${show?'fa-eye-slash':'fa-eye'}`; }
   function openAuth(mode = 'login', after = null) {
     openModal(`
       <div class="auth-box">
@@ -881,7 +902,7 @@
         <form id="authForm" data-mode="${mode}">
           ${mode === 'signup' ? '<div class="form-group"><label>Name</label><input name="name" maxlength="50" required></div><div class="form-group"><label>Username</label><input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" required></div>' : ''}
           <div class="form-group"><label>Email</label><input type="email" name="email" required autocomplete="email"></div>
-          <div class="form-group"><label>Password</label><input type="password" name="password" minlength="8" required autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}"></div>
+          ${passwordField('password', 'Password', mode === 'login' ? 'current-password' : 'new-password', 'minlength="8" required')}
           ${mode === 'signup' ? '<small>At least 8 characters with upper/lowercase and a number.</small>' : ''}
           <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
         </form>
@@ -894,7 +915,7 @@
     openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Reset password</h2><p class="muted">Enter your account email. If it exists, PresetHub will send a reset link.</p><form id="forgotForm"><div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div><button class="btn btn-primary" type="submit"><i class="fas fa-envelope"></i> Send reset link</button></form></div>`);
   }
   function openResetPassword(token){
-    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}"><div class="form-group"><label>New password</label><input type="password" name="password" minlength="8" required autocomplete="new-password"></div><button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
+    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}">${passwordField('password', 'New password', 'new-password', 'minlength="8" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
   }
 
   async function submitAuth(form) {
@@ -1209,13 +1230,18 @@
   }
 
 
+  function openAccountHelp() {
+    if (!requireAuth()) return;
+    openModal(`<div class="security-panel"><span class="eyebrow">ACCOUNT SUPPORT</span><h2>Ask Admin for help</h2><p class="muted">Use this if you forgot your password, need account access help, want to request deletion, or need a blocked-account review.</p><form id="supportRequestForm"><div class="form-group"><label>Request type</label><select name="type"><option value="password_reset">Forgot password</option><option value="account_access">Account access</option><option value="delete_account">Delete my account</option><option value="block_review">Review blocked account</option><option value="other">Other</option></select></div><div class="form-group"><label>Message</label><textarea name="message" maxlength="1000" required placeholder="Tell the admin what you need…"></textarea></div><button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send request</button></form></div>`);
+  }
+
   function changePasswordModal() {
     if (!requireAuth()) return;
-    openModal(`<div class="security-panel"><span class="eyebrow">ACCOUNT SECURITY</span><h2>Change password</h2><form id="changePasswordForm"><div class="form-group"><label>Current password</label><input name="currentPassword" type="password" autocomplete="current-password" required></div><div class="form-group"><label>New password</label><input name="newPassword" type="password" minlength="8" autocomplete="new-password" required></div><div class="form-group"><label>Confirm new password</label><input name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></div><button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Change password</button></form></div>`);
+    openModal(`<div class="security-panel"><span class="eyebrow">ACCOUNT SECURITY</span><h2>Change password</h2><form id="changePasswordForm">${passwordField('currentPassword', 'Current password', 'current-password', 'required')}${passwordField('newPassword', 'New password', 'new-password', 'minlength="8" required')}${passwordField('confirmPassword', 'Confirm new password', 'new-password', 'minlength="8" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Change password</button></form></div>`);
   }
   async function deleteAccountModal() {
     if (!requireAuth()) return;
-    openModal(`<div class="danger-panel"><span class="eyebrow">PERMANENT ACTION</span><h2>Delete your account</h2><p>This permanently removes your profile, published presets, messages, comments, downloads, shares and account data. This cannot be undone.</p><form id="deleteAccountForm"><div class="form-group"><label>Enter your password to confirm</label><input name="password" type="password" autocomplete="current-password" required></div><label class="danger-confirm"><input name="confirm" type="checkbox" required> I understand that this deletion is permanent.</label><button class="btn btn-danger" type="submit"><i class="fas fa-user-xmark"></i> Permanently delete account</button></form></div>`);
+    openModal(`<div class="danger-panel"><span class="eyebrow">PERMANENT ACTION</span><h2>Delete your account</h2><p>This permanently removes your profile, published presets, messages, comments, downloads, shares and account data. This cannot be undone.</p><form id="deleteAccountForm">${passwordField('password', 'Enter your password to confirm', 'current-password', 'required')}<label class="danger-confirm"><input name="confirm" type="checkbox" required> I understand that this deletion is permanent.</label><button class="btn btn-danger" type="submit"><i class="fas fa-user-xmark"></i> Permanently delete account</button></form></div>`);
   }
   async function showMessageProfile(userId) {
     try { closeModal(); await showProfile(userId); } catch (e) { toast(e.message, 'error'); }
@@ -1227,7 +1253,7 @@
       ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-pen','Edit Profile','edit-profile'],
       ['fa-heart','Wishlist','wishlist-page'], ['fa-download','Downloads','downloads'], ['fa-bell','Notifications','notifications'],
       ['fa-message','Messages','messages'], ['fa-link','Share Links','my-shares'], ['fa-key','Change Password','change-password'],
-      ['fa-shield-halved','Enable Notifications','enable-notifications'], ['fa-moon','Theme','theme'],
+      ['fa-shield-halved','Enable Notifications','enable-notifications'], ['fa-life-ring','Account Help','account-help'], ['fa-moon','Theme','theme'],
       ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq'], ['fa-right-from-bracket','Log out','logout'], ['fa-user-xmark','Delete Account','delete-account']
     ] : [
       ['fa-download','Install PresetHub','install'], ['fa-moon','Theme','theme'], ['fa-right-to-bracket','Log in','login'], ['fa-user-plus','Create Account','signup'],
@@ -1287,7 +1313,7 @@
 
   function registerSW() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=2.9.6', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
+      navigator.serviceWorker.register('/sw.js?v=3.0.0', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (sessionStorage.getItem('ph-sw-refreshed') === '1') return;
         sessionStorage.setItem('ph-sw-refreshed', '1');
@@ -1368,35 +1394,12 @@
   }
 
   // ============ EXIT / NAVIGATION GUARD ============
-  let allowExitNavigation = false;
-  window.addEventListener('beforeunload', e => {
-    if (allowExitNavigation) return;
-    e.preventDefault();
-    e.returnValue = '';
-  });
-  let exitGuardPushed = false;
-  function installExitGuard() {
-    if (exitGuardPushed) return;
-    exitGuardPushed = true;
-    try { history.pushState({ presetHubExitGuard:true }, '', location.href); } catch (_) {}
-  }
-  window.addEventListener('popstate', () => {
-    if (allowExitNavigation) return;
-    try { history.pushState({ presetHubExitGuard:true }, '', location.href); } catch (_) {}
-    requestExit(null);
-  });
-  document.addEventListener('click', e => {
-    const link = e.target.closest('a[href]');
-    if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
-    const href = link.getAttribute('href');
-    if (!href || href.startsWith('#') || href.startsWith('javascript:') || link.dataset.noExitConfirm !== undefined) return;
-    let url;
-    try { url = new URL(href, location.href); } catch (_) { return; }
-    if (url.origin !== location.origin) {
-      e.preventDefault();
-      requestExit(url.href);
-    }
-  }, true);
+  // Only home-page site exits use the custom confirmation. Refresh/close and internal pages do not.
+  let allowExitNavigation = false; let exitGuardPushed = false;
+  function isHomePage(){ return location.pathname==='/' || location.pathname==='/index.html'; }
+  function installExitGuard(){ if(!isHomePage()||exitGuardPushed)return; exitGuardPushed=true; try{history.pushState({presetHubHomeExitGuard:true},'',location.href);}catch(_){} }
+  window.addEventListener('popstate',()=>{ if(allowExitNavigation||!isHomePage())return; try{history.pushState({presetHubHomeExitGuard:true},'',location.href);}catch(_){} requestExit(null); });
+  document.addEventListener('click',e=>{ const link=e.target.closest('a[href]'); if(!link||link.target==='_blank'||link.hasAttribute('download')||!isHomePage()||link.dataset.noExitConfirm!==undefined)return; const href=link.getAttribute('href'); if(!href||href.startsWith('#')||href.startsWith('javascript:'))return; let url; try{url=new URL(href,location.href);}catch(_){return;} if(url.origin!==location.origin||url.pathname!==location.pathname){e.preventDefault();requestExit(url.href);} },true);
 
   // ============ GLOBAL CLICK HANDLER ============
   document.addEventListener('click', async e => {
@@ -1502,6 +1505,11 @@
     if (action === 'copy-link') { try { await navigator.clipboard.writeText(el.dataset.link); toast('Profile link copied'); } catch (_) { toast('Unable to copy link','error'); } return; }
     if (action === 'profile') { showProfile(el.dataset.id); return; }
     if (action === 'follow') { follow(el.dataset.id); return; }
+    if (action === 'creator-prev') { scrollCreators(-1); return; }
+    if (action === 'creator-next') { scrollCreators(1); return; }
+    if (action === 'nearby-creators') { enableNearbyCreators(); return; }
+    if (action === 'toggle-password') { togglePassword(el); return; }
+    if (action === 'account-help') { openAccountHelp(); return; }
     if (action === 'chat') { showChat(el.dataset.id); return; }
     if (action === 'switch-auth') { openAuth(el.dataset.mode); return; }
     if (action === 'forgot-password') { openForgotPassword(); return; }
@@ -1541,6 +1549,7 @@
     if (e.target.id === 'resetForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api('/auth/reset-password',{method:'POST',body:JSON.stringify({token:e.target.dataset.token,password:fd.get('password')})}); toast('Password reset successfully'); closeModal(); openAuth('login'); } catch(err){toast(err.message,'error');} return; }
     if (e.target.id === 'uploadForm') { e.preventDefault(); submitUpload(e.target); return; }
     if (e.target.id === 'bulkUploadForm') { e.preventDefault(); submitBulkUpload(e.target); return; }
+    if (e.target.id === 'supportRequestForm') { e.preventDefault(); try { await api('/users/me/support-request',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))}); closeModal(); toast('Request sent to admin.'); } catch(err) { toast(err.message,'error'); } return; }
     if (e.target.id === 'changePasswordForm') {
       e.preventDefault(); const form=e.target; const d=Object.fromEntries(new FormData(form).entries());
       if (d.newPassword !== d.confirmPassword) return toast('New passwords do not match','error');

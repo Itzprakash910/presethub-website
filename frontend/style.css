@@ -1230,7 +1230,7 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
   .message-thread-avatar{width:46px;height:46px}
 }
 
-/* v2.9.6 UI cleanup: keep PresetHub brand and overflow menu visually separated. */
+/* v3.0.0 UI cleanup: keep PresetHub brand and overflow menu visually separated. */
 .brand-cluster{gap:18px}
 .nav-menu-btn{margin-left:2px}
 .creator-menu-grid,.site-menu-grid{gap:12px}
@@ -1238,7 +1238,7 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
 
 .share-qr .qr-status{display:block;margin-top:8px;color:var(--muted);font-size:.75rem}
 
-/* v2.9.6 account/message/notification polish */
+/* v3.0.0 account/message/notification polish */
 .site-menu-grid{gap:12px;padding:6px}
 .site-menu-item{min-height:48px;gap:10px}
 .account-menu-hint{padding:12px 14px;border:1px solid var(--border);background:var(--input-bg);border-radius:14px;color:var(--muted);font-size:.8rem;line-height:1.5;margin:14px 0}
@@ -1264,7 +1264,7 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
 .message-thread{grid-template-columns:minmax(145px,1fr) minmax(0,1.5fr);}.message-profile-link{display:flex;align-items:center;gap:9px;text-align:left;width:100%;height:auto;min-height:52px}.message-profile-link>span{min-width:0;display:flex;flex-direction:column}.message-profile-link b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.message-profile-link small{color:var(--muted);font-size:.7rem}.message-thread-open{width:100%;}.message-thread-main>span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}@media(max-width:560px){.message-thread{grid-template-columns:1fr auto}.message-profile-link>span{display:none}.message-profile-link{width:46px}.message-profile-link .avatar-shell,.message-profile-link .avatar-fallback{width:46px;height:46px}}
 
 
-/* v2.9.6 responsive header/menu hardening */
+/* v3.0.0 responsive header/menu hardening */
 .nav-menu-btn{position:relative;z-index:3;flex:0 0 42px!important;width:42px!important;height:42px!important;display:grid!important;place-items:center!important;padding:0!important;margin:0!important}
 .nav-menu-btn i{font-size:1.35rem;display:block}
 .brand-cluster{flex:0 1 auto;min-width:0!important;white-space:nowrap}
@@ -1296,7 +1296,7 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
   .nav-search button{padding:8px 9px}
 }
 
-/* ===== v2.9.6 HEADER / MOBILE ORDER ===== */
+/* ===== v3.0.0 HEADER / MOBILE ORDER ===== */
 .brand-cluster{flex:0 0 auto;min-width:max-content}
 .nav-actions{display:flex;align-items:center;gap:8px;min-width:0}
 .nav-actions #userSection{display:flex;align-items:center;gap:8px;min-width:0}
@@ -1331,3 +1331,18 @@ body.dark .btn-danger{background:#6f2f2f;color:#fff;border-color:#914343}body.da
 @media(max-width:420px){
   .nav-actions{gap:3px!important}.nav-actions #userSection{gap:3px!important}.nav-actions .icon-btn,.nav-actions .user-avatar,.nav-menu-btn{width:35px!important;height:35px!important;flex-basis:35px!important}.brand-logo{width:32px;height:32px;flex-basis:32px}.brand-cluster .logo{font-size:1.08rem;gap:4px}.nav-search input{font-size:.92rem}
 }
+
+/* Creator discovery carousel + password visibility controls */
+.creator-section-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-top:28px;margin-bottom:12px}
+.creator-section-head .section-title{margin:0}
+.creator-section-head .section-subtitle{margin:3px 0 0;color:var(--muted,#777);font-size:.82rem}
+.creator-carousel-controls{display:flex;gap:7px;flex-shrink:0}
+.top-creators-grid{display:flex!important;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;padding:4px 2px 14px}
+.top-creators-grid::-webkit-scrollbar{display:none}
+.top-creators-grid .creator-card{flex:0 0 clamp(190px,22vw,245px);scroll-snap-align:start}
+.creator-distance{display:inline-flex;margin-top:6px;font-size:.68rem;color:var(--muted,#777)}
+.password-input-wrap{position:relative;display:flex;align-items:center}
+.password-input-wrap input{width:100%;padding-right:46px}
+.password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:36px;height:36px;border:0;background:transparent;color:var(--muted,#777);cursor:pointer;border-radius:8px}
+.password-toggle:hover,.password-toggle:focus-visible{background:rgba(127,127,127,.12);color:var(--text,#222)}
+@media(max-width:700px){.creator-section-head{align-items:center}.creator-section-head .section-subtitle{font-size:.72rem}.top-creators-grid .creator-card{flex-basis:72vw}}
