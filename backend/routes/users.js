@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const auth = require('../middleware/auth');
-const { User, Preset, Download } = require('../models');
+const { User, Preset, Download, SupportRequest } = require('../models');
 const { uploadAvatar, validateParsedUploads, safeImageContentType } = require('../middleware/upload');
 const { uploadToMongo } = require('../config/mongoStorage');
 const { createNotification, evaluateAchievements, sendWebPush } = require('../utils/notifications');
@@ -89,20 +89,62 @@ router.put('/me/avatar', auth, uploadAvatar, async (req, res) => {
 });
 
 router.get('/top', async (req, res) => {
-  const top = await User.aggregate([
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const hasLocation = Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+  const pipeline = [
     { $match: { status: 'active' } },
     { $lookup: { from: 'presets', localField: '_id', foreignField: 'authorId', as: 'presets' } },
     { $addFields: { approved: { $filter: { input: '$presets', as: 'p', cond: { $eq: ['$$p.status', 'approved'] } } } } },
     { $project: {
-      name: 1, username: 1, avatar: 1,
+      name: 1, username: 1, avatar: 1, location: 1,
       presetCount: { $size: '$approved' },
       totalDownloads: { $sum: '$approved.downloads' },
+      totalViews: { $sum: '$approved.views' },
+      totalLikes: { $sum: { $map: { input: '$approved', as: 'p', in: { $size: { $ifNull: ['$$p.likes', []] } } } } },
       followers: { $size: { $ifNull: ['$followers', []] } }
-    }},
-    { $sort: { presetCount: -1, totalDownloads: -1 } },
-    { $limit: 5 }
-  ]);
-  res.json(top.map(u => ({ ...u, id: u._id.toString() })));
+    }}
+  ];
+  if (hasLocation) {
+    // Haversine distance in km. Creators without a saved location are ranked after nearby creators.
+    pipeline.push({ $addFields: {
+      distanceKm: { $cond: [
+        { $and: [ { $ne: ['$location.lat', null] }, { $ne: ['$location.lng', null] } ] },
+        { $multiply: [
+          6371,
+          { $acos: { $add: [
+            { $multiply: [ { $sin: { $degreesToRadians: lat } }, { $sin: { $degreesToRadians: '$location.lat' } } ] },
+            { $multiply: [ { $cos: { $degreesToRadians: lat } }, { $cos: { $degreesToRadians: '$location.lat' } }, { $cos: { $subtract: [ { $degreesToRadians: '$location.lng' }, { $degreesToRadians: lng } ] } } ] }
+          ] } }
+        ] },
+        null
+      ]
+    } } });
+    pipeline.push({ $addFields: { nearbyRank: { $cond: [{ $ne: ['$distanceKm', null] }, 0, 1] } } });
+    pipeline.push({ $sort: { nearbyRank: 1, distanceKm: 1, followers: -1, totalDownloads: -1, totalViews: -1, presetCount: -1 } });
+  } else {
+    pipeline.push({ $sort: { followers: -1, totalDownloads: -1, totalViews: -1, presetCount: -1 } });
+  }
+  pipeline.push({ $limit: 10 });
+  const top = await User.aggregate(pipeline);
+  res.json(top.map(u => ({ ...u, id: u._id.toString(), distanceKm: Number.isFinite(u.distanceKm) ? Math.round(u.distanceKm * 10) / 10 : null })));
+});
+
+router.post('/me/location', auth, async (req, res) => {
+  const lat = Number(req.body?.lat);
+  const lng = Number(req.body?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return res.status(400).json({ error: 'Invalid location' });
+  await User.updateOne({ _id: req.user.id }, { $set: { 'location.lat': lat, 'location.lng': lng, 'location.updatedAt': new Date() } });
+  res.json({ success: true });
+});
+
+router.post('/me/support-request', auth, async (req, res) => {
+  const type = ['password_reset','delete_account','account_access','block_review','other'].includes(String(req.body?.type)) ? String(req.body.type) : 'other';
+  const message = String(req.body?.message || '').trim().slice(0, 1000);
+  if (!message) return res.status(400).json({ error: 'Request message is required' });
+  const user = await User.findById(req.user.id).select('name email telegramId').lean();
+  const request = await SupportRequest.create({ userId: req.user.id, telegramId: user?.telegramId || '', name: user?.name || '', email: user?.email || '', type, message });
+  res.status(201).json({ success: true, id: request._id.toString(), message: 'Request submitted to admin' });
 });
 
 router.get('/me/dashboard', auth, async (req, res) => {

@@ -9,7 +9,7 @@ function serialize(ad) {
     id: ad._id.toString(), title: ad.title, description: ad.description,
     imageUrl: ad.imageUrl, linkUrl: ad.linkUrl, productName: ad.productName,
     originalPrice: ad.originalPrice, salePrice: ad.salePrice,
-    discountPercent: ad.discountPercent, badge: ad.badge,
+    discountPercent: ad.discountPercent, badge: ad.badge, adType: ad.adType || 'personal',
     startsAt: ad.startsAt, endsAt: ad.endsAt,
   };
 }

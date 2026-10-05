@@ -1,12 +1,15 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
 const auth = require('../middleware/auth');
 
 const {
-  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd
+  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest
 } = require('../models');
-const { deleteFromMongo } = require('../config/mongoStorage');
+const { deleteFromMongo, uploadToMongo } = require('../config/mongoStorage');
+const { uploadAdImage, validateParsedUploads, safeImageContentType } = require('../middleware/upload');
 const { createNotification, sendWebPush } = require('../utils/notifications');
 
 const router = express.Router();
@@ -79,6 +82,7 @@ function cleanHttpUrl(value) {
 }
 
 function adPayload(body, existing = {}) {
+  const activeValue = body.active === undefined ? (existing.active ?? true) : (body.active === true || body.active === 'true' || body.active === 1 || body.active === '1');
   const title = String(body.title ?? existing.title ?? '').trim().slice(0, 120);
   if (!title) throw new Error('Ad title is required');
   const imageUrl = cleanHttpUrl(body.imageUrl ?? existing.imageUrl);
@@ -99,7 +103,8 @@ function adPayload(body, existing = {}) {
     productName: String(body.productName ?? existing.productName ?? '').trim().slice(0, 120),
     originalPrice, salePrice, discountPercent,
     badge: String(body.badge ?? existing.badge ?? 'Featured').trim().slice(0, 40) || 'Featured',
-    active: body.active === undefined ? (existing.active ?? true) : Boolean(body.active),
+    adType: ['personal','sponsor'].includes(String(body.adType ?? existing.adType)) ? String(body.adType ?? existing.adType) : 'personal',
+    active: activeValue,
     startsAt: body.startsAt ? new Date(body.startsAt) : (existing.startsAt || null),
     endsAt: body.endsAt ? new Date(body.endsAt) : (existing.endsAt || null),
   };
@@ -974,6 +979,53 @@ router.post('/notifications/all', async (req, res) => {
 
 
 // ============================================================
+// ACCOUNT SUPPORT REQUESTS / ADMIN ACCOUNT CONTROL
+// ============================================================
+
+router.get('/support-requests', async (req, res) => {
+  try {
+    const status = String(req.query.status || 'open');
+    const filter = ['open','in_progress','resolved','rejected','all'].includes(status) && status !== 'all' ? { status } : {};
+    const rows = await SupportRequest.find(filter).sort({ createdAt: -1 }).limit(100).populate('userId', 'name username email status role').lean();
+    res.json({ items: rows.map(r => ({ ...r, id: r._id.toString(), userId: r.userId?._id?.toString() || r.userId || null })) });
+  } catch (err) { console.error('Support requests error:', err); res.status(500).json({ error: 'Failed to load support requests' }); }
+});
+
+router.put('/support-requests/:id', async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid request ID' });
+    const request = await SupportRequest.findById(req.params.id);
+    if (!request) return res.status(404).json({ error: 'Request not found' });
+    const status = String(req.body?.status || '');
+    if (!['open','in_progress','resolved','rejected'].includes(status)) return res.status(400).json({ error: 'Invalid request status' });
+    request.status = status;
+    request.adminNote = String(req.body?.adminNote || '').slice(0, 1000);
+    request.resolvedBy = ['resolved','rejected'].includes(status) ? req.user.id : null;
+    request.resolvedAt = ['resolved','rejected'].includes(status) ? new Date() : null;
+    await request.save();
+    if (request.userId) await createNotification(request.userId, 'support', `Your account support request is now ${status.replace('_',' ')}.`, '/');
+    res.json({ success: true, request: { ...request.toObject(), id: request._id.toString() } });
+  } catch (err) { console.error('Support update error:', err); res.status(500).json({ error: 'Failed to update support request' }); }
+});
+
+router.post('/users/:id/reset-password', async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid user ID' });
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role === 'admin' && user._id.toString() !== req.user.id) return res.status(403).json({ error: 'Cannot reset another admin password' });
+    const tempPassword = crypto.randomBytes(8).toString('base64url').slice(0, 12) + 'aA1';
+    user.password = await bcrypt.hash(tempPassword, 12);
+    user.passwordResetTokenHash = '';
+    user.passwordResetExpires = null;
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+    await user.save();
+    if (user._id.toString() !== req.user.id) await createNotification(user._id, 'security', 'An administrator reset your password. Use the temporary password provided by support and change it immediately.', '/');
+    res.json({ success: true, temporaryPassword: tempPassword, message: 'Temporary password generated. It is shown only once.' });
+  } catch (err) { console.error('Admin reset password error:', err); res.status(500).json({ error: 'Failed to reset password' }); }
+});
+
+// ============================================================
 // HOME AD MANAGEMENT
 // ============================================================
 
@@ -987,9 +1039,13 @@ router.get('/ads', async (req, res) => {
   }
 });
 
-router.post('/ads', async (req, res) => {
+router.post('/ads', uploadAdImage, async (req, res) => {
   try {
+    if (req.file) validateParsedUploads(req);
     const payload = adPayload(req.body || {});
+    if (req.file) {
+      payload.imageUrl = await uploadToMongo(req.file.buffer, `ads/${crypto.randomUUID()}.webp`, safeImageContentType(req.file), { kind: 'ad', userId: req.user.id });
+    }
     const ad = await HomeAd.create({ ...payload, createdBy: req.user.id });
     res.status(201).json({ success: true, ad: { ...ad.toObject(), id: ad._id.toString() } });
   } catch (err) {
@@ -998,13 +1054,17 @@ router.post('/ads', async (req, res) => {
   }
 });
 
-router.put('/ads/:id', async (req, res) => {
+router.put('/ads/:id', uploadAdImage, async (req, res) => {
   try {
     if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ad ID' });
+    if (req.file) validateParsedUploads(req);
     const ad = await HomeAd.findById(req.params.id);
     if (!ad) return res.status(404).json({ error: 'Ad not found' });
+    const oldImage = ad.imageUrl;
     Object.assign(ad, adPayload(req.body || {}, ad.toObject()));
+    if (req.file) ad.imageUrl = await uploadToMongo(req.file.buffer, `ads/${crypto.randomUUID()}.webp`, safeImageContentType(req.file), { kind: 'ad', userId: req.user.id });
     await ad.save();
+    if (req.file && oldImage && oldImage !== ad.imageUrl) await deleteFromMongo(oldImage);
     res.json({ success: true, ad: { ...ad.toObject(), id: ad._id.toString() } });
   } catch (err) {
     console.error('Update ad error:', err);
@@ -1015,8 +1075,10 @@ router.put('/ads/:id', async (req, res) => {
 router.delete('/ads/:id', async (req, res) => {
   try {
     if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ad ID' });
-    const result = await HomeAd.deleteOne({ _id: req.params.id });
-    if (!result.deletedCount) return res.status(404).json({ error: 'Ad not found' });
+    const ad = await HomeAd.findById(req.params.id).select('imageUrl');
+    if (!ad) return res.status(404).json({ error: 'Ad not found' });
+    await deleteFromMongo(ad.imageUrl);
+    await ad.deleteOne();
     res.json({ success: true });
   } catch (err) {
     console.error('Delete ad error:', err);
