@@ -56,6 +56,11 @@ const UserSchema = new Schema({
   lastLogin: { type: Date },
   status: { type: String, enum: ['active', 'blocked', 'deactivated'], default: 'active' },
   sessionVersion: { type: Number, default: 0 },
+  location: {
+    lat: { type: Number, min: -90, max: 90, default: null },
+    lng: { type: Number, min: -180, max: 180, default: null },
+    updatedAt: { type: Date, default: null },
+  },
 }, { timestamps: true });
 
 // ========== PRESET ==========
@@ -181,6 +186,7 @@ const HomeAdSchema = new Schema({
   salePrice: { type: Number, default: 0, min: 0, max: 99999999 },
   discountPercent: { type: Number, default: 0, min: 0, max: 100 },
   badge: { type: String, default: 'Featured', trim: true, maxlength: 40 },
+  adType: { type: String, enum: ['personal', 'sponsor'], default: 'personal', index: true },
   active: { type: Boolean, default: true, index: true },
   startsAt: { type: Date, default: null },
   endsAt: { type: Date, default: null },
@@ -213,5 +219,6 @@ const Comment = mongoose.model('Comment', CommentSchema);
 
 const Message = mongoose.model('Message', MessageSchema);
 const HomeAd = mongoose.model('HomeAd', HomeAdSchema);
+const SupportRequest = mongoose.model('SupportRequest', SupportRequestSchema);
 
-module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd };
+module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest };
