@@ -14,7 +14,7 @@ function detectImageType(buffer) {
 
 function validateUploadedFile(file) {
   const ext = path.extname(file.originalname).toLowerCase();
-  const isImage = ['previewImage', 'previewImages', 'avatar'].includes(file.fieldname);
+  const isImage = ['previewImage', 'previewImages', 'avatar', 'image'].includes(file.fieldname);
 
   if (isImage) {
     if (!IMAGE_EXTS.includes(ext)) throw new Error('Only JPG, JPEG, PNG or WEBP images are allowed');
@@ -48,7 +48,7 @@ const fileFilter = (req, file, cb) => {
   // Multer's fileFilter runs before memoryStorage has exposed the complete
   // buffer, so extension filtering happens here; content/magic validation is
   // performed immediately after parsing in the route-level helper below.
-  const isImage = ['previewImage', 'previewImages', 'avatar'].includes(file.fieldname);
+  const isImage = ['previewImage', 'previewImages', 'avatar', 'image'].includes(file.fieldname);
   const ext = path.extname(file.originalname).toLowerCase();
   if (isImage && IMAGE_EXTS.includes(ext)) return cb(null, true);
   if (!isImage && PRESET_EXTS.includes(ext)) return cb(null, true);
@@ -74,6 +74,12 @@ const bulkUploadFields = multer({
   { name: 'previewImages', maxCount: 20 }
 ]);
 
+const uploadAdImage = multer({
+  storage: multer.memoryStorage(),
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 10, parts: 12 }
+}).single('image');
+
 const uploadAvatar = multer({
   storage: multer.memoryStorage(),
   fileFilter,
@@ -98,4 +104,4 @@ function validateParsedUploads(req) {
 
 function safeImageContentType(file) { return detectImageType(file?.buffer) || 'application/octet-stream'; }
 
-module.exports = { uploadFields, bulkUploadFields, uploadAvatar, validateParsedUploads, detectImageType, safeImageContentType };
+module.exports = { uploadFields, bulkUploadFields, uploadAvatar, uploadAdImage, validateParsedUploads, detectImageType, safeImageContentType };
