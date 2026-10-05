@@ -10,7 +10,7 @@ const ADMIN_CHAT_ID = String(process.env.ADMIN_CHAT_ID || '');
 const API_BASE = (process.env.API_BASE || `${process.env.CLIENT_URL || 'https://presethub.site'}/api`).replace(/\/$/, '');
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/$/, '');
 
-const { User, Preset, Download } = require('./models');
+const { User, Preset, Download, SupportRequest } = require('./models');
 const { connectDB } = require('./config/db');
 
 let botStarted = false;
@@ -27,7 +27,7 @@ function mainMenu(user) {
     ['⬇️ Downloads', '🔔 Notifications'],
     ['👤 Profile', '📤 Upload Preset'],
     ['🔗 Share Preset', '🛒 My Orders'],
-    ['❓ Help']
+    ['🆘 Account Help', '❓ Help']
   ];
   if (user?.role === 'admin') rows.push(['🛠️ Admin Dashboard', '👥 Admin Users']);
   return Markup.keyboard(rows).resize();
@@ -89,6 +89,22 @@ async function unlinkTelegramId(telegramId) {
   telegramApiTokens.delete(String(telegramId));
   await User.updateOne({ telegramId: String(telegramId) }, { $unset: { telegramId: 1, token: 1 } });
 }
+
+async function submitAccountHelp(ctx, type = 'account_access', message = '') {
+  const user = ctx.dbUser || await getUserByTelegramId(ctx.from?.id);
+  const text = String(message || '').trim().slice(0, 1000);
+  const request = await SupportRequest.create({
+    userId: user?._id || null, telegramId: String(ctx.from?.id || ''),
+    name: user?.name || ctx.from?.first_name || 'Telegram User', email: user?.email || '',
+    type, message: text || 'User requested account assistance from Telegram.'
+  });
+  if (ADMIN_CHAT_ID) {
+    const label = { password_reset:'Password reset', delete_account:'Delete account', account_access:'Account access', block_review:'Block review', other:'Other' }[type] || 'Account help';
+    await bot.telegram.sendMessage(ADMIN_CHAT_ID, `🆘 *Account request*\n\nType: ${label}\nUser: ${safeText(user?.name || ctx.from?.first_name)}\nTelegram: ${ctx.from?.id}\nEmail: ${safeText(user?.email || '—')}\n\n${safeText(text || 'No extra details') }\n\nRequest ID: ${request._id}`, { parse_mode:'Markdown' }).catch(()=>{});
+  }
+  return request;
+}
+
 
 async function sendPresetCard(ctx, p) {
   const caption = `🎨 ${safeText(p.name, 100)}\n👤 ${safeText(p.author || 'Creator', 80)}\n📂 ${safeText(p.category || 'General', 40)}\n💰 ${money(p.price)}\n⭐ ${Number(p.avgRating || 0).toFixed(1)} · 👁 ${p.views || 0} · ❤️ ${p.likesCount || 0} · 💬 ${p.commentsCount || 0} · ↗️ ${p.shares || 0} · ⬇️ ${p.downloads || 0}\n\n${safeText(p.description || 'Lightroom preset', 500)}\n\n🔗 ${SITE_URL}/preset/${p.id}/`;
@@ -295,7 +311,7 @@ function registerHandlers() {
     if (ADMIN_CHAT_ID && String(ctx.chat.id) !== ADMIN_CHAT_ID) bot.telegram.sendMessage(ADMIN_CHAT_ID, `👤 New bot user: ${safeText(ctx.from.first_name)} (@${safeText(ctx.from.username || 'No username')})`).catch(() => {});
   });
 
-  bot.command('help', ctx => ctx.reply(`📚 *Commands*\n\n/start\n/signup\n/login\n/logout\n/profile\n/dashboard\n/search <query>\n/latest\n/presets\n/categories\n/category <name>\n/popular\n/top\n/preset <id>\n/download <id>\n/downloads\n/myorders\n/mypresets\n/notifications\n/share <preset-id>\n/upload\n/subscription\n/referral\n/earnings\n/admin`, { parse_mode: 'Markdown', ...mainMenu(ctx.dbUser) }));
+  bot.command('help', ctx => ctx.reply(`📚 *Commands*\n\n/start\n/signup\n/login\n/logout\n/profile\n/dashboard\n/search <query>\n/latest\n/presets\n/categories\n/category <name>\n/popular\n/top\n/preset <id>\n/download <id>\n/downloads\n/myorders\n/mypresets\n/notifications\n/share <preset-id>\n/upload\n/subscription\n/referral\n/earnings\n/accounthelp\n/admin`, { parse_mode: 'Markdown', ...mainMenu(ctx.dbUser) }));
   bot.command('signup', ctx => ctx.reply(`📝 Website पर account बनाएं:\n${SITE_URL}/?action=signup`, mainMenu(ctx.dbUser)));
   bot.command('login', async ctx => {
     if (ctx.dbUser?.token) return ctx.reply('✅ आपका account पहले से linked है।', mainMenu(ctx.dbUser));
@@ -325,6 +341,11 @@ function registerHandlers() {
   bot.command('subscription', async ctx => { if(!requireLogin(ctx))return; try { const r=await axios.get(`${API_BASE}/users/me/subscription`,{headers:apiHeaders(ctx.dbUser)}); const s=r.data; await ctx.reply(`👑 *Subscription*\n\nStatus: ${s.isPremium?'Premium':'Free'}\nExpiry: ${s.expiry||'—'}\nAd Watches: ${s.adWatchCount||0}\nReferral: ${s.referralCode||'—'}`,{parse_mode:'Markdown'}); } catch(e){ctx.reply('❌ Subscription load नहीं हुआ।');} });
   bot.command('referral', async ctx => { if(!requireLogin(ctx))return; try { const r=await axios.post(`${API_BASE}/users/referrals/generate`,{}, {headers:apiHeaders(ctx.dbUser)}); await ctx.reply(`🔗 Referral code: \`${r.data.referralCode}\``,{parse_mode:'Markdown'}); } catch(e){ctx.reply('❌ Referral code नहीं बना।');} });
   bot.command('earnings', async ctx => { if(!requireLogin(ctx))return; try { const r=await axios.get(`${API_BASE}/users/${ctx.dbUser.id}/earnings`,{headers:apiHeaders(ctx.dbUser)}); const e=r.data; await ctx.reply(`💰 *Earnings*\n\nRevenue: ₹${Number(e.totalRevenue||0).toFixed(2)}\nDownloads: ${e.totalDownloads||0}\nImpressions: ${e.totalImpressions||0}`,{parse_mode:'Markdown'}); } catch(e){ctx.reply('❌ Earnings load नहीं हुई।');} });
+  bot.command('accounthelp', async ctx => { await ctx.reply('🆘 Account help\n\nReply with one of these exact commands:\n/passwordhelp — forgot password\n/deletehelp — request account deletion\n/accesshelp — account access issue\n/blockhelp — review a blocked account'); });
+  bot.command('passwordhelp', async ctx => { await submitAccountHelp(ctx, 'password_reset', 'I forgot my password and need a password reset.'); await ctx.reply('✅ Password reset request admin को भेज दी गई है.'); });
+  bot.command('deletehelp', async ctx => { await submitAccountHelp(ctx, 'delete_account', 'I want to request account deletion.'); await ctx.reply('✅ Account deletion request admin को भेज दी गई है.'); });
+  bot.command('accesshelp', async ctx => { await submitAccountHelp(ctx, 'account_access', 'I cannot access my account.'); await ctx.reply('✅ Account access request admin को भेज दी गई है.'); });
+  bot.command('blockhelp', async ctx => { await submitAccountHelp(ctx, 'block_review', 'Please review my blocked account.'); await ctx.reply('✅ Block review request admin को भेज दी गई है.'); });
   bot.command('upload', startUpload);
   bot.command('cancel', async ctx => { loginStates.delete(ctx.chat.id); uploadStates.delete(ctx.chat.id); await ctx.reply('❌ Current action cancelled.', mainMenu(ctx.dbUser)); });
 
@@ -353,7 +374,8 @@ function registerHandlers() {
       '🏠 Dashboard':()=>showDashboard(ctx),'🔍 Search':()=>ctx.reply('🔍 Search: `/search sunset`',{parse_mode:'Markdown'}),'🆕 Latest':()=>showLatest(ctx),'📦 Presets':()=>showAllPresets(ctx),
       '⬇️ Downloads':()=>showDownloads(ctx),'🔔 Notifications':()=>showNotifications(ctx),'👤 Profile':()=>showProfile(ctx),'📤 Upload Preset':()=>startUpload(ctx),
       '🔗 Share Preset':()=>ctx.reply('🔗 Share: `/share <preset-id>`',{parse_mode:'Markdown'}),'🛒 My Orders':()=>ctx.reply('🛒 `/myorders`',{parse_mode:'Markdown'}),'❓ Help':()=>ctx.replyWithMarkdown('/help'),
-      '🛠️ Admin Dashboard':()=>adminDashboard(ctx),'👥 Admin Users':()=>adminUsers(ctx)
+      '🛠️ Admin Dashboard':()=>adminDashboard(ctx),'👥 Admin Users':()=>adminUsers(ctx),
+      '🆘 Account Help':async()=>{await ctx.reply('🆘 Account help: /passwordhelp, /deletehelp, /accesshelp, /blockhelp');}
     };
     if(actions[text]) return actions[text]();
     return next();
