@@ -1,0 +1,26 @@
+{
+  "name": "PresetHub",
+  "version": "3.1.0",
+  "release": "YOUPI-PG-INTEGRATION",
+  "source": "presethub-website-main uploaded project with YOUPI PG integration",
+  "validation": {
+    "javascript_syntax": "PASS - all 35 JavaScript files across the project parsed with node --check",
+    "json_parse": "PASS - all 10 project JSON files parsed successfully",
+    "local_html_assets": "PASS - all 14 HTML pages checked; no missing local targets or duplicate HTML IDs detected",
+    "payment_flow": "STATIC REVIEW PASS; live checkout/webhook/MongoDB integration not run because gateway credentials, service, database, and npm dependencies were not available in this workspace",
+    "dependency_runtime_tests": "NOT RUN - backend dependencies are not installed in the workspace",
+    "archive_integrity": "PASS - final ZIP archive checked with unzip -t",
+    "render_yaml": "PASS - render.yaml parsed successfully",
+    "dependency_lockfile": "NOTICE - uploaded backend lockfile is out of sync with backend/package.json; Render uses npm install. Lock regeneration and dependency installation were not tested in this offline workspace."
+  },
+  "key_changes": [
+    "YOUPI PG merchant API payment-session creation",
+    "HMAC-SHA256 raw-body webhook verification with freshness and delivery checks",
+    "Amount, currency, order ownership and idempotent fulfilment validation",
+    "Authenticated server-to-server payment status refresh",
+    "Payment return status polling and secure download after paid state only",
+    "Razorpay remains available as explicitly selectable alternate provider",
+    "Environment template and deployment setup guide"
+  ],
+  "important_notice": "YOUPI PG upstream explicitly describes the gateway as experimental/research-only. This integration is not payment compliance or production-readiness certification."
+}
