@@ -130,10 +130,16 @@ const OrderSchema = new Schema({
   presetId: { type: Schema.Types.ObjectId, ref: 'Preset', required: true, index: true },
   amount: { type: Number, required: true },
   currency: { type: String, default: 'INR' },
-  status: { type: String, enum: ['created', 'paid', 'refunded', 'cancelled'], default: 'created', index: true },
+  status: { type: String, enum: ['created', 'paid', 'refunded', 'cancelled', 'failed', 'expired', 'suspicious'], default: 'created', index: true },
+  provider: { type: String, enum: ['razorpay', 'youpi'], default: 'razorpay', index: true },
   paymentId: { type: String },
+  gatewayPaymentId: { type: String },
+  checkoutUrl: { type: String },
+  utr: { type: String },
+  failureReason: { type: String, maxlength: 400 },
   paidAt: { type: Date },
 }, { timestamps: true, _id: false });
+OrderSchema.index({ userId: 1, presetId: 1, status: 1, createdAt: -1 });
 
 // ========== DOWNLOAD ==========
 const DownloadSchema = new Schema({
