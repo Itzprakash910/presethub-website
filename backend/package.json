@@ -1,7 +1,7 @@
 {
   "name": "presethub-backend",
-  "version": "3.0.0",
-  "description": "PresetHub production backend \u2014 MongoDB + GridFS media storage + PWA + SEO + integrated Telegram bot",
+  "version": "3.1.0",
+  "description": "PresetHub production backend — MongoDB + GridFS media storage + PWA + SEO + integrated Telegram bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

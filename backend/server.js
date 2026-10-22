@@ -295,7 +295,7 @@ app.use('/api/reviews', writeLimiter);
 app.use('/api/chat', writeLimiter);
 
 // ============ BODY PARSERS ============
-app.use(express.json({ limit: '2mb', verify: (req, res, buf) => { if (req.originalUrl === '/api/payments/webhook') req.rawBody = Buffer.from(buf); } }));
+app.use(express.json({ limit: '2mb', verify: (req, res, buf) => { if (['/api/payments/webhook', '/api/payments/youpi/webhook'].includes(String(req.originalUrl || '').split('?')[0])) req.rawBody = Buffer.from(buf); } }));
 app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 1000 }));
 
 // ============ MONGODB GRIDFS MEDIA ============
