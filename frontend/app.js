@@ -1,4 +1,4 @@
-/* PresetHub Frontend — production client v3.0.0 */
+/* PresetHub Frontend — production client v3.1.0 */
 (() => {
   'use strict';
 
@@ -234,7 +234,7 @@
         localStorage.removeItem('presethub_token');
         updateAuthUI();
       }
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      if (!res.ok) { const err = new Error(data.error || `Request failed (${res.status})`); err.status = res.status; throw err; }
       if (method === 'GET' && cacheableApi(path)) cacheSet(cacheKey, data);
       return data;
     } catch (err) {
@@ -638,15 +638,36 @@
     finally { setTimeout(()=>progress?.remove(), 650); }
   }
 
-  // ============ PAYMENT ============
+  // ============ PAYMENT (YOUPI PG + SELECTABLE RAZORPAY PROVIDER) ============
+  let paymentStartInFlight = false;
   async function startPayment(p) {
     if (!requireAuth()) return;
+    if (paymentStartInFlight) {
+      toast('Checkout is already starting. Please wait a moment.', 'info');
+      return;
+    }
+    paymentStartInFlight = true;
     try {
+      const config = await api('/payments/provider');
+      if (config.provider === 'youpi') {
+        const order = await api('/payments/youpi/create-order', {
+          method: 'POST', body: JSON.stringify({ presetId: p.id })
+        });
+        if (!order.checkoutUrl || !/^https?:\/\//i.test(order.checkoutUrl)) {
+          throw new Error('Payment gateway returned an invalid checkout URL.');
+        }
+        toast('Opening secure YOUPI PG checkout…', 'info');
+        window.location.assign(order.checkoutUrl);
+        return;
+      }
+      if (config.provider !== 'razorpay') {
+        throw new Error('Payment is not configured yet. Please contact PresetHub support.');
+      }
       if (!window.Razorpay) {
         await new Promise((resolve, reject) => {
           const s = document.createElement('script');
           s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          s.onload = resolve; s.onerror = reject;
+          s.onload = resolve; s.onerror = () => reject(new Error('Could not load the payment checkout. Please try again.'));
           document.head.appendChild(s);
         });
       }
@@ -664,8 +685,65 @@
           } catch (e) { toast(e.message, 'error'); }
         }
       });
+      rz.on('payment.failed', response => toast(response?.error?.description || 'Payment failed. Please try again.', 'error'));
       rz.open();
-    } catch (e) { toast(e.message, 'error'); }
+    } catch (e) { toast(e.message || 'Could not start payment. Please try again.', 'error'); }
+    finally { paymentStartInFlight = false; }
+  }
+
+  // The YOUPI return query is only a navigation hint. The order is unlocked only after
+  // the authenticated backend reports a verified paid state from a signed webhook/status lookup.
+  async function handleYoupiPaymentReturn(orderId) {
+    const cleanUrl = new URL(location.href);
+    cleanUrl.searchParams.delete('payment_return');
+    cleanUrl.searchParams.delete('orderId');
+    history.replaceState(history.state, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+    if (!orderId || !/^[A-Za-z0-9_-]{8,100}$/.test(orderId)) {
+      toast('Invalid payment return reference. Check your purchase history.', 'error');
+      return;
+    }
+    if (!state.user) {
+      toast('Payment was returned to PresetHub. Please log in to the same account to check its status.', 'info', 7000);
+      return;
+    }
+    let lastOrder = null;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      try {
+        lastOrder = await api(`/payments/order/${encodeURIComponent(orderId)}`);
+        if (lastOrder.status === 'paid') {
+          toast('Payment verified. Your preset download is ready.');
+          setTimeout(() => downloadPreset(lastOrder.presetId, { skipPayment: true }), 350);
+          return;
+        }
+        if (['failed', 'expired', 'cancelled', 'suspicious'].includes(lastOrder.status)) {
+          toast(lastOrder.status === 'suspicious'
+            ? 'Payment needs a security review. Please contact support before paying again.'
+            : `Payment ${lastOrder.status}. You can retry checkout from the preset page.`, 'error', 7000);
+          return;
+        }
+        // Try the gateway's authenticated server API if the webhook is delayed. Browser events are never used to unlock purchases.
+        if (attempt === 3 || attempt === 7) {
+          try { lastOrder = await api(`/payments/youpi/refresh/${encodeURIComponent(orderId)}`, { method: 'POST', body: '{}' }); }
+          catch (_) {}
+          if (lastOrder?.status === 'paid') {
+            toast('Payment verified. Your preset download is ready.');
+            setTimeout(() => downloadPreset(lastOrder.presetId, { skipPayment: true }), 350);
+            return;
+          }
+          if (['failed', 'expired', 'cancelled', 'suspicious'].includes(lastOrder?.status)) {
+            toast(lastOrder.status === 'suspicious' ? 'Payment needs a security review. Please contact support.' : `Payment ${lastOrder.status}. You can retry checkout.`, 'error', 7000);
+            return;
+          }
+        }
+      } catch (e) {
+        if (e.status === 401 || e.status === 403 || e.status === 404) {
+          toast(e.message || 'Could not verify this payment for the current account.', 'error', 7000);
+          return;
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    toast('Payment is still being confirmed. Do not pay again yet; refresh your account or contact support if the order remains pending.', 'info', 8000);
   }
 
   // ============ WISHLIST / LIKE ============
@@ -1313,7 +1391,7 @@
 
   function registerSW() {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js?v=3.0.0', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
+      navigator.serviceWorker.register('/sw.js?v=3.1.0', { updateViaCache: 'none' }).then(reg => reg.update().catch(() => {})).catch(() => {});
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (sessionStorage.getItem('ph-sw-refreshed') === '1') return;
         sessionStorage.setItem('ph-sw-refreshed', '1');
@@ -1340,6 +1418,10 @@
     const publicPromise = Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured(), loadHomeAd()]);
     await Promise.allSettled([authPromise, publicPromise]);
     updateAuthUI();
+    const paymentParams = new URLSearchParams(location.search);
+    if (paymentParams.get('payment_return') === '1') {
+      handleYoupiPaymentReturn(paymentParams.get('orderId') || '').catch(e => toast(e.message || 'Could not check the payment status.', 'error'));
+    }
     if (state.user) {
       refreshUnreadNotifications();
       if (state.notificationTimer) clearInterval(state.notificationTimer);
