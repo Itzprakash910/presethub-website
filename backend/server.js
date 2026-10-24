@@ -183,7 +183,8 @@ app.use(helmet({
       scriptSrc: [
         "'self'",
         "https://pagead2.googlesyndication.com",
-        "https://googleads.g.doubleclick.net"
+        "https://googleads.g.doubleclick.net",
+        "https://sdk.cashfree.com"
       ],
       styleSrc: [
         "'self'",
@@ -201,11 +202,13 @@ app.use(helmet({
         "https://*.google.com",
         "https://*.googlesyndication.com",
         "https://*.doubleclick.net",
+        "https://*.cashfree.com",
       ].filter(Boolean),
       frameSrc: [
         "'self'",
         "https://googleads.g.doubleclick.net",
-        "https://*.google.com"
+        "https://*.google.com",
+        "https://*.cashfree.com"
       ],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
@@ -309,7 +312,7 @@ app.use('/api/reviews', writeLimiter);
 app.use('/api/chat', writeLimiter);
 
 // ============ BODY PARSERS ============
-app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { if (['/api/payments/youpi/webhook'].includes(String(req.originalUrl || '').split('?')[0])) req.rawBody = Buffer.from(buf); } }));
+app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { if (['/api/payments/youpi/webhook', '/api/payments/cashfree/webhook'].includes(String(req.originalUrl || '').split('?')[0])) req.rawBody = Buffer.from(buf); } }));
 app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 1000 }));
 app.use(securityGuard); // blocks NoSQL/prototype injection + probes and alerts the admin
 
@@ -380,6 +383,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/presets', presetRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/payments/cashfree', require('./routes/cashfree'));
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ads', adsRoutes);
