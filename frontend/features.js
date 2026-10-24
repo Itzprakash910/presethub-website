@@ -159,9 +159,8 @@
       if (!(amount >= 10 && amount <= 500)) return toast('Enter ₹10 to ₹500', 'error');
       const btn = $('#tipGo'); btn.disabled = true; btn.textContent = 'Opening secure checkout…';
       try {
-        const r = await api('/payments/youpi/tip', { method: 'POST', body: JSON.stringify({ recipientId: authorId, amount, note: $('#tipNote').value }) });
-        location.assign(r.checkoutUrl);
-      } catch (e) { btn.disabled = false; btn.textContent = 'Continue to payment'; toast(e.message, 'error'); }
+        await window.PresetHubApp.checkout('/payments/youpi/tip', { recipientId: authorId, amount, note: $('#tipNote').value });
+      } finally { btn.disabled = false; btn.textContent = 'Continue to payment'; }
     };
   }
 

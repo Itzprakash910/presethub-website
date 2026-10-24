@@ -236,7 +236,7 @@
         localStorage.removeItem('presethub_token');
         updateAuthUI();
       }
-      if (!res.ok) { const err = new Error(data.error || `Request failed (${res.status})`); err.status = res.status; throw err; }
+      if (!res.ok) { const err = new Error(data.error || `Request failed (${res.status})`); err.status = res.status; err.code = data.code || ''; throw err; }
       if (method === 'GET' && cacheableApi(path)) cacheSet(cacheKey, data);
       return data;
     } catch (err) {
@@ -648,13 +648,76 @@
 
   // ============ PAYMENT (YOUPI PG) ============
   let paymentStartInFlight = false;
+  // ---- Cashfree SDK (loaded only when a payment starts) ----
+  let cfSdkPromise = null;
+  function loadCashfreeSdk() {
+    if (window.Cashfree) return Promise.resolve(window.Cashfree);
+    if (!cfSdkPromise) {
+      cfSdkPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://sdk.cashfree.com/js/v3/cashfree.js';
+        s.async = true;
+        s.onload = () => (window.Cashfree ? resolve(window.Cashfree) : reject(new Error('Secure checkout did not load. Please try again.')));
+        s.onerror = () => { cfSdkPromise = null; reject(new Error('Could not load secure checkout. Check your connection and try again.')); };
+        document.head.appendChild(s);
+      });
+    }
+    return cfSdkPromise;
+  }
+  // Asks for the 10-digit mobile Cashfree needs. Resolves null if the user closes the dialog.
+  function askMobile() {
+    return new Promise(resolve => {
+      openModal(`<div class="pro-modal">
+        <div class="pro-hero"><span class="pro-crown"><i class="fas fa-mobile-screen"></i></span><h2>Mobile number</h2><p>Payment ke liye 10-digit mobile number chahiye. Ye aapke profile mein save ho jayega.</p></div>
+        <input id="cfPhone" class="feat-input" inputmode="numeric" maxlength="12" autocomplete="tel" placeholder="9876543210" aria-label="Mobile number" style="width:100%;margin:10px 0">
+        <button class="btn btn-primary pro-buy" id="cfPhoneGo" type="button">Continue to payment</button></div>`);
+      const input = $('#cfPhone'), go = $('#cfPhoneGo');
+      input?.focus();
+      let done = false;
+      const watch = setInterval(() => { if (!done && !$('#cfPhone')) { done = true; clearInterval(watch); resolve(null); } }, 400);
+      go?.addEventListener('click', () => {
+        const v = String(input.value || '').replace(/\D/g, '').slice(-10);
+        if (!/^[6-9]\d{9}$/.test(v)) { toast('Enter a valid 10-digit Indian mobile number', 'error'); return; }
+        done = true; clearInterval(watch); closeModal(); resolve(v);
+      });
+    });
+  }
+
+  // One checkout entry point for presets, Pro plans and tips. Provider comes from the server.
   async function openYoupiCheckout(endpoint, body) {
     if (paymentStartInFlight) { toast('Checkout is already starting. Please wait a moment.', 'info'); return; }
     paymentStartInFlight = true;
     try {
       const config = await api('/payments/provider');
-      if (config.provider !== 'youpi') throw new Error('Payments are not configured yet. Please contact PresetHub support.');
-      const order = await api(endpoint, { method: 'POST', body: JSON.stringify(body) });
+      if (!config.enabled || !['cashfree', 'youpi'].includes(config.provider)) throw new Error('Payments are not configured yet. Please contact PresetHub support.');
+      const cashfree = config.provider === 'cashfree';
+      const url = cashfree ? endpoint.replace('/payments/youpi/', '/payments/cashfree/') : endpoint;
+      const payload = { ...body };
+      if (cashfree && !state.user?.phone) {
+        const phone = await askMobile();
+        if (!phone) return;
+        payload.customerPhone = phone;
+      }
+      let order;
+      try {
+        order = await api(url, { method: 'POST', body: JSON.stringify(payload) });
+      } catch (e) {
+        if (e.code !== 'PHONE_REQUIRED') throw e;
+        const phone = await askMobile();
+        if (!phone) return;
+        payload.customerPhone = phone;
+        order = await api(url, { method: 'POST', body: JSON.stringify(payload) });
+      }
+      if (payload.customerPhone && state.user) state.user = { ...state.user, phone: payload.customerPhone };
+
+      if (cashfree) {
+        if (!order.paymentSessionId) throw new Error('Payment session was not created. Please try again.');
+        const CashfreeFactory = await loadCashfreeSdk();
+        const cf = CashfreeFactory({ mode: config.mode === 'production' ? 'production' : 'sandbox' });
+        toast('Opening secure Cashfree checkout…', 'info');
+        await cf.checkout({ paymentSessionId: order.paymentSessionId, redirectTarget: '_self' });
+        return;
+      }
       if (!order.checkoutUrl || !/^https?:\/\//i.test(order.checkoutUrl)) throw new Error('Payment gateway returned an invalid checkout URL.');
       toast('Opening secure YOUPI PG checkout…', 'info');
       window.location.assign(order.checkoutUrl);
@@ -1728,7 +1791,7 @@
 
   // ============ EXPORTS ============
   window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats, showMessagesInbox, openSiteMenu };
-  window.PresetHubApp = { openAuth: m => openAuth(m || 'login'), toast: (...a) => toast(...a), user: () => state.user, showPro: () => showProModal() };
+  window.PresetHubApp = { openAuth: m => openAuth(m || 'login'), toast: (...a) => toast(...a), user: () => state.user, showPro: () => showProModal(), checkout: (endpoint, body) => openYoupiCheckout(endpoint, body) };
   window.addEventListener('DOMContentLoaded', bootstrap);
   window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); });
   window.addEventListener('focus', () => { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); });
