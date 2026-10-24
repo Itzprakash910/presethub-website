@@ -42,6 +42,7 @@ function validateUploadedFile(file) {
   if (ext === '.zip' && file.buffer.subarray(0,4).toString('hex') !== '504b0304' && file.buffer.subarray(0,4).toString('hex') !== '504b0506') {
     throw new Error('Invalid ZIP preset file');
   }
+  if (ext === '.zip') require('../utils/security').zipSafety(file.buffer);
 }
 
 const fileFilter = (req, file, cb) => {
