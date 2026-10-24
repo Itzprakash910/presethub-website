@@ -1,4 +1,4 @@
-/* PresetHub Frontend — production client v3.1.0 */
+/* PresetHub Frontend — production client v3.2.0 */
 (() => {
   'use strict';
 
@@ -54,6 +54,8 @@
     return match ? decodeURIComponent(match[1]) : '';
   }
 
+  const tickBadge = t => t ? ` <span class="tick tick-${esc(t)}" title="${t === 'gold' ? 'Star creator' : t === 'blue' ? 'Verified creator' : 'Rising creator'}"><i class="fas fa-circle-check"></i></span>` : '';
+  const proBadge = u => u ? ' <span class="pro-chip" title="PresetHub Pro"><i class="fas fa-crown"></i> PRO</span>' : '';
   const avatarTag = (src, name, cls='') => {
     const initial = esc(String(name || 'U').trim().charAt(0).toUpperCase() || 'U');
     if (!src) return `<span class="avatar-fallback ${cls}" aria-hidden="true">${initial}</span>`;
@@ -285,6 +287,15 @@
     return true;
   }
 
+  // Pro members see no ads anywhere (the flag is also read by cookie-consent.js on every page).
+  function applyProState(isPro, expiry) {
+    document.body.classList.toggle('is-pro', !!isPro);
+    try {
+      if (isPro && expiry) localStorage.setItem('ph_pro_until', String(new Date(expiry).getTime()));
+      else localStorage.removeItem('ph_pro_until');
+    } catch (_) {}
+    window.dispatchEvent(new CustomEvent('presethub:user', { detail: state.user }));
+  }
   function updateAuthUI() {
     const auth = $('#authSection'), user = $('#userSection'), avatar = $('#avatar'), admin = $('#adminLink');
     if (state.user) {
@@ -299,10 +310,12 @@
         }
       }
       if (admin) admin.classList.toggle('hidden', state.user.role !== 'admin');
+      applyProState(Boolean(state.user.isPro), state.user.subscription?.expiry);
       const msg = $('#messageButton');
       if (msg) msg.hidden = false;
       refreshUnreadMessages();
     } else {
+      applyProState(false);
       if (auth) auth.style.display = 'flex';
       if (user) user.style.display = 'none';
       const msg = $('#messageButton');
@@ -315,6 +328,11 @@
   }
 
   // ============ PRESET CARD ============
+  // Placeholder cards shown while presets load (same shape as the real card, so nothing jumps).
+  function presetSkeletonHtml(n = 8) {
+    const one = `<div class="preset-card compact skel-card" aria-hidden="true"><div class="skel-thumb skeleton"></div><div class="skel-body"><div class="skel-line w-70 skeleton"></div><div class="skel-line w-45 skeleton"></div><div class="skel-row"><span class="skel-pill skeleton"></span><span class="skel-pill skeleton"></span><span class="skel-pill skeleton"></span></div></div></div>`;
+    return `<div class="sr-only" role="status">Loading presets…</div>` + one.repeat(n);
+  }
   function presetCard(p) {
     const image = imgTag(p.previewImage, `${p.name} preset preview`, 'preset-preview-img');
     const likes = Number(p.likesCount || (p.likes || []).length);
@@ -323,35 +341,24 @@
     const views = Number(p.views || 0);
     const shares = Number(p.shares || 0);
     return `
-      <article class="preset-card" data-preset-card="${esc(p.id)}">
+      <article class="preset-card compact" data-preset-card="${esc(p.id)}">
         <label class="select-preset" title="Select preset">
           <input type="checkbox" data-action="select-preset" data-id="${esc(p.id)}" ${state.selected.has(String(p.id)) ? 'checked' : ''} aria-label="Select ${esc(p.name)}">
           <span></span>
         </label>
-        <div class="thumb">
+        <div class="thumb" data-action="view-preset" data-id="${esc(p.id)}" role="button" tabindex="0" aria-label="Preview ${esc(p.name)}">
           ${image}
-          <div class="overlay">
-            <button class="btn btn-sm" data-action="view-preset" data-id="${esc(p.id)}"><i class="fas fa-eye"></i> Preview</button>
-          </div>
           <span class="thumb-price ${Number(p.price || 0) === 0 ? 'free' : ''}">${money(p.price)}</span>
         </div>
         <div class="info">
-          <span class="tag">${esc(p.category || 'General')}</span>
           <h3>${esc(p.name)}</h3>
           <button class="author-link" data-action="profile" data-id="${esc(p.authorId || '')}">${esc(p.author || 'Creator')}</button>
-          <div class="preset-description">${esc(p.description || 'Lightroom preset')}</div>
-          <div class="preset-stats" aria-label="Preset statistics">
-            <span title="Rating">⭐ ${rating}</span>
-            <span title="Downloads">↓ ${downloads}</span>
-            <span title="Views">👁 ${views}</span>
-            <span title="Shares">↗ ${shares}</span>
-          </div>
+          <div class="preset-stats" aria-label="Preset statistics"><span title="Rating">⭐ ${rating}</span><span title="Downloads">↓ ${downloads}</span><span title="Views">👁 ${views}</span></div>
           <div class="card-actions">
-            <button class="icon-action" data-action="wishlist" data-id="${esc(p.id)}" title="Wishlist" aria-label="Wishlist"><i class="far fa-heart"></i></button>
             <button class="icon-action" data-action="like" data-id="${esc(p.id)}" title="Like" aria-label="Like">♥ ${likes}</button>
             <button class="icon-action" data-action="share" data-id="${esc(p.id)}" title="Share" aria-label="Share"><i class="fas fa-share-nodes"></i></button>
-            <a class="icon-action" href="${presetUrl(p)}" title="Open preset page" aria-label="Open preset page"><i class="fas fa-link"></i></a>
-            <button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}"><i class="fas fa-arrow-up-right-from-square"></i> Open</button>
+            <button class="icon-action" data-save-preset="${esc(p.id)}" title="Save to collection" aria-label="Save to collection"><i class="far fa-bookmark"></i></button>
+            <button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}">Open</button>
           </div>
         </div>
       </article>`;
@@ -429,10 +436,11 @@
     if (state.price) params.set('price', state.price);
     if (state.category) params.set('category', state.category);
     const grid = $('#presetGrid');
-    if (grid && reset && !cached) grid.innerHTML = '<div class="skeleton" style="height:280px"></div>'.repeat(4);
+    if (grid && reset && !cached) { grid.setAttribute('aria-busy','true'); grid.innerHTML = presetSkeletonHtml(8); }
     try {
       const data = await api(`/presets?${params.toString()}`);
       state.presets = reset ? data.presets : [...state.presets, ...data.presets];
+      grid?.removeAttribute('aria-busy');
       state.totalPages = data.totalPages || 1;
       cacheSet(cacheKey, { ...data, presets: state.presets });
       renderPresetGrid(data);
@@ -638,61 +646,56 @@
     finally { setTimeout(()=>progress?.remove(), 650); }
   }
 
-  // ============ PAYMENT (YOUPI PG + SELECTABLE RAZORPAY PROVIDER) ============
+  // ============ PAYMENT (YOUPI PG) ============
   let paymentStartInFlight = false;
-  async function startPayment(p) {
-    if (!requireAuth()) return;
-    if (paymentStartInFlight) {
-      toast('Checkout is already starting. Please wait a moment.', 'info');
-      return;
-    }
+  async function openYoupiCheckout(endpoint, body) {
+    if (paymentStartInFlight) { toast('Checkout is already starting. Please wait a moment.', 'info'); return; }
     paymentStartInFlight = true;
     try {
       const config = await api('/payments/provider');
-      if (config.provider === 'youpi') {
-        const order = await api('/payments/youpi/create-order', {
-          method: 'POST', body: JSON.stringify({ presetId: p.id })
-        });
-        if (!order.checkoutUrl || !/^https?:\/\//i.test(order.checkoutUrl)) {
-          throw new Error('Payment gateway returned an invalid checkout URL.');
-        }
-        toast('Opening secure YOUPI PG checkout…', 'info');
-        window.location.assign(order.checkoutUrl);
-        return;
-      }
-      if (config.provider !== 'razorpay') {
-        throw new Error('Payment is not configured yet. Please contact PresetHub support.');
-      }
-      if (!window.Razorpay) {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement('script');
-          s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          s.onload = resolve; s.onerror = () => reject(new Error('Could not load the payment checkout. Please try again.'));
-          document.head.appendChild(s);
-        });
-      }
-      const order = await api('/payments/create-order', { method: 'POST', body: JSON.stringify({ presetId: p.id }) });
-      const rz = new Razorpay({
-        key: order.key, amount: order.amount, currency: order.currency, order_id: order.orderId,
-        name: 'PresetHub', description: p.name,
-        prefill: { name: state.user.name, email: state.user.email },
-        theme: { color: '#d4a373' },
-        handler: async response => {
-          try {
-            await api('/payments/verify', { method: 'POST', body: JSON.stringify(response) });
-            toast('Payment verified. Download now available.');
-            downloadPreset(p.id, { skipPayment: true });
-          } catch (e) { toast(e.message, 'error'); }
-        }
-      });
-      rz.on('payment.failed', response => toast(response?.error?.description || 'Payment failed. Please try again.', 'error'));
-      rz.open();
+      if (config.provider !== 'youpi') throw new Error('Payments are not configured yet. Please contact PresetHub support.');
+      const order = await api(endpoint, { method: 'POST', body: JSON.stringify(body) });
+      if (!order.checkoutUrl || !/^https?:\/\//i.test(order.checkoutUrl)) throw new Error('Payment gateway returned an invalid checkout URL.');
+      toast('Opening secure YOUPI PG checkout…', 'info');
+      window.location.assign(order.checkoutUrl);
     } catch (e) { toast(e.message || 'Could not start payment. Please try again.', 'error'); }
     finally { paymentStartInFlight = false; }
+  }
+  async function startPayment(p) {
+    if (!requireAuth()) return;
+    return openYoupiCheckout('/payments/youpi/create-order', { presetId: p.id });
+  }
+
+  // ============ PRO SUBSCRIPTION ============
+  async function showProModal() {
+    if (!requireAuth()) return;
+    try {
+      const [cfg, sub] = await Promise.all([api('/payments/plans'), api('/payments/subscription').catch(() => ({}))]);
+      const plans = cfg.plans || [];
+      const active = sub.isPro ? `<div class="pro-active"><i class="fas fa-crown"></i> Pro active until <b>${new Date(sub.expiry).toLocaleDateString()}</b>. Buying again extends your time.</div>` : '';
+      openModal(`<div class="pro-modal">
+        <div class="pro-hero"><span class="pro-crown"><i class="fas fa-crown"></i></span><span class="eyebrow">PRESETHUB PRO</span><h2>Go Pro — no ads, more power</h2><p>Support creators and enjoy PresetHub without interruptions.</p></div>
+        ${active}
+        <ul class="pro-features">${(cfg.features || []).map(f => `<li><i class="fas fa-check"></i> ${esc(f)}</li>`).join('')}</ul>
+        <div class="pro-plans" role="radiogroup" aria-label="Choose a plan">${plans.map((pl, i) => `<label class="pro-plan ${pl.id === 'yearly' ? 'selected' : ''}"><input type="radio" name="proPlan" value="${esc(pl.id)}" ${pl.id === 'yearly' ? 'checked' : ''}><span class="pro-plan-name">${esc(pl.label)}</span><span class="pro-plan-price">₹${Number(pl.price).toFixed(0)}</span><small>${pl.days} days${pl.badge ? ` · <b>${esc(pl.badge)}</b>` : ''}</small></label>`).join('')}</div>
+        <button class="btn btn-primary pro-buy" data-action="buy-pro" ${cfg.enabled ? '' : 'disabled'}><i class="fas fa-lock"></i> ${cfg.enabled ? 'Continue to secure payment' : 'Payments unavailable right now'}</button>
+        <p class="pro-note">Secure checkout by YOUPI PG · UPI supported · Pro activates automatically after payment is verified.</p>
+      </div>`);
+      $$('input[name="proPlan"]').forEach(r => r.addEventListener('change', () => $$('.pro-plan').forEach(l => l.classList.toggle('selected', l.querySelector('input').checked))));
+    } catch (e) { toast(e.message || 'Could not load Pro plans.', 'error'); }
+  }
+  function buyPro() {
+    const plan = $('input[name="proPlan"]:checked')?.value;
+    if (!plan) { toast('Choose a plan first.', 'error'); return; }
+    return openYoupiCheckout('/payments/youpi/subscribe', { plan });
   }
 
   // The YOUPI return query is only a navigation hint. The order is unlocked only after
   // the authenticated backend reports a verified paid state from a signed webhook/status lookup.
+  async function onProActivated() {
+    try { const r = await api('/auth/me'); state.user = r.user; updateAuthUI(); } catch (_) {}
+    toast('👑 Welcome to PresetHub Pro! Ads are now removed.', 'success', 6000);
+  }
   async function handleYoupiPaymentReturn(orderId) {
     const cleanUrl = new URL(location.href);
     cleanUrl.searchParams.delete('payment_return');
@@ -711,6 +714,7 @@
       try {
         lastOrder = await api(`/payments/order/${encodeURIComponent(orderId)}`);
         if (lastOrder.status === 'paid') {
+          if (lastOrder.kind === 'subscription') return onProActivated();
           toast('Payment verified. Your preset download is ready.');
           setTimeout(() => downloadPreset(lastOrder.presetId, { skipPayment: true }), 350);
           return;
@@ -725,6 +729,7 @@
         if (attempt === 3 || attempt === 7) {
           try { lastOrder = await api(`/payments/youpi/refresh/${encodeURIComponent(orderId)}`, { method: 'POST', body: '{}' }); }
           catch (_) {}
+          if (lastOrder?.status === 'paid' && lastOrder.kind === 'subscription') return onProActivated();
           if (lastOrder?.status === 'paid') {
             toast('Payment verified. Your preset download is ready.');
             setTimeout(() => downloadPreset(lastOrder.presetId, { skipPayment: true }), 350);
@@ -1328,13 +1333,13 @@
     const u = state.user;
     const items = u ? [
       ...(u.role === 'admin' ? [['fa-crown','Admin Panel','admin-panel']] : []),
-      ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-pen','Edit Profile','edit-profile'],
+      ['fa-crown', state.user?.isPro ? 'Pro Active' : 'Go Pro','pro'], ['fa-pen-nib','Shayari / Text Prompts','texts-page'], ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-pen','Edit Profile','edit-profile'],
       ['fa-heart','Wishlist','wishlist-page'], ['fa-download','Downloads','downloads'], ['fa-bell','Notifications','notifications'],
       ['fa-message','Messages','messages'], ['fa-link','Share Links','my-shares'], ['fa-key','Change Password','change-password'],
       ['fa-shield-halved','Enable Notifications','enable-notifications'], ['fa-life-ring','Account Help','account-help'], ['fa-moon','Theme','theme'],
       ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq'], ['fa-right-from-bracket','Log out','logout'], ['fa-user-xmark','Delete Account','delete-account']
     ] : [
-      ['fa-download','Install PresetHub','install'], ['fa-moon','Theme','theme'], ['fa-right-to-bracket','Log in','login'], ['fa-user-plus','Create Account','signup'],
+      ['fa-pen-nib','Shayari / Text Prompts','texts-page'], ['fa-download','Install PresetHub','install'], ['fa-moon','Theme','theme'], ['fa-right-to-bracket','Log in','login'], ['fa-user-plus','Create Account','signup'],
       ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq'], ['fa-envelope','Contact','site-contact']
     ];
     openModal(`<div class="site-menu"><div class="site-menu-head"><img class="site-menu-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub P logo"><div><span class="eyebrow">PRESETHUB</span><h2>${u ? esc(u.name || u.username || 'Account') : 'Welcome'}</h2><small>${u ? '@'+esc(u.username || 'user') : 'Explore presets and creators'}</small></div></div><div class="site-menu-grid">${items.map(([icon,label,action])=>`<button class="site-menu-item" data-action="${action}"><i class="fas ${icon}" aria-hidden="true"></i><span>${label}</span></button>`).join('')}</div></div>`);
@@ -1362,8 +1367,9 @@
     const destination=state.exitDestination;
     cancelExit();
     allowExitNavigation = true;
+    exitGuardArmed = false;
     if (destination) window.location.href=destination;
-    else { try { history.go(-1); } catch (_) { window.location.href='/'; } }
+    else { try { history.go(-2); } catch (_) { history.back(); } }
   }
 
   // ============ CHAT / MESSAGING ============
@@ -1445,6 +1451,9 @@
     }
     if (params.get('action') === 'search') $('#searchInput')?.focus();
     if (params.get('action') === 'wishlist') showWishlist();
+    if (params.get('action') === 'pro') { if (state.user) showProModal(); else openAuth('login'); }
+    if (params.get('action') === 'login' && !state.user) openAuth('login');
+    if (params.get('action') === 'signup' && !state.user) openAuth('signup');
 
     const shortcutAction = params.get('action');
     if (shortcutAction === 'upload') {
@@ -1475,13 +1484,27 @@
     }
   }
 
-  // ============ EXIT / NAVIGATION GUARD ============
-  // Only home-page site exits use the custom confirmation. Refresh/close and internal pages do not.
-  let allowExitNavigation = false; let exitGuardPushed = false;
+  // ============ EXIT GUARD ============
+  // The confirmation appears ONLY when the visitor presses Back/leaves from the Home page's first entry
+  // (i.e. they are really about to exit PresetHub). Clicking links, opening pages, refreshing or closing
+  // the tab never shows it. Buttons: "Stay" (later) and "Exit".
+  let allowExitNavigation = false;
+  let exitGuardArmed = false;
   function isHomePage(){ return location.pathname==='/' || location.pathname==='/index.html'; }
-  function installExitGuard(){ if(!isHomePage()||exitGuardPushed)return; exitGuardPushed=true; try{history.pushState({presetHubHomeExitGuard:true},'',location.href);}catch(_){} }
-  window.addEventListener('popstate',()=>{ if(allowExitNavigation||!isHomePage())return; try{history.pushState({presetHubHomeExitGuard:true},'',location.href);}catch(_){} requestExit(null); });
-  document.addEventListener('click',e=>{ const link=e.target.closest('a[href]'); if(!link||link.target==='_blank'||link.hasAttribute('download')||!isHomePage()||link.dataset.noExitConfirm!==undefined)return; const href=link.getAttribute('href'); if(!href||href.startsWith('#')||href.startsWith('javascript:'))return; let url; try{url=new URL(href,location.href);}catch(_){return;} if(url.origin!==location.origin||url.pathname!==location.pathname){e.preventDefault();requestExit(url.href);} },true);
+  function installExitGuard(){
+    if (!isHomePage() || exitGuardArmed) return;
+    // Arm only when this Home page is the first page of the visit (nothing from PresetHub to go back to).
+    const cameFromSite = document.referrer && (() => { try { return new URL(document.referrer).origin === location.origin; } catch (_) { return false; } })();
+    if (cameFromSite) return;
+    exitGuardArmed = true;
+    try { history.pushState({ presetHubExitGuard: true }, '', location.href); } catch (_) { exitGuardArmed = false; }
+  }
+  window.addEventListener('popstate', () => {
+    if (!exitGuardArmed || allowExitNavigation || !isHomePage()) return;
+    if ($('#overlay')?.classList.contains('active')) return; // Back closes an open modal first, never exits
+    try { history.pushState({ presetHubExitGuard: true }, '', location.href); } catch (_) {}
+    requestExit(null);
+  });
 
   // ============ GLOBAL CLICK HANDLER ============
   document.addEventListener('click', async e => {
@@ -1530,6 +1553,9 @@
       return;
     }
     if (action === 'upload') { openUpload(); return; }
+    if (action === 'pro') { closeModal(); showProModal(); return; }
+    if (action === 'buy-pro') { buyPro(); return; }
+    if (action === 'texts-page') { window.location.href = '/shayari/'; return; }
     if (action === 'wishlist' || action === 'wishlist-page') {
       action === 'wishlist' ? toggleWishlist(el.dataset.id) : showWishlist();
       return;
@@ -1702,6 +1728,7 @@
 
   // ============ EXPORTS ============
   window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats, showMessagesInbox, openSiteMenu };
+  window.PresetHubApp = { openAuth: m => openAuth(m || 'login'), toast: (...a) => toast(...a), user: () => state.user, showPro: () => showProModal() };
   window.addEventListener('DOMContentLoaded', bootstrap);
   window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); });
   window.addEventListener('focus', () => { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); });

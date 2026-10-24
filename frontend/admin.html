@@ -9,16 +9,16 @@
   <meta name="application-name" content="PresetHub">
   <meta name="theme-color" content="#d4a373">
   <link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon">
-  <link rel="stylesheet" href="/icons.css?v=3.1.0">
-  <link rel="stylesheet" href="/style.css?v=3.1.0">
-  <link rel="stylesheet" href="/admin.css?v=3.1.0">
-  <link rel="stylesheet" href="/cookie-consent.css?v=3.1.0">
+  <link rel="stylesheet" href="/icons.css?v=3.2.0">
+  <link rel="stylesheet" href="/style.css?v=3.2.0">
+  <link rel="stylesheet" href="/admin.css?v=3.2.0">
+  <link rel="stylesheet" href="/cookie-consent.css?v=3.2.0">
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 <main id="main" class="admin-container">
   <div class="admin-head">
-    <div><span class="eyebrow">SECURE CONSOLE</span><h1><i class="fas fa-crown" aria-hidden="true"></i> Admin Dashboard</h1><p>Platform monitoring, users, presets, promotions और announcements.</p></div>
+    <div><span class="eyebrow">SECURE CONSOLE</span><h1><i class="fas fa-crown" aria-hidden="true"></i> Admin Dashboard <span id="alertBadge" class="v32-badge hidden" title="Unread alerts">0</span></h1><p>Alerts, system health, Pro subscriptions, users, presets, shayari, promotions और announcements.</p></div>
     <div class="admin-head-actions"><button id="adminHome" class="btn btn-outline"><i class="fas fa-house"></i> Website</button><button id="themeAdmin" class="btn btn-outline" title="Toggle theme" aria-label="Toggle theme"><i class="fas fa-moon"></i></button><button id="refreshAdmin" class="btn btn-primary"><i class="fas fa-rotate"></i> Refresh</button></div>
   </div>
   <div id="message" role="status" aria-live="polite"></div>
@@ -26,6 +26,53 @@
   <section class="admin-card">
     <div class="admin-section-head"><div><span class="eyebrow">MONITORING</span><h2><i class="fas fa-chart-simple"></i> Platform Analytics</h2></div></div>
     <div class="stats-grid" id="analytics"><div class="skeleton" style="height:80px"></div></div>
+  </section>
+
+  <section class="admin-card">
+    <div class="admin-section-head"><div><span class="eyebrow">LIVE</span><h2><i class="fas fa-gauge"></i> Overview &amp; system health</h2></div><button id="v32Refresh" class="btn btn-outline btn-sm"><i class="fas fa-rotate"></i> Reload</button></div>
+    <div class="stats-grid" id="v32Overview"><div class="skeleton" style="height:80px"></div></div>
+    <div class="v32-two">
+      <div><h3 class="v32-h">Server &amp; database</h3><div id="v32System"><div class="skeleton" style="height:120px"></div></div></div>
+      <div><h3 class="v32-h">New users (14 days)</h3><div id="v32Signups"></div><h3 class="v32-h">Latest signups</h3><ul class="v32-list" id="v32Recent"></ul></div>
+    </div>
+  </section>
+
+  <section class="admin-card">
+    <div class="admin-section-head"><div><span class="eyebrow">SECURITY &amp; ERRORS</span><h2><i class="fas fa-bell"></i> Alerts</h2></div>
+      <div class="v32-toolbar">
+        <select id="alertType" aria-label="Alert type"><option value="">All types</option><option value="security">Security</option><option value="error">Errors</option><option value="database">Database</option><option value="payment">Payments</option><option value="subscription">Subscriptions</option><option value="new_user">New users</option><option value="viral">Viral</option><option value="system">System</option></select>
+        <select id="alertSeverity" aria-label="Severity"><option value="">All severity</option><option value="critical">Critical</option><option value="warning">Warning</option><option value="info">Info</option></select>
+        <label class="check-row"><input type="checkbox" id="alertUnread"> Unread only</label>
+        <button id="alertReadAll" class="btn btn-outline btn-sm">Mark all read</button>
+        <button id="alertTest" class="btn btn-outline btn-sm">Send test</button>
+      </div>
+    </div>
+    <p class="admin-note" id="alertCount"></p>
+    <div id="alertList"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+
+  <section class="admin-card">
+    <div class="admin-section-head"><div><span class="eyebrow">PRO</span><h2><i class="fas fa-crown"></i> Subscriptions</h2></div></div>
+    <div class="v32-plans" id="subPlans"></div>
+    <h3 class="v32-h">Pro members</h3>
+    <div class="table-wrap"><table class="user-table"><thead><tr><th>User</th><th>Plan</th><th>Expiry</th><th>Status</th><th>Manage</th></tr></thead><tbody id="subUsers"></tbody></table></div>
+    <h3 class="v32-h">Subscription orders</h3>
+    <div class="table-wrap"><table class="user-table"><thead><tr><th>User</th><th>Plan</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead><tbody id="subOrders"></tbody></table></div>
+  </section>
+
+  <section class="admin-card">
+    <div class="admin-section-head"><div><span class="eyebrow">CONTENT</span><h2><i class="fas fa-pen-nib"></i> Shayari &amp; text prompts</h2></div>
+      <div class="v32-toolbar"><input id="txtSearch" class="admin-search" placeholder="Search text or author…" autocomplete="off"><select id="txtStatus" aria-label="Status"><option value="">All</option><option value="approved">Visible</option><option value="rejected">Hidden</option></select></div>
+    </div>
+    <div id="txtList"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+
+  <section class="admin-card">
+    <div class="admin-section-head"><div><span class="eyebrow">TRUST &amp; SAFETY</span><h2><i class="fas fa-flag"></i> Reports</h2></div>
+      <div class="v32-toolbar"><select id="repStatus" aria-label="Status"><option value="open">Open</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option></select><select id="repType" aria-label="Type"><option value="">All types</option><option value="text">Shayari</option><option value="preset">Preset</option><option value="comment">Comment</option><option value="user">User</option></select></div>
+    </div>
+    <p class="admin-note" id="repCount"></p>
+    <div id="repList"><div class="skeleton" style="height:100px"></div></div>
   </section>
 
   <section class="admin-card admin-tools-grid">
@@ -84,7 +131,8 @@
   </div>
   <div class="container footer-bottom"><span>© PresetHub</span><span>Secure Admin Console</span></div>
 </footer>
-<script src="/admin.js?v=3.1.0"></script>
-<script src="/cookie-consent.js?v=3.1.0" defer></script>
+<script src="/admin.js?v=3.4.0"></script>
+<script src="/admin-v32.js?v=3.4.0"></script>
+<script src="/cookie-consent.js?v=3.2.0" defer></script>
 </body>
 </html>

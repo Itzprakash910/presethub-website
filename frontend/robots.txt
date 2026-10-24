@@ -1,6 +1,10 @@
 User-agent: *
 Allow: /
+Allow: /presets/
+Allow: /tags/
+Allow: /shayari/
 Disallow: /api/
-Disallow: /admin.html
-Disallow: /uploads/
+Disallow: /admin
+Disallow: /s/
+
 Sitemap: https://presethub.site/sitemap.xml

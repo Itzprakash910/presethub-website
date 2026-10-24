@@ -9,8 +9,10 @@
   const write = value => {
     try { localStorage.setItem(CONSENT_KEY, value); } catch (_) {}
   };
+  // Pro members never load ads (flag is written by app.js after a verified subscription).
+  const isPro = () => { try { return Number(localStorage.getItem('ph_pro_until') || 0) > Date.now(); } catch (_) { return false; } };
   function loadAds() {
-    if (window.__presetHubAdsLoaded || !ADSENSE_CLIENT) return;
+    if (isPro() || window.__presetHubAdsLoaded || !ADSENSE_CLIENT) return;
     window.__presetHubAdsLoaded = true;
     const script = document.createElement('script');
     script.async = true;

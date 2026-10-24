@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Free Tools — Caption & Hashtag Generator, Image Text Overlay | PresetHub</title>
+<meta name="description" content="Free tools for creators: caption and hashtag generator for Instagram and Reels, and an image text overlay tool to add shayari or captions to your photos.">
+<meta name="keywords" content="caption generator, hashtag generator, instagram captions, text on photo, shayari on photo, PresetHub tools">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://presethub.site/tools.html">
+<meta property="og:title" content="Free Tools | PresetHub">
+<meta property="og:description" content="Caption & hashtag generator and image text overlay for creators.">
+<meta property="og:image" content="https://presethub.site/assets/images/og-image.png">
+<meta name="theme-color" content="#d4a373">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="stylesheet" href="/style.css?v=3.4.0">
+<link rel="stylesheet" href="/icons.css?v=3.4.0">
+<link rel="stylesheet" href="/cookie-consent.css?v=3.4.0">
+</head>
+<body>
+<main class="container tools-page">
+  <a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo" width="36" height="36">Preset<span>Hub</span></a>
+  <h1>Free creator tools</h1>
+  <p class="lead">Caption aur hashtag generator, aur apni photo par text likhne ka tool. Sab kuch browser mein hota hai, aapki photo kahin upload nahi hoti.</p>
+
+  <section class="tool-card" aria-labelledby="capTitle">
+    <h2 id="capTitle">✍️ Caption &amp; hashtag generator</h2>
+    <div class="tool-row">
+      <label>Topic<select id="capTopic">
+        <option value="general">General</option><option value="portrait">Portrait</option><option value="wedding">Wedding</option>
+        <option value="travel">Travel</option><option value="street">Street</option><option value="food">Food</option>
+        <option value="nature">Nature</option><option value="night">Night</option></select></label>
+      <label>Tone<select id="capTone">
+        <option value="cinematic">Cinematic</option><option value="warm">Warm</option><option value="moody">Moody</option><option value="fun">Fun</option></select></label>
+      <button class="btn btn-primary" id="capMake">Generate</button>
+    </div>
+    <ul class="cap-list" id="capList" aria-live="polite"></ul>
+    <div class="tool-row"><button class="btn btn-outline btn-sm" id="capTags">Copy hashtags</button><span id="capTagText" class="tool-muted"></span></div>
+  </section>
+
+  <section class="tool-card" aria-labelledby="ovTitle">
+    <h2 id="ovTitle">🖼️ Text on photo</h2>
+    <div class="tool-row">
+      <label>Photo<input type="file" id="ovFile" accept="image/jpeg,image/png,image/webp"></label>
+    </div>
+    <label class="tx-label">Text (shayari, caption or quote)<textarea id="ovText" rows="3" maxlength="300" placeholder="Apna text yahan likhein…"></textarea></label>
+    <div class="tool-row">
+      <label>Position<select id="ovPos"><option value="center">Centre</option><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
+      <label>Text colour<input type="color" id="ovColor" value="#ffffff"></label>
+      <label>Size<input type="range" id="ovSize" min="24" max="120" value="56"></label>
+    </div>
+    <canvas id="ovCanvas" class="ov-canvas" aria-label="Preview" hidden></canvas>
+    <div class="tool-row"><button class="btn btn-primary" id="ovDownload" disabled>Download PNG</button></div>
+  </section>
+
+  <p class="tool-muted"><a href="/">← Back to PresetHub</a> · <a href="/presets/">Presets</a> · <a href="/shayari/">Shayari</a> · <a href="/tags/">Hashtags</a></p>
+</main>
+<script src="/tools.js?v=3.4.0" defer></script>
+<script src="/cookie-consent.js?v=3.4.0" defer></script>
+</body>
+</html>
