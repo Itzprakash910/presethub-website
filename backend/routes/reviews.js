@@ -1,7 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
-const { Preset, User } = require('../models');
+const { Preset, User, Order, Download } = require('../models');
 const { body, validationResult } = require('express-validator');
 const { createNotification, evaluateAchievements } = require('../utils/notifications');
 
@@ -30,6 +30,12 @@ router.post('/:presetId', auth, [
   const preset = await Preset.findById(req.params.presetId);
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
+  if (String(preset.authorId) === req.user.id) return res.status(400).json({ error: 'You cannot review your own preset.' });
+  // Verified reviews only: paid presets need a paid order, free presets need a download first.
+  const verified = Number(preset.price || 0) > 0
+    ? await Order.exists({ presetId: preset._id, userId: req.user.id, status: 'paid' })
+    : await Download.exists({ presetId: preset._id, userId: req.user.id });
+  if (!verified) return res.status(403).json({ error: Number(preset.price || 0) > 0 ? 'Buy this preset before reviewing it.' : 'Download this preset before reviewing it.' });
   if (preset.reviews.some(r => r.userId?.toString() === req.user.id))
     return res.status(400).json({ error: 'You already reviewed this preset' });
 

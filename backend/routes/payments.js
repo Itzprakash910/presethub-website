@@ -2,24 +2,12 @@ const express = require('express');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
-const { Order, Preset } = require('../models');
+const { Order, Preset, User } = require('../models');
+const { getPlans, PRO_FEATURES, isProUser, extendedExpiry } = require('../utils/plans');
+const { adminAlert, securityAlert } = require('../utils/alerts');
+const { createNotification } = require('../utils/notifications');
 
 const router = express.Router();
-
-let razorpay = null;
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
-if (RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET) {
-  try {
-    const Razorpay = require('razorpay');
-    razorpay = new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
-    console.log('✅ Razorpay initialized');
-  } catch (err) {
-    console.error('Razorpay init failed:', err.message);
-  }
-} else {
-  console.warn('⚠️ Razorpay keys not configured');
-}
 
 const YOUPI_API_URL = String(process.env.YOUPI_API_URL || process.env.BASE_PAYMENT_API_URL || '').trim().replace(/\/+$/, '');
 const YOUPI_MERCHANT_ID = String(process.env.YOUPI_MERCHANT_ID || '').trim();
@@ -41,23 +29,13 @@ const YOUPI_CONFIGURED = Boolean(
 );
 
 function activeProvider() {
-  const requested = String(process.env.PAYMENT_PROVIDER || '').trim().toLowerCase();
-  if (requested === 'youpi') return YOUPI_CONFIGURED ? 'youpi' : 'disabled';
-  if (requested === 'razorpay') return razorpay ? 'razorpay' : 'disabled';
-  if (YOUPI_CONFIGURED) return 'youpi';
-  if (razorpay) return 'razorpay';
-  return 'disabled';
+  return YOUPI_CONFIGURED ? 'youpi' : 'disabled';
 }
 
-const ensureRazorpay = (req, res, next) =>
-  razorpay && activeProvider() === 'razorpay'
-    ? next()
-    : res.status(503).json({ error: 'Razorpay payment service is not the active or configured provider.' });
-
 const ensureYoupi = (req, res, next) =>
-  YOUPI_CONFIGURED && activeProvider() === 'youpi'
+  YOUPI_CONFIGURED
     ? next()
-    : res.status(503).json({ error: 'YOUPI PG is not configured as the active payment provider. Configure YOUPI_API_URL, YOUPI_MERCHANT_ID and YOUPI_WEBHOOK_SECRET.' });
+    : res.status(503).json({ error: 'YOUPI PG is not configured. Set YOUPI_API_URL, YOUPI_MERCHANT_ID and YOUPI_WEBHOOK_SECRET.' });
 
 function timingSafeStringEqual(left, right) {
   const a = Buffer.from(String(left || ''), 'utf8');
@@ -69,11 +47,13 @@ function publicOrder(order) {
   if (!order) return null;
   return {
     id: String(order._id),
-    presetId: String(order.presetId),
+    presetId: order.presetId ? String(order.presetId) : null,
+    kind: order.kind || 'preset',
+    plan: order.plan || undefined,
     amount: Number(order.amount),
     currency: order.currency || 'INR',
     status: order.status,
-    provider: order.provider || 'razorpay',
+    provider: order.provider || 'youpi',
     paymentId: order.paymentId || undefined,
     utr: order.utr || undefined,
     paidAt: order.paidAt || undefined,
@@ -127,6 +107,26 @@ function amountMatches(order, payload) {
     String(payload.currency || '').toUpperCase() === String(order.currency || 'INR').toUpperCase();
 }
 
+async function activateSubscription(order) {
+  const plans = getPlans();
+  const plan = plans[order.plan];
+  if (!plan) return;
+  const user = await User.findById(order.userId).select('subscription name email');
+  if (!user) return;
+  const expiry = extendedExpiry(user, plan.days);
+  await User.updateOne({ _id: user._id }, {
+    $set: {
+      'subscription.tier': 'pro', 'subscription.plan': plan.id, 'subscription.expiry': expiry,
+      'subscription.since': user.subscription?.since || new Date(), 'subscription.lastOrderId': String(order._id)
+    }
+  });
+  await createNotification(user._id, 'subscription', `👑 PresetHub Pro is active until ${expiry.toLocaleDateString('en-IN')}. Ads are now removed — enjoy!`, '/', '👑 Welcome to Pro');
+  adminAlert({
+    type: 'subscription', severity: 'info', title: `New Pro subscription: ${plan.label}`,
+    details: { user: user.name || user.email, email: user.email, plan: plan.id, amount: `₹${order.amount}`, expiry: expiry.toISOString(), orderId: String(order._id) }, email: false
+  });
+}
+
 async function markOrderPaid(order, payload) {
   const result = await Order.updateOne(
     { _id: order._id, provider: 'youpi', status: 'created' },
@@ -141,9 +141,21 @@ async function markOrderPaid(order, payload) {
       $unset: { failureReason: '' }
     }
   );
-  // Atomic transition from created -> paid prevents webhook retries from double-counting revenue.
+  // Atomic transition created -> paid: webhook retries / status refresh can never double-fulfil.
   if (result.modifiedCount) {
-    await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: order.amount } });
+    if (order.kind === 'subscription') {
+      await activateSubscription(order);
+    } else if (order.kind === 'tip') {
+      await User.updateOne({ _id: order.recipientId }, { $inc: { tipsTotal: order.amount } });
+      const tipper = await User.findById(order.userId).select('name username').lean();
+      await createNotification(order.recipientId, 'tip', `💝 ${tipper?.name || tipper?.username || 'A fan'} tipped you ₹${order.amount}${order.note ? ` — “${order.note}”` : ''}.`, '/', 'New tip');
+      adminAlert({ type: 'payment', severity: 'info', title: `Tip ₹${order.amount}`, details: { orderId: String(order._id), creatorId: String(order.recipientId) }, email: false });
+    } else if (order.presetId) {
+      await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: order.amount } });
+      const preset = await Preset.findById(order.presetId).select('name authorId').lean();
+      if (preset) await createNotification(preset.authorId, 'sale', `💰 Someone purchased your preset “${preset.name}” for ₹${order.amount}.`, `/preset/${order.presetId}/`, 'New sale');
+      adminAlert({ type: 'payment', severity: 'info', title: `Preset sale ₹${order.amount}`, details: { orderId: String(order._id), preset: preset?.name || String(order.presetId), utr: payload.utr || '' }, email: false });
+    }
   }
   return result.modifiedCount > 0;
 }
@@ -155,6 +167,7 @@ async function applyYoupiOutcome(order, payload) {
       { _id: order._id, provider: 'youpi', status: 'created' },
       { $set: { status: 'suspicious', failureReason: 'Gateway order ID mismatch.' } }
     );
+    adminAlert({ type: 'payment', severity: 'critical', title: 'Payment held: gateway order ID mismatch', details: { orderId: String(order._id), reported: String(payload.orderId || '') } });
     return { accepted: false, reviewRequired: true, reason: 'Order ID mismatch.' };
   }
   if (!amountMatches(order, payload)) {
@@ -162,6 +175,7 @@ async function applyYoupiOutcome(order, payload) {
       { _id: order._id, provider: 'youpi', status: 'created' },
       { $set: { status: 'suspicious', failureReason: 'Gateway amount or currency mismatch.' } }
     );
+    adminAlert({ type: 'payment', severity: 'critical', title: 'Payment held: amount/currency mismatch', details: { orderId: String(order._id), expectedPaise: Math.round(Number(order.amount) * 100), reportedPaise: payload.amountPaise, currency: payload.currency } });
     return { accepted: false, reviewRequired: true, reason: 'Amount or currency mismatch.' };
   }
 
@@ -200,219 +214,92 @@ router.get('/provider', (req, res) => {
   res.json({ provider, enabled: provider !== 'disabled' });
 });
 
-// ============ RAZORPAY ============
-router.post('/create-order', auth, ensureRazorpay, async (req, res) => {
-  try {
-    const { presetId } = req.body || {};
-    if (!mongoose.Types.ObjectId.isValid(presetId))
-      return res.status(400).json({ error: 'Invalid preset ID' });
-
-    const preset = await Preset.findById(presetId);
-    if (!preset || preset.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
-    if (!Number.isFinite(Number(preset.price)) || Number(preset.price) <= 0)
-      return res.status(400).json({ error: 'Preset is free or has an invalid price' });
-    if (String(preset.authorId) === String(req.user.id))
-      return res.status(400).json({ error: 'You cannot purchase your own preset.' });
-    if (await Order.exists({ presetId, userId: req.user.id, status: 'paid' }))
-      return res.status(400).json({ error: 'You already own this preset' });
-
-    const amount = Math.round(Number(preset.price) * 100);
-    if (!Number.isSafeInteger(amount) || amount < 100 || amount > 100000000)
-      return res.status(400).json({ error: 'Preset price is outside the supported payment range.' });
-    const receipt = `ph_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
-    const order = await razorpay.orders.create({
-      amount,
-      currency: 'INR',
-      receipt,
-      payment_capture: 1,
-      notes: { presetId: preset._id.toString(), userId: req.user.id }
-    });
-
-    await Order.create({
-      _id: order.id,
-      userId: req.user.id,
-      presetId: preset._id,
-      amount: amount / 100,
-      currency: 'INR',
-      status: 'created',
-      provider: 'razorpay'
-    });
-
-    res.json({ key: RAZORPAY_KEY_ID, orderId: order.id, amount: order.amount, currency: order.currency });
-  } catch (err) {
-    console.error('Razorpay create-order error:', err.message);
-    res.status(500).json({ error: 'Order creation failed' });
-  }
-});
-
-router.post('/verify', auth, async (req, res) => {
-  try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature)
-      return res.status(400).json({ error: 'Missing payment details' });
-    if (!razorpay || !RAZORPAY_KEY_SECRET) return res.status(503).json({ error: 'Razorpay is not configured' });
-
-    const expected = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`).digest('hex');
-    if (!timingSafeStringEqual(expected, razorpay_signature))
-      return res.status(400).json({ error: 'Invalid payment signature' });
-
-    const order = await Order.findById(razorpay_order_id);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.provider && order.provider !== 'razorpay') return res.status(400).json({ error: 'Payment provider mismatch' });
-    if (String(order.userId) !== String(req.user.id)) return res.status(403).json({ error: 'Unauthorized' });
-    if (order.status === 'paid') return res.json({ success: true, message: 'Payment already verified' });
-    if (order.status !== 'created') return res.status(409).json({ error: `Order is not payable in its current state (${order.status}).` });
-
-    // A valid checkout signature links the payment to the order, but still fetch the
-    // payment from Razorpay and verify captured status, exact amount and currency before fulfillment.
-    const gatewayPayment = await razorpay.payments.fetch(razorpay_payment_id);
-    if (String(gatewayPayment.order_id || '') !== String(razorpay_order_id) ||
-        Number(gatewayPayment.amount) !== Math.round(Number(order.amount) * 100) ||
-        String(gatewayPayment.currency || '').toUpperCase() !== String(order.currency || 'INR').toUpperCase() ||
-        String(gatewayPayment.status || '').toLowerCase() !== 'captured') {
-      return res.status(400).json({ error: 'Payment status or order details could not be verified. Please contact support before retrying.' });
-    }
-
-    const result = await Order.updateOne(
-      { _id: order._id, status: 'created', $or: [{ provider: 'razorpay' }, { provider: { $exists: false } }] },
-      { $set: { status: 'paid', paymentId: razorpay_payment_id, paidAt: new Date(), provider: 'razorpay' } }
-    );
-    if (result.modifiedCount) {
-      await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: order.amount } });
-    } else {
-      // A webhook may have completed the same order concurrently. Accept only if it is now paid.
-      const latest = await Order.findById(order._id).select('status').lean();
-      if (latest?.status !== 'paid') return res.status(409).json({ error: 'Order changed state during verification. Please refresh your purchase history.' });
-    }
-    res.json({ success: true, message: result.modifiedCount ? 'Payment verified' : 'Payment already verified' });
-  } catch (err) {
-    console.error('Razorpay verify error:', err.message);
-    res.status(500).json({ error: 'Verification failed' });
-  }
-});
-
-router.post('/webhook', async (req, res) => {
-  try {
-    if (!RAZORPAY_KEY_SECRET) return res.status(503).end();
-    const sig = req.headers['x-razorpay-signature'];
-    if (typeof sig !== 'string' || !req.rawBody) return res.status(400).end();
-    const expected = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET).update(req.rawBody).digest('hex');
-    if (!timingSafeStringEqual(expected, sig)) return res.status(400).end();
-
-    const event = req.body?.event;
-    const payment = req.body?.payload?.payment?.entity;
-    if (event === 'payment.captured' && payment?.order_id) {
-      const order = await Order.findById(payment.order_id).select('presetId amount currency provider status').lean();
-      const gatewayAmountMatches = order && Number(payment.amount) === Math.round(Number(order.amount) * 100) &&
-        String(payment.currency || '').toUpperCase() === String(order.currency || 'INR').toUpperCase();
-      if (order && gatewayAmountMatches && (!order.provider || order.provider === 'razorpay')) {
-        const result = await Order.updateOne(
-          { _id: payment.order_id, status: 'created', $or: [{ provider: 'razorpay' }, { provider: { $exists: false } }] },
-          { $set: { status: 'paid', paymentId: payment.id, paidAt: new Date(), provider: 'razorpay' } }
-        );
-        if (result.modifiedCount) await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: order.amount } });
-      }
-    }
-    res.json({ received: true });
-  } catch (err) {
-    console.error('Razorpay webhook error:', err.message);
-    res.status(500).end();
-  }
+// Public Pro plans (prices are decided server-side only).
+router.get('/plans', (req, res) => {
+  res.json({ enabled: activeProvider() !== 'disabled', currency: 'INR', plans: Object.values(getPlans()), features: PRO_FEATURES });
 });
 
 // ============ YOUPI PG ============
-router.post('/youpi/create-order', auth, ensureYoupi, async (req, res) => {
+// Creates a local order + YOUPI session. All amounts come from the database / server plan table,
+// never from the browser.
+async function startYoupiCheckout(req, res, { userId, presetId = null, kind, plan = '', amountRupees, label, recipientId = null, note = '' }) {
   let orderId = '';
   try {
-    const { presetId } = req.body || {};
-    if (!mongoose.Types.ObjectId.isValid(presetId))
-      return res.status(400).json({ error: 'Invalid preset ID' });
-
-    const preset = await Preset.findById(presetId).select('_id name price status authorId').lean();
-    if (!preset || preset.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
-    if (!Number.isFinite(Number(preset.price)) || Number(preset.price) <= 0)
-      return res.status(400).json({ error: 'Preset is free or has an invalid price' });
-    if (String(preset.authorId) === String(req.user.id))
-      return res.status(400).json({ error: 'You cannot purchase your own preset.' });
-    if (await Order.exists({ presetId: preset._id, userId: req.user.id, status: 'paid' }))
-      return res.status(400).json({ error: 'You already own this preset.' });
-
-    // Reuse a recent, still-pending checkout so repeated clicks do not create many payment sessions.
-    const pending = await Order.findOne({
-      presetId: preset._id,
-      userId: req.user.id,
-      provider: 'youpi',
-      status: 'created',
-      checkoutUrl: { $type: 'string', $ne: '' },
-      createdAt: { $gte: new Date(Date.now() - 4 * 60 * 1000) }
-    }).sort({ createdAt: -1 }).lean();
-    if (pending) {
-      return res.json({ orderId: String(pending._id), checkoutUrl: pending.checkoutUrl, amount: pending.amount, currency: pending.currency, reused: true });
-    }
-
-    const amountRupees = Math.round(Number(preset.price) * 100) / 100;
-    const amountPaise = Math.round(amountRupees * 100);
+    const amountPaise = Math.round(Number(amountRupees) * 100);
     if (!Number.isSafeInteger(amountPaise) || amountPaise < 100 || amountPaise > 100000000)
-      return res.status(400).json({ error: 'Preset price is outside the supported payment range.' });
+      return res.status(400).json({ error: 'Amount is outside the supported payment range.' });
+
+    // Reuse a recent still-pending checkout so repeated clicks do not create many sessions.
+    const pendingFilter = { userId, provider: 'youpi', status: 'created', kind, checkoutUrl: { $type: 'string', $ne: '' }, createdAt: { $gte: new Date(Date.now() - 4 * 60 * 1000) } };
+    if (kind === 'preset') pendingFilter.presetId = presetId; else if (kind === 'tip') { pendingFilter.recipientId = recipientId; pendingFilter.amount = Math.round(Number(amountRupees) * 100) / 100; } else pendingFilter.plan = plan;
+    const pending = await Order.findOne(pendingFilter).sort({ createdAt: -1 }).lean();
+    if (pending) return res.json({ provider: 'youpi', orderId: String(pending._id), checkoutUrl: pending.checkoutUrl, amount: pending.amount, currency: pending.currency, reused: true });
 
     orderId = `PH-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
-    await Order.create({
-      _id: orderId,
-      userId: req.user.id,
-      presetId: preset._id,
-      amount: amountPaise / 100,
-      currency: 'INR',
-      status: 'created',
-      provider: 'youpi'
-    });
+    await Order.create({ _id: orderId, userId, presetId, kind, plan, recipientId, note: String(note || '').slice(0, 140), amount: amountPaise / 100, currency: 'INR', status: 'created', provider: 'youpi' });
 
     const payment = await callYoupi('/api/v1/payments', {
       method: 'POST',
       headers: { 'Idempotency-Key': `presethub-${orderId}` },
       body: {
-        orderId,
-        amount: (amountPaise / 100).toFixed(2),
-        currency: 'INR',
+        orderId, amount: (amountPaise / 100).toFixed(2), currency: 'INR',
         returnUrl: makeYoupiReturnUrl(req, orderId),
-        metadata: {
-          source: 'PresetHub',
-          presetId: String(preset._id),
-          userId: String(req.user.id)
-        }
+        metadata: { source: 'PresetHub', kind, plan, presetId: presetId ? String(presetId) : '', userId: String(userId), label: String(label || '').slice(0, 80) }
       }
     });
 
-    if (String(payment.orderId || '') !== orderId ||
-        Number(payment.amountPaise) !== amountPaise ||
-        String(payment.currency || 'INR').toUpperCase() !== 'INR' ||
-        !isHttpUrl(payment.checkoutUrl)) {
-      await Order.updateOne({ _id: orderId, status: 'created' }, {
-        $set: { status: 'suspicious', failureReason: 'Invalid response from YOUPI PG while creating the payment.' }
-      });
+    if (String(payment.orderId || '') !== orderId || Number(payment.amountPaise) !== amountPaise ||
+        String(payment.currency || 'INR').toUpperCase() !== 'INR' || !isHttpUrl(payment.checkoutUrl)) {
+      await Order.updateOne({ _id: orderId, status: 'created' }, { $set: { status: 'suspicious', failureReason: 'Invalid response from YOUPI PG while creating the payment.' } });
+      adminAlert({ type: 'payment', severity: 'critical', title: 'YOUPI returned an invalid checkout session', details: { orderId, kind } });
       return res.status(502).json({ error: 'Payment gateway returned an invalid checkout session. Please contact support before retrying.' });
     }
-
-    await Order.updateOne({ _id: orderId, provider: 'youpi', status: 'created' }, {
-      $set: { gatewayPaymentId: String(payment.paymentId), checkoutUrl: payment.checkoutUrl }
-    });
-
-    res.json({
-      provider: 'youpi',
-      orderId,
-      checkoutUrl: payment.checkoutUrl,
-      amount: amountPaise / 100,
-      currency: 'INR'
-    });
+    await Order.updateOne({ _id: orderId, provider: 'youpi', status: 'created' }, { $set: { gatewayPaymentId: String(payment.paymentId), checkoutUrl: payment.checkoutUrl } });
+    res.json({ provider: 'youpi', orderId, checkoutUrl: payment.checkoutUrl, amount: amountPaise / 100, currency: 'INR' });
   } catch (err) {
     if (orderId) {
-      await Order.updateOne({ _id: orderId, status: 'created' }, {
-        $set: { status: 'failed', failureReason: String(err.message || 'YOUPI PG session creation failed').slice(0, 350) }
-      }).catch(() => {});
+      await Order.updateOne({ _id: orderId, status: 'created' }, { $set: { status: 'failed', failureReason: String(err.message || 'YOUPI PG session creation failed').slice(0, 350) } }).catch(() => {});
     }
     console.error('YOUPI PG create-order error:', err.message);
+    adminAlert({ type: 'payment', severity: 'warning', title: 'YOUPI checkout could not be started', fingerprint: 'youpi-start-fail', details: { error: err.message, kind, orderId } });
     res.status(err.status === 400 ? 400 : 502).json({ error: 'Could not start YOUPI PG checkout. Please try again later.' });
   }
+}
+
+router.post('/youpi/create-order', auth, ensureYoupi, async (req, res) => {
+  const { presetId } = req.body || {};
+  if (!mongoose.Types.ObjectId.isValid(presetId)) return res.status(400).json({ error: 'Invalid preset ID' });
+  const preset = await Preset.findById(presetId).select('_id name price status authorId').lean();
+  if (!preset || preset.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
+  if (!Number.isFinite(Number(preset.price)) || Number(preset.price) <= 0) return res.status(400).json({ error: 'Preset is free or has an invalid price' });
+  if (String(preset.authorId) === String(req.user.id)) return res.status(400).json({ error: 'You cannot purchase your own preset.' });
+  if (await Order.exists({ presetId: preset._id, userId: req.user.id, status: 'paid', kind: { $ne: 'subscription' } })) return res.status(400).json({ error: 'You already own this preset.' });
+  return startYoupiCheckout(req, res, { userId: req.user.id, presetId: preset._id, kind: 'preset', amountRupees: Math.round(Number(preset.price) * 100) / 100, label: preset.name });
+});
+
+router.post('/youpi/subscribe', auth, ensureYoupi, async (req, res) => {
+  const plan = getPlans()[String(req.body?.plan || '')];
+  if (!plan) return res.status(400).json({ error: 'Invalid subscription plan.' });
+  return startYoupiCheckout(req, res, { userId: req.user.id, kind: 'subscription', plan: plan.id, amountRupees: plan.price, label: plan.label });
+});
+
+// Tip a creator (₹10 – ₹500). Money goes to YOUPI PG; the creator's tip total is credited after verification.
+router.post('/youpi/tip', auth, ensureYoupi, async (req, res) => {
+  const { recipientId, amount, note } = req.body || {};
+  if (!mongoose.Types.ObjectId.isValid(recipientId)) return res.status(400).json({ error: 'Invalid creator' });
+  if (String(recipientId) === String(req.user.id)) return res.status(400).json({ error: 'You cannot tip yourself.' });
+  const value = Math.round(Number(amount) * 100) / 100;
+  if (!Number.isFinite(value) || value < 10 || value > 500) return res.status(400).json({ error: 'Tip must be between ₹10 and ₹500.' });
+  const creator = await User.findOne({ _id: recipientId, status: 'active' }).select('name username').lean();
+  if (!creator) return res.status(404).json({ error: 'Creator not found' });
+  return startYoupiCheckout(req, res, { userId: req.user.id, kind: 'tip', recipientId, amountRupees: value, note, label: `Tip to ${creator.name || creator.username}` });
+});
+
+// Current subscription status for the logged-in user.
+router.get('/subscription', auth, async (req, res) => {
+  const user = await User.findById(req.user.id).select('subscription').lean();
+  const sub = user?.subscription || {};
+  res.json({ isPro: isProUser(user), plan: sub.plan || '', expiry: sub.expiry || null, since: sub.since || null });
 });
 
 // YOUPI PG calls this endpoint server-to-server. The raw payload bytes must be preserved by server.js.
@@ -428,7 +315,10 @@ router.post('/youpi/webhook', async (req, res) => {
     const timestampHeader = String(req.headers['x-gateway-timestamp'] || '');
     const deliveryHeader = String(req.headers['x-gateway-delivery-id'] || '');
     if ((!signature && !signatureV2) || !timestampHeader || !deliveryHeader)
+    {
+      securityAlert(req, 'Payment webhook without signature headers', {}, 'warning');
       return res.status(401).json({ error: 'Missing signed webhook headers.' });
+    }
 
     let payload;
     try { payload = JSON.parse(raw); }
@@ -450,7 +340,10 @@ router.post('/youpi/webhook', async (req, res) => {
     const expectedV2 = `sha256=${crypto.createHmac('sha256', YOUPI_WEBHOOK_SECRET).update(`${timestampHeader}.${raw}`).digest('hex')}`;
     const signatureOk = (signature && timingSafeStringEqual(expectedV1, signature)) ||
       (signatureV2 && timingSafeStringEqual(expectedV2, signatureV2));
-    if (!signatureOk) return res.status(401).json({ error: 'Invalid webhook signature.' });
+    if (!signatureOk) {
+      securityAlert(req, 'Payment webhook with INVALID signature (possible forgery attempt)', { deliveryId: deliveryHeader, orderId: payload.orderId || '' }, 'critical');
+      return res.status(401).json({ error: 'Invalid webhook signature.' });
+    }
 
     if (!payload.orderId || !payload.event) return res.status(400).json({ error: 'Missing order ID or event.' });
     const order = await Order.findById(String(payload.orderId));
@@ -463,6 +356,7 @@ router.post('/youpi/webhook', async (req, res) => {
     res.status(200).json({ received: true, reviewRequired: Boolean(outcome.reviewRequired), alreadyProcessed: Boolean(outcome.alreadyProcessed) });
   } catch (err) {
     console.error('YOUPI PG webhook error:', err.message);
+    adminAlert({ type: 'payment', severity: 'critical', title: 'YOUPI webhook processing failed', fingerprint: 'youpi-webhook-fail', details: { error: err.message } });
     res.status(500).json({ error: 'Webhook processing failed.' });
   }
 });

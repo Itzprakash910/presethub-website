@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const { Comment, Preset, User } = require('../models');
 const { createNotification, evaluateAchievements } = require('../utils/notifications');
+const { checkPresetViral } = require('../utils/viral');
 
 const router = express.Router();
 
@@ -33,6 +34,7 @@ router.post('/:presetId', auth, async (req, res, next) => {
       await createNotification(preset.authorId, 'comment', `💬 ${user.name || user.username || 'Someone'} commented on “${preset.name}”.`, `/preset/${preset._id}`, 'New comment');
       evaluateAchievements(preset.authorId).catch(() => {});
     }
+    checkPresetViral(preset._id);
     if (parentId) {
       const parent = await Comment.findById(parentId).select('userId').lean();
       if (parent && parent.userId.toString() !== req.user.id) {

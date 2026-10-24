@@ -6,8 +6,11 @@ const bcrypt = require('bcryptjs');
 const auth = require('../middleware/auth');
 
 const {
-  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest
+  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Report
 } = require('../models');
+const { getDbUsage, adminAlert } = require('../utils/alerts');
+const { getPlans, isProUser } = require('../utils/plans');
+const { getBotStatus } = require('../bot');
 const { deleteFromMongo, uploadToMongo } = require('../config/mongoStorage');
 const { uploadAdImage, validateParsedUploads, safeImageContentType } = require('../middleware/upload');
 const { createNotification, sendWebPush } = require('../utils/notifications');
@@ -1769,5 +1772,180 @@ router.delete('/users/:id', async (req, res) => {
   }
 });
 
+
+// ============================================================
+// v3.2 — OVERVIEW, ALERTS, SYSTEM, SUBSCRIPTIONS, TEXT POSTS
+// ============================================================
+router.get('/overview', async (req, res) => {
+  try {
+    const dayStart = new Date(new Date().setHours(0, 0, 0, 0));
+    const since14 = new Date(Date.now() - 14 * 86400000);
+    const [users, usersToday, online, presets, texts, textsToday, proUsers, downloads, unreadAlerts, criticalAlerts, openSupport,
+      rev, signups, recentUsers, recentAlerts, pendingOrders, suspicious] = await Promise.all([
+      User.countDocuments(), User.countDocuments({ createdAt: { $gte: dayStart } }),
+      User.countDocuments({ status: 'active', lastActive: { $gte: new Date(Date.now() - 5 * 60000) } }),
+      Preset.countDocuments({ status: 'approved' }), TextPost.countDocuments({ status: 'approved' }),
+      TextPost.countDocuments({ createdAt: { $gte: dayStart } }),
+      User.countDocuments({ 'subscription.expiry': { $gt: new Date() }, 'subscription.plan': { $ne: '' } }),
+      Download.countDocuments(), AlertLog.countDocuments({ read: false }),
+      AlertLog.countDocuments({ read: false, severity: 'critical' }), SupportRequest.countDocuments({ status: { $in: ['open', 'in_progress'] } }),
+      Order.aggregate([{ $match: { status: 'paid' } }, { $group: { _id: '$kind', amount: { $sum: '$amount' }, n: { $sum: 1 } } }]),
+      User.aggregate([{ $match: { createdAt: { $gte: since14 } } }, { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, n: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
+      User.find({}).sort({ createdAt: -1 }).limit(6).select('name username email createdAt status').lean(),
+      AlertLog.find({}).sort({ lastAt: -1 }).limit(6).lean(),
+      Order.countDocuments({ status: 'created' }), Order.countDocuments({ status: 'suspicious' })
+    ]);
+    const revBy = Object.fromEntries(rev.map(r => [r._id || 'preset', r]));
+    const map = Object.fromEntries(signups.map(x => [x._id, x.n]));
+    const series = [];
+    for (let i = 13; i >= 0; i--) { const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10); series.push({ date: d, users: map[d] || 0 }); }
+    res.json({
+      users, usersToday, online, presets, texts, textsToday, proUsers, downloads, unreadAlerts, criticalAlerts, openSupport, pendingOrders, suspiciousOrders: suspicious,
+      revenue: { presets: revBy.preset?.amount || 0, subscriptions: revBy.subscription?.amount || 0, total: (revBy.preset?.amount || 0) + (revBy.subscription?.amount || 0), paidOrders: (revBy.preset?.n || 0) + (revBy.subscription?.n || 0) },
+      signupSeries: series,
+      recentUsers: recentUsers.map(u => ({ id: String(u._id), name: u.name, username: u.username, email: u.email, createdAt: u.createdAt, status: u.status })),
+      recentAlerts: recentAlerts.map(a => ({ id: String(a._id), type: a.type, severity: a.severity, title: a.title, count: a.count, lastAt: a.lastAt, read: a.read }))
+    });
+  } catch (e) { console.error('Admin overview:', e); res.status(500).json({ error: 'Failed to load overview' }); }
+});
+
+router.get('/alerts', async (req, res) => {
+  try {
+    const f = {};
+    if (['new_user', 'security', 'error', 'database', 'payment', 'subscription', 'system', 'viral'].includes(String(req.query.type))) f.type = req.query.type;
+    if (['info', 'warning', 'critical'].includes(String(req.query.severity))) f.severity = req.query.severity;
+    if (req.query.unread === '1') f.read = false;
+    const { skip, limit, page } = paginate(req.query.page, req.query.limit || 30);
+    const [items, total] = await Promise.all([AlertLog.find(f).sort({ lastAt: -1 }).skip(skip).limit(limit).lean(), AlertLog.countDocuments(f)]);
+    res.json({ items: items.map(a => ({ ...a, id: String(a._id) })), total, page, pages: Math.max(1, Math.ceil(total / limit)) });
+  } catch (e) { res.status(500).json({ error: 'Failed to load alerts' }); }
+});
+router.post('/alerts/read-all', async (req, res) => { await AlertLog.updateMany({ read: false }, { $set: { read: true } }); res.json({ success: true }); });
+router.put('/alerts/:id/read', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  await AlertLog.updateOne({ _id: req.params.id }, { $set: { read: true } }); res.json({ success: true });
+});
+router.delete('/alerts/:id', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  await AlertLog.deleteOne({ _id: req.params.id }); res.json({ success: true });
+});
+router.post('/alerts/test', async (req, res) => {
+  await adminAlert({ type: 'system', severity: 'warning', title: 'Test alert from admin panel', throttleMs: 1000, fingerprint: `test-${Date.now()}`, details: { by: req.user.email, note: 'If you received this on Telegram/e-mail, alerts are working.' } });
+  res.json({ success: true });
+});
+
+router.get('/system', async (req, res) => {
+  try {
+    const mem = process.memoryUsage();
+    const usage = await getDbUsage();
+    const hasEnv = k => Boolean(process.env[k]);
+    res.json({
+      uptimeMinutes: Math.round(process.uptime() / 60), node: process.version, env: process.env.NODE_ENV || 'development',
+      memoryMB: { rss: Math.round(mem.rss / 1048576), heapUsed: Math.round(mem.heapUsed / 1048576) },
+      database: usage, bot: getBotStatus(),
+      services: {
+        payments: hasEnv('YOUPI_API_URL') && hasEnv('YOUPI_MERCHANT_ID') && hasEnv('YOUPI_WEBHOOK_SECRET'),
+        email: hasEnv('RESEND_API_KEY'), telegramAlerts: hasEnv('BOT_TOKEN') && hasEnv('ADMIN_CHAT_ID'),
+        webPush: hasEnv('VAPID_PUBLIC_KEY') && hasEnv('VAPID_PRIVATE_KEY'), adsense: hasEnv('ADSENSE_CLIENT')
+      },
+      viralScore: Number(process.env.VIRAL_SCORE || 300)
+    });
+  } catch (e) { res.status(500).json({ error: 'Failed to load system status' }); }
+});
+
+router.get('/subscriptions', async (req, res) => {
+  try {
+    const now = new Date();
+    const users = await User.find({ 'subscription.plan': { $ne: '' }, 'subscription.expiry': { $ne: null } }).sort({ 'subscription.expiry': -1 }).limit(200).select('name username email subscription').lean();
+    const orders = await Order.find({ kind: 'subscription' }).sort({ createdAt: -1 }).limit(100).populate('userId', 'name email').lean();
+    res.json({
+      plans: Object.values(getPlans()),
+      users: users.map(u => ({ id: String(u._id), name: u.name, username: u.username, email: u.email, plan: u.subscription.plan, expiry: u.subscription.expiry, active: new Date(u.subscription.expiry) > now })),
+      orders: orders.map(o => ({ id: String(o._id), user: o.userId?.name || o.userId?.email || '—', plan: o.plan, amount: o.amount, status: o.status, createdAt: o.createdAt, paidAt: o.paidAt || null }))
+    });
+  } catch (e) { res.status(500).json({ error: 'Failed to load subscriptions' }); }
+});
+router.post('/users/:id/pro', async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid user ID' });
+    const days = Math.round(Number(req.body?.days));
+    if (!Number.isFinite(days) || days < -3650 || days > 3650 || days === 0) return res.status(400).json({ error: 'Days must be between -3650 and 3650 (not 0). Negative removes Pro time.' });
+    const user = await User.findById(req.params.id).select('subscription name');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const base = user.subscription?.expiry && new Date(user.subscription.expiry) > new Date() ? new Date(user.subscription.expiry) : new Date();
+    const expiry = new Date(base.getTime() + days * 86400000);
+    const active = expiry > new Date();
+    await User.updateOne({ _id: user._id }, { $set: { 'subscription.expiry': active ? expiry : null, 'subscription.tier': active ? 'pro' : 'free', 'subscription.plan': active ? (user.subscription?.plan || 'monthly') : '', 'subscription.since': user.subscription?.since || new Date() } });
+    if (days > 0) await createNotification(user._id, 'subscription', `👑 PresetHub Pro: admin added ${days} day(s). Active until ${expiry.toLocaleDateString('en-IN')}.`, '/', '👑 PresetHub Pro');
+    res.json({ success: true, expiry: active ? expiry : null });
+  } catch (e) { res.status(500).json({ error: 'Failed to update Pro status' }); }
+});
+
+router.get('/texts', async (req, res) => {
+  try {
+    const f = {};
+    if (['approved', 'rejected'].includes(String(req.query.status))) f.status = req.query.status;
+    const q = String(req.query.q || '').trim().slice(0, 60);
+    if (q) f.$or = [{ text: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }, { author: new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }];
+    const { skip, limit, page } = paginate(req.query.page, req.query.limit || 30);
+    const [items, total] = await Promise.all([TextPost.find(f).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(), TextPost.countDocuments(f)]);
+    res.json({ items: items.map(t => ({ id: String(t._id), title: t.title, text: t.text.slice(0, 300), category: t.category, author: t.author, status: t.status, likes: (t.likes || []).length, copies: t.copies, shares: t.shares, views: t.views, comments: t.commentsCount, createdAt: t.createdAt })), total, page, pages: Math.max(1, Math.ceil(total / limit)) });
+  } catch (e) { res.status(500).json({ error: 'Failed to load text posts' }); }
+});
+router.put('/texts/:id/status', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  const status = String(req.body?.status);
+  if (!['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  const t = await TextPost.findByIdAndUpdate(req.params.id, { $set: { status } }, { new: true }).select('authorId title').lean();
+  if (!t) return res.status(404).json({ error: 'Post not found' });
+  if (status === 'rejected') await createNotification(t.authorId, 'moderation', 'Your text post was removed by the PresetHub team for violating community rules.', '/shayari/');
+  res.json({ success: true });
+});
+router.delete('/texts/:id', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  await Promise.all([TextPost.deleteOne({ _id: req.params.id }), Comment.deleteMany({ textId: req.params.id })]);
+  res.json({ success: true });
+});
+
+// ---------- COMMUNITY REPORTS (moderation queue) ----------
+router.get('/reports', async (req, res) => {
+  try {
+    const f = {};
+    if (['open', 'resolved', 'dismissed'].includes(String(req.query.status))) f.status = req.query.status;
+    if (['preset', 'text', 'user', 'comment'].includes(String(req.query.targetType))) f.targetType = req.query.targetType;
+    const { skip, limit, page } = paginate(req.query.page, req.query.limit || 30);
+    const [rows, total] = await Promise.all([
+      Report.find(f).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('reporterId', 'name username').lean(),
+      Report.countDocuments(f)
+    ]);
+    // Load a short preview of each reported item so the admin can decide without leaving the panel.
+    const previews = await Promise.all(rows.map(async r => {
+      const M = { preset: Preset, text: TextPost, comment: Comment, user: User }[r.targetType];
+      const doc = M ? await M.findById(r.targetId).select(r.targetType === 'preset' ? 'name status' : r.targetType === 'user' ? 'name username' : 'text status title').lean() : null;
+      return doc ? (doc.text || doc.name || doc.username || '').slice(0, 200) + (doc.status ? ` [${doc.status}]` : '') : '(deleted)';
+    }));
+    res.json({
+      items: rows.map((r, i) => ({ id: String(r._id), targetType: r.targetType, targetId: String(r.targetId), reason: r.reason, details: r.details, status: r.status, reporter: r.reporterId?.name || r.reporterId?.username || '—', createdAt: r.createdAt, preview: previews[i] })),
+      total, page, pages: Math.max(1, Math.ceil(total / limit))
+    });
+  } catch (e) { res.status(500).json({ error: 'Failed to load reports' }); }
+});
+
+// action: 'hide' (text/preset -> rejected), 'restore' (back to approved), 'dismiss' (report ignored), 'resolve'
+router.put('/reports/:id', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  const action = String(req.body?.action || '');
+  const report = await Report.findById(req.params.id);
+  if (!report) return res.status(404).json({ error: 'Report not found' });
+  const M = { preset: Preset, text: TextPost }[report.targetType];
+  if (action === 'hide' && M) await M.updateOne({ _id: report.targetId }, { $set: { status: 'rejected' } });
+  if (action === 'restore' && M) await M.updateOne({ _id: report.targetId }, { $set: { status: 'approved' } });
+  report.status = action === 'dismiss' ? 'dismissed' : 'resolved';
+  report.resolvedBy = req.user.id; report.resolvedAt = new Date();
+  await report.save();
+  // Close every other open report on the same item in one go.
+  if (action !== 'restore') await Report.updateMany({ targetType: report.targetType, targetId: report.targetId, status: 'open' }, { $set: { status: report.status, resolvedBy: req.user.id, resolvedAt: new Date() } });
+  res.json({ success: true, status: report.status });
+});
 
 module.exports = router;

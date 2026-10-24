@@ -5,6 +5,10 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { User, Preset, Download, Share, ShortLink, ShareClick, Comment, Message, Order } = require('../models');
 const { deleteFromMongo } = require('../config/mongoStorage');
+const { adminAlert, recordFailedLogin, clearFailedLogins, requestInfo } = require('../utils/alerts');
+const { isProUser } = require('../utils/plans');
+const { tickForFollowers } = require('../utils/tick');
+const { isLockedOut, noteLoginFailure, clearLoginFailures, signupLimiter, resetLimiter } = require('../utils/security');
 
 function strongPassword(value) {
   const p = String(value || '');
@@ -55,7 +59,7 @@ function generateUniqueUsername(email, existing) {
   return u;
 }
 
-router.post('/signup', validate(signupValidation), async (req, res) => {
+router.post('/signup', signupLimiter, validate(signupValidation), async (req, res) => {
   try {
     let { email, password, name, username } = req.body;
     email = email.toLowerCase().trim();
@@ -95,6 +99,12 @@ router.post('/signup', validate(signupValidation), async (req, res) => {
 
     await user.save();
 
+    adminAlert({
+      type: 'new_user', severity: 'info', title: `New user joined: ${user.name || user.username}`, throttleMs: 1000,
+      fingerprint: `new-user-${user._id}`,
+      details: { name: user.name, username: user.username, email: user.email, referredBy: user.referral?.referredBy ? String(user.referral.referredBy) : 'none', ...requestInfo(req) }
+    });
+
     const token = signUserToken(user);
 
     setAuthCookie(res, token);
@@ -119,12 +129,18 @@ router.post('/signup', validate(signupValidation), async (req, res) => {
 router.post('/login', validate(loginValidation), async (req, res) => {
   try {
     const email = req.body.email.toLowerCase().trim();
+    const locked = isLockedOut(email);
+    if (locked) return res.status(429).json({ error: `Too many wrong attempts. Try again in about ${locked} minute(s), or use "Forgot password".` });
     const user = await User.findOne({ email });
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!user) { recordFailedLogin(req, email); noteLoginFailure(email, req); return res.status(401).json({ error: 'Invalid credentials' }); }
 
     if (user.status === 'blocked' || user.status === 'deactivated' || !await bcrypt.compare(req.body.password, user.password)) {
+      recordFailedLogin(req, email); noteLoginFailure(email, req);
+      if (user.role === 'admin') adminAlert({ type: 'security', severity: 'critical', title: 'Failed login on ADMIN account', fingerprint: `admin-fail-${req.ip}`, details: { ...requestInfo(req), email } });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    clearFailedLogins(req, email); clearLoginFailures(email);
+    if (user.role === 'admin') adminAlert({ type: 'security', severity: 'warning', title: 'Admin logged in', fingerprint: `admin-login-${req.ip}`, throttleMs: 30 * 60 * 1000, details: { ...requestInfo(req), email } });
 
     user.lastLogin = new Date();
     user.lastActive = new Date();
@@ -138,7 +154,7 @@ router.post('/login', validate(loginValidation), async (req, res) => {
       user: {
         id: user._id.toString(), name: user.name, email: user.email,
         role: user.role, username: user.username, avatar: user.avatar,
-        createdAt: user.createdAt, verified: user.verified, subscription: user.subscription
+        createdAt: user.createdAt, verified: user.verified, subscription: user.subscription, isPro: isProUser(user)
       }
     });
   } catch (e) {
@@ -151,7 +167,7 @@ router.get('/me', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password -token -passwordResetTokenHash -passwordResetExpires -pushSubscriptions -sessionVersion').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ success: true, user: { ...user, id: user._id.toString() } });
+    res.json({ success: true, user: { ...user, id: user._id.toString(), isPro: isProUser(user), tick: tickForFollowers((user.followers || []).length) } });
   } catch (e) { res.status(500).json({ error: 'Failed' }); }
 });
 
@@ -207,7 +223,7 @@ router.put('/change-password', auth, validate(changePasswordValidation), async (
 
 
 
-router.post('/request-reset', async (req, res) => {
+router.post('/request-reset', resetLimiter, async (req, res) => {
   try {
     const email = String(req.body.email || '').toLowerCase().trim();
     // Always return the same public response to avoid account enumeration.

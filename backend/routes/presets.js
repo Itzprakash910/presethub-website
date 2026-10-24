@@ -10,6 +10,9 @@ const { uploadToMongo, deleteFromMongo, getStoredFileStream } = require('../conf
 const jwt = require('jsonwebtoken');
 const { validate, presetValidation } = require('../utils/validators');
 const { createNotification, evaluateAchievements } = require('../utils/notifications');
+const { checkPresetViral } = require('../utils/viral');
+const { isProUser } = require('../utils/plans');
+const { uploadLimiter, bulkLimiter } = require('../utils/security');
 
 const router = express.Router();
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
@@ -121,7 +124,7 @@ router.get('/search', async (req, res) => {
 });
 
 // ===== BULK UPLOAD (BEFORE /:id) =====
-router.post('/bulk', auth, bulkUploadFields, async (req, res) => {
+router.post('/bulk', auth, uploadLimiter, bulkUploadFields, async (req, res) => {
   try {
     validateParsedUploads(req);
     const user = await User.findById(req.user.id).select('name').lean();
@@ -288,7 +291,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // ===== SINGLE UPLOAD =====
-router.post('/', auth, uploadFields, validate(presetValidation), async (req, res) => {
+router.post('/', auth, uploadLimiter, uploadFields, validate(presetValidation), async (req, res) => {
   let fileStorageKey = '';
   let previewStorageKey = '';
   try {
@@ -384,6 +387,7 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
   if (counted) {
     const fresh = await Preset.findByIdAndUpdate(preset._id, { $inc: { downloads: 1 } }, { new: true, projection: { downloads: 1 } }).lean();
     preset.downloads = fresh?.downloads || preset.downloads || 0;
+    checkPresetViral(preset._id);
   }
 
   const token = jwt.sign(
@@ -435,8 +439,10 @@ router.get('/:id/file', async (req, res, next) => {
 });
 
 // ===== BULK DOWNLOAD =====
-router.post('/bulk-download', auth, async (req, res) => {
-  const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.map(String))].slice(0, 30) : [];
+router.post('/bulk-download', auth, bulkLimiter, async (req, res) => {
+  const bulkUser = await User.findById(req.user.id).select('subscription').lean();
+  const bulkLimit = isProUser(bulkUser) ? 30 : 10;
+  const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.map(String))].slice(0, bulkLimit) : [];
   if (!ids.length) return res.status(400).json({ error: 'Select at least one preset' });
   const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
   if (!validIds.length) return res.status(400).json({ error: 'No valid preset IDs' });
@@ -517,7 +523,7 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 // ===== UPDATE =====
-router.put('/:id', auth, uploadFields, async (req, res) => {
+router.put('/:id', auth, uploadLimiter, uploadFields, async (req, res) => {
   let newFileUrl = '';
   let newPreviewUrl = '';
   try {
@@ -589,6 +595,7 @@ router.post('/:id/view', optionalAuth, async (req, res) => {
     await createNotification(fresh.authorId, 'views-milestone', `🎉 Your preset “${fresh.name}” reached ${views} views!`, `/preset/${fresh._id}/${slugify(fresh.name)}/`, 'Preset milestone');
   }
   if (fresh?.authorId) evaluateAchievements(fresh.authorId).catch(() => {});
+  checkPresetViral(req.params.id);
   res.json({ views, milestone: milestones.includes(views) ? views : null });
 });
 
@@ -609,6 +616,7 @@ router.post('/:id/like', auth, async (req, res, next) => {
         `❤️ ${user?.name || 'Someone'} liked your preset “${preset.name}”.`, `/preset/${preset._id}`, 'New preset like');
       evaluateAchievements(preset.authorId).catch(() => {});
     }
+    checkPresetViral(preset._id);
     res.json({ likes: fresh?.likes?.length || 0, liked: !alreadyLiked });
   } catch (e) { next(e); }
 });
@@ -635,6 +643,7 @@ router.post('/:id/share', optionalAuth, async (req, res, next) => {
       }
     }
     evaluateAchievements(preset.authorId).catch(() => {});
+    checkPresetViral(preset._id);
     res.json({
       success: true, shares: fresh?.shares || 0, platform: safePlatform,
       shareUrl: `${SITE_URL}/preset/${preset._id}/${slugify(preset.name)}/`

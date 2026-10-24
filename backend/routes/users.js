@@ -9,6 +9,10 @@ const { uploadAvatar, validateParsedUploads, safeImageContentType } = require('.
 const { uploadToMongo } = require('../config/mongoStorage');
 const { createNotification, evaluateAchievements, sendWebPush } = require('../utils/notifications');
 
+const { tickForFollowers } = require('../utils/tick');
+const { isProUser } = require('../utils/plans');
+const { uploadLimiter } = require('../utils/security');
+
 const router = express.Router();
 function cleanSocialLinks(value) {
   const out = {};
@@ -30,7 +34,7 @@ router.get('/', async (req, res) => {
   const map = Object.fromEntries(counts.map(c => [c._id.toString(), c.count]));
   res.json(users.map(u => ({
     id: u._id.toString(), name: u.name, username: u.username, avatar: u.avatar,
-    followers: (u.followers || []).length,
+    followers: (u.followers || []).length, tick: tickForFollowers((u.followers || []).length),
     presetCount: map[u._id.toString()] || 0
   })));
 });
@@ -71,7 +75,7 @@ router.put('/me', auth, async (req, res) => {
   res.json(safe);
 });
 
-router.put('/me/avatar', auth, uploadAvatar, async (req, res) => {
+router.put('/me/avatar', auth, uploadLimiter, uploadAvatar, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No profile image selected' });
     validateParsedUploads(req);
@@ -97,7 +101,7 @@ router.get('/top', async (req, res) => {
     { $lookup: { from: 'presets', localField: '_id', foreignField: 'authorId', as: 'presets' } },
     { $addFields: { approved: { $filter: { input: '$presets', as: 'p', cond: { $eq: ['$$p.status', 'approved'] } } } } },
     { $project: {
-      name: 1, username: 1, avatar: 1, location: 1,
+      name: 1, username: 1, avatar: 1, location: 1, 'subscription.expiry': 1,
       presetCount: { $size: '$approved' },
       totalDownloads: { $sum: '$approved.downloads' },
       totalViews: { $sum: '$approved.views' },
@@ -127,7 +131,7 @@ router.get('/top', async (req, res) => {
   }
   pipeline.push({ $limit: 10 });
   const top = await User.aggregate(pipeline);
-  res.json(top.map(u => ({ ...u, id: u._id.toString(), distanceKm: Number.isFinite(u.distanceKm) ? Math.round(u.distanceKm * 10) / 10 : null })));
+  res.json(top.map(u => ({ ...u, tick: tickForFollowers(u.followers), isPro: isProUser(u), id: u._id.toString(), distanceKm: Number.isFinite(u.distanceKm) ? Math.round(u.distanceKm * 10) / 10 : null })));
 });
 
 router.post('/me/location', auth, async (req, res) => {
@@ -211,7 +215,9 @@ router.get('/me/subscription', auth, async (req, res) => {
   const sub = user.subscription || {};
   const ref = user.referral || {};
   res.json({
-    isPremium: sub.expiry && new Date(sub.expiry) > new Date(),
+    isPremium: Boolean(sub.expiry && new Date(sub.expiry) > new Date()),
+    isPro: Boolean(sub.expiry && new Date(sub.expiry) > new Date()),
+    plan: sub.plan || '',
     expiry: sub.expiry || null,
     adWatchCount: sub.adWatchCount || 0,
     adRewardDays: sub.adRewardDays || 0,
@@ -297,7 +303,7 @@ router.get('/:id/follow-status', auth, async (req, res) => {
 router.get('/:id', async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
-  const user = await User.findOne({ _id: req.params.id, status: 'active' }).select('name username avatar bio socialLinks verified followers following achievements').lean();
+  const user = await User.findOne({ _id: req.params.id, status: 'active' }).select('name username avatar bio socialLinks verified followers following achievements subscription').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
   const stats = await Preset.aggregate([
     { $match: { authorId: user._id, status: 'approved' } },
@@ -308,7 +314,8 @@ router.get('/:id', async (req, res) => {
     id: user._id.toString(), name: user.name, username: user.username,
     avatar: user.avatar, bio: user.bio, socialLinks: user.socialLinks || {},
     verified: !!user.verified, totalPresets: s.count, totalDownloads: s.downloads,
-    followers: (user.followers || []).length, following: (user.following || []).length, achievements: user.achievements || []
+    followers: (user.followers || []).length, following: (user.following || []).length, achievements: user.achievements || [],
+    tick: tickForFollowers((user.followers || []).length), isPro: isProUser(user)
   });
 });
 
