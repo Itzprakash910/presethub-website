@@ -33,10 +33,10 @@ function safeNotificationLink(link) {
   return /^\/(?!\/)[^\s]{0,500}$/.test(value) ? value : '/';
 }
 
-async function createNotification(userId, type, message, link, title='PresetHub') {
+async function createNotification(userId, type, message, link, title='PresetHub', extra = {}) {
   if (!mongoose.Types.ObjectId.isValid(userId)) return false;
   const safeLink = safeNotificationLink(link);
-  const notification = { type: String(type || 'system').slice(0, 60), message: String(message || '').slice(0, 500), link: safeLink, read: false, createdAt: new Date() };
+  const notification = { type: String(type || 'system').slice(0, 60), message: String(message || '').slice(0, 500), link: safeLink, read: false, tick: String(extra.tick || ''), createdAt: new Date() };
   const result = await User.updateOne(
     { _id: userId, notifications: { $not: { $elemMatch: { message, type, read: false } } } },
     { $push: { notifications: { $each: [notification], $slice: -200 } } }

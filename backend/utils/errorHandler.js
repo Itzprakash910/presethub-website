@@ -1,3 +1,4 @@
+const { errorAlert } = require('./alerts');
 const errorHandler = (err, req, res, next) => {
   console.error('❌ Error:', err.stack);
 
@@ -15,12 +16,13 @@ const errorHandler = (err, req, res, next) => {
   }
   if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'File too large. Single preset uploads max 100MB; profile images max 5MB.' });
   if (err.code === 'LIMIT_UNEXPECTED_FILE') return res.status(400).json({ error: 'Unexpected file field.' });
-  if (err.message && /Only JPG|Unsupported preset format|File type|Invalid image|extension does not match|Invalid ZIP|Bulk upload total size/i.test(err.message)) return res.status(400).json({ error: err.message });
+  if (err.message && /Only JPG|Unsupported preset format|File type|Invalid image|extension does not match|Invalid ZIP|ZIP |Bulk upload total size|Invalid ZIP|unsafe|compression ratio|too many files/i.test(err.message)) return res.status(400).json({ error: err.message });
   if (err.name === 'ValidationError') return res.status(400).json({ error: err.message });
   if (err.name === 'JsonWebTokenError') return res.status(401).json({ error: 'Invalid token' });
   if (err.name === 'TokenExpiredError') return res.status(401).json({ error: 'Token expired' });
   if (err.name === 'CastError') return res.status(400).json({ error: 'Invalid ID format' });
 
+  if (!err.status || err.status >= 500) errorAlert(err, req);
   res.status(err.status || 500).json({
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message
   });
