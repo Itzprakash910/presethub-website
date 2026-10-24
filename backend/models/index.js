@@ -7,6 +7,7 @@ const NotificationSchema = new Schema({
   message: { type: String, required: true, maxlength: 500 },
   read: { type: Boolean, default: false },
   link: { type: String, default: '/', maxlength: 500 },
+  tick: { type: String, enum: ['', 'green', 'blue', 'gold'], default: '' },
   createdAt: { type: Date, default: Date.now },
 });
 
@@ -27,6 +28,10 @@ const UserSchema = new Schema({
     website: { type: String, default: '' },
   },
   followers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  streakCurrent: { type: Number, default: 0 },
+  streakBest: { type: Number, default: 0 },
+  streakLastDay: { type: String, default: '' },
+  tipsTotal: { type: Number, default: 0 },
   following: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   wishlist: [{ type: Schema.Types.ObjectId, ref: 'Preset' }],
   notifications: { type: [NotificationSchema], default: [], validate: v => Array.isArray(v) && v.length <= 200 },
@@ -34,6 +39,9 @@ const UserSchema = new Schema({
   pushSubscriptions: [{ endpoint: { type: String }, expirationTime: { type: Number, default: null }, keys: { p256dh: String, auth: String }, createdAt: { type: Date, default: Date.now } }],
   subscription: {
     tier: { type: String, default: 'free' },
+    plan: { type: String, default: '' },
+    since: { type: Date, default: null },
+    lastOrderId: { type: String, default: '' },
     expiry: { type: Date, default: null },
     adWatchCount: { type: Number, default: 0 },
     adRewardDays: { type: Number, default: 0 },
@@ -98,6 +106,7 @@ const PresetSchema = new Schema({
   shareStats: { type: Map, of: Number, default: {} },
   adImpressions: { type: Number, default: 0 },
   totalRevenue: { type: Number, default: 0 },
+  viralNotifiedAt: { type: Date, default: null },
   bulkUploadBatch: { type: Number },
   uploadId: { type: String, unique: true, sparse: true, index: true },
 }, { timestamps: true });
@@ -114,7 +123,8 @@ PresetSchema.index({ status: 1, avgRating: -1, _id: -1 });
 
 // ========== COMMENT ==========
 const CommentSchema = new Schema({
-  presetId: { type: Schema.Types.ObjectId, ref: 'Preset', required: true, index: true },
+  presetId: { type: Schema.Types.ObjectId, ref: 'Preset', default: null, index: true },
+  textId: { type: Schema.Types.ObjectId, ref: 'TextPost', default: null, index: true },
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   userName: { type: String, required: true, maxlength: 80 },
   text: { type: String, required: true, maxlength: 500, trim: true },
@@ -122,16 +132,21 @@ const CommentSchema = new Schema({
   likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 }, { timestamps: true });
 CommentSchema.index({ presetId: 1, createdAt: -1 });
+CommentSchema.index({ textId: 1, createdAt: -1 });
 
 // ========== ORDER ==========
 const OrderSchema = new Schema({
   _id: { type: String },
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  presetId: { type: Schema.Types.ObjectId, ref: 'Preset', required: true, index: true },
+  presetId: { type: Schema.Types.ObjectId, ref: 'Preset', default: null, index: true },
+  kind: { type: String, enum: ['preset', 'subscription', 'tip'], default: 'preset', index: true },
+  recipientId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+  note: { type: String, default: '', maxlength: 140 },
+  plan: { type: String, enum: ['', 'monthly', 'quarterly', 'yearly'], default: '' },
   amount: { type: Number, required: true },
   currency: { type: String, default: 'INR' },
   status: { type: String, enum: ['created', 'paid', 'refunded', 'cancelled', 'failed', 'expired', 'suspicious'], default: 'created', index: true },
-  provider: { type: String, enum: ['razorpay', 'youpi'], default: 'razorpay', index: true },
+  provider: { type: String, enum: ['youpi', 'legacy'], default: 'youpi', index: true },
   paymentId: { type: String },
   gatewayPaymentId: { type: String },
   checkoutUrl: { type: String },
@@ -214,6 +229,84 @@ MessageSchema.index({ senderId: 1, receiverId: 1, createdAt: 1 });
 MessageSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 UserSchema.index({ 'pushSubscriptions.endpoint': 1 }, { sparse: true });
 
+
+// ========== SUPPORT REQUEST ==========
+const SupportRequestSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+  telegramId: { type: String, default: '' },
+  name: { type: String, default: '', maxlength: 120 },
+  email: { type: String, default: '', maxlength: 200 },
+  type: { type: String, enum: ['password_reset', 'delete_account', 'account_access', 'block_review', 'other'], default: 'other' },
+  message: { type: String, required: true, maxlength: 1000 },
+  status: { type: String, enum: ['open', 'in_progress', 'resolved', 'rejected'], default: 'open', index: true },
+  adminNote: { type: String, default: '', maxlength: 1000 },
+  resolvedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  resolvedAt: { type: Date, default: null },
+}, { timestamps: true });
+SupportRequestSchema.index({ status: 1, createdAt: -1 });
+
+// ========== TEXT POST (Shayari / Quotes / Text Prompts) ==========
+const TEXT_CATEGORIES = ['sad', 'true-lines', 'love', 'attitude', 'motivation', 'friendship', 'life', 'good-morning', 'good-night', 'funny', 'romantic', 'breakup', 'ai-prompt', 'caption', 'other'];
+const TextPostSchema = new Schema({
+  title: { type: String, default: '', trim: true, maxlength: 120 },
+  text: { type: String, required: true, trim: true, maxlength: 2000 },
+  category: { type: String, enum: TEXT_CATEGORIES, default: 'other', index: true },
+  language: { type: String, enum: ['hindi', 'hinglish', 'english', 'urdu', 'other'], default: 'hindi' },
+  tags: [{ type: String, lowercase: true, trim: true }],
+  slug: { type: String, default: '', index: true },
+  author: { type: String, required: true },
+  authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  status: { type: String, enum: ['approved', 'rejected'], default: 'approved', index: true },
+  likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  views: { type: Number, default: 0 },
+  copies: { type: Number, default: 0 },
+  shares: { type: Number, default: 0 },
+  commentsCount: { type: Number, default: 0 },
+  shareStats: { type: Map, of: Number, default: {} },
+  viralNotifiedAt: { type: Date, default: null },
+}, { timestamps: true });
+TextPostSchema.index({ title: 'text', text: 'text', tags: 'text' });
+TextPostSchema.index({ status: 1, createdAt: -1 });
+TextPostSchema.index({ status: 1, category: 1, createdAt: -1 });
+TextPostSchema.index({ status: 1, copies: -1 });
+
+// ========== ADMIN ALERT LOG ==========
+const AlertLogSchema = new Schema({
+  type: { type: String, enum: ['new_user', 'security', 'error', 'database', 'payment', 'subscription', 'system', 'viral'], required: true, index: true },
+  severity: { type: String, enum: ['info', 'warning', 'critical'], default: 'info', index: true },
+  title: { type: String, required: true, maxlength: 200 },
+  details: { type: Schema.Types.Mixed, default: {} },
+  fingerprint: { type: String, default: '', index: true },
+  count: { type: Number, default: 1 },
+  read: { type: Boolean, default: false, index: true },
+  lastAt: { type: Date, default: Date.now, index: true },
+}, { timestamps: true });
+AlertLogSchema.index({ createdAt: -1 });
+AlertLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 60 }); // keep 60 days
+
+
+// ========== COLLECTIONS (user playlists of presets) ==========
+const CollectionSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  name: { type: String, required: true, trim: true, maxlength: 60 },
+  description: { type: String, default: '', maxlength: 300 },
+  isPublic: { type: Boolean, default: false, index: true },
+  presetIds: [{ type: Schema.Types.ObjectId, ref: 'Preset' }],
+}, { timestamps: true });
+
+// ========== REPORTS (community moderation) ==========
+const ReportSchema = new Schema({
+  reporterId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  targetType: { type: String, enum: ['preset', 'text', 'user', 'comment'], required: true, index: true },
+  targetId: { type: Schema.Types.ObjectId, required: true, index: true },
+  reason: { type: String, enum: ['spam', 'copyright', 'abuse', 'hate', 'adult', 'scam', 'other'], default: 'other' },
+  details: { type: String, default: '', maxlength: 500 },
+  status: { type: String, enum: ['open', 'resolved', 'dismissed'], default: 'open', index: true },
+  resolvedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  resolvedAt: { type: Date, default: null },
+}, { timestamps: true });
+ReportSchema.index({ reporterId: 1, targetType: 1, targetId: 1 }, { unique: true });
+
 const User = mongoose.model('User', UserSchema);
 const Preset = mongoose.model('Preset', PresetSchema);
 const Order = mongoose.model('Order', OrderSchema);
@@ -226,4 +319,9 @@ const Comment = mongoose.model('Comment', CommentSchema);
 const Message = mongoose.model('Message', MessageSchema);
 const HomeAd = mongoose.model('HomeAd', HomeAdSchema);
 const SupportRequest = mongoose.model('SupportRequest', SupportRequestSchema);
-module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest };
+const TextPost = mongoose.model('TextPost', TextPostSchema);
+const AlertLog = mongoose.model('AlertLog', AlertLogSchema);
+const Collection = mongoose.model('Collection', CollectionSchema);
+const Report = mongoose.model('Report', ReportSchema);
+
+module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Collection, Report, TEXT_CATEGORIES };
