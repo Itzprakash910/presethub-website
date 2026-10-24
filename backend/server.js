@@ -25,6 +25,13 @@ const adsRoutes = require('./routes/ads');
 const searchRoutes = require('./routes/search');
 const errorHandler = require('./utils/errorHandler');
 const { connectDB } = require('./config/db');
+const textRoutes = require('./routes/texts');
+const featureRoutes = require('./routes/features');
+const collectionRoutes = require('./routes/collections');
+const registerShayariRoutes = require('./seo/shayariPages');
+const registerListPages = require('./seo/listPages');
+const { botGuard } = require('./utils/security');
+const { securityGuard, status5xxWatcher, installProcessHandlers, startMonitors, securityAlert } = require('./utils/alerts');
 const { GridFSBucket, ObjectId } = require('mongoose').mongo;
 const { startBot, stopBot, getBotStatus } = require('./bot');
 
@@ -42,7 +49,7 @@ if (!fs.existsSync(frontendRoot)) {
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
 const SITE_CREATOR = 'Omprakash (HeyOmii)';
 const SITE_SOCIAL = 'https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn';
-const ICONS_CSS = '/icons.css?v=2.9.6';
+const ICONS_CSS = '/icons.css?v=3.2.0';
 
 // ============ ENV CHECKS ============
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -106,7 +113,7 @@ function ensureStructure() {
   }
 
   const required = {
-    'robots.txt': `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nSitemap: ${SITE_URL}/sitemap.xml\n`,
+    'robots.txt': `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /s/\nAllow: /shayari/\nSitemap: ${SITE_URL}/sitemap.xml\n`,
     'ads.txt': `google.com, ${(process.env.ADSENSE_CLIENT || 'ca-pub-3554311294133493').replace(/^ca-/, '')}, DIRECT, f08c47fec0942fa0\n`,
     'manifest.json': JSON.stringify({
       name:'PresetHub – Free & Premium Lightroom Presets Marketplace',
@@ -126,11 +133,10 @@ function ensureStructure() {
         {src:'/assets/icons/icon-512.png',sizes:'512x512',type:'image/png',purpose:'any maskable'}
       ],
       shortcuts:[
-        {name:'Upload Preset',short_name:'Upload',description:'Upload a new Lightroom preset',url:'/?action=upload',icons:[{src:'/assets/icons-pack/png/fa-upload.png',sizes:'64x64',type:'image/png'}]},
-        {name:'Profile',short_name:'Profile',description:'Open your PresetHub profile',url:'/?action=profile',icons:[{src:'/assets/icons-pack/png/fa-user.png',sizes:'64x64',type:'image/png'}]},
-        {name:'Messages',short_name:'Messages',description:'Open your messages',url:'/?action=messages',icons:[{src:'/assets/icons-pack/png/fa-envelope.png',sizes:'64x64',type:'image/png'}]},
-        {name:'Notifications',short_name:'Notifications',description:'View your notifications',url:'/?action=notifications',icons:[{src:'/assets/icons-pack/png/fa-bell.png',sizes:'64x64',type:'image/png'}]},
-        {name:'Logout',short_name:'Logout',description:'Log out of PresetHub',url:'/?action=logout',icons:[{src:'/assets/icons-pack/png/fa-right-from-bracket.png',sizes:'64x64',type:'image/png'}]}
+        {name:'Upload Preset',short_name:'Upload',description:'Upload a new Lightroom preset',url:'/?action=upload',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png'}]},
+        {name:'Profile',short_name:'Profile',description:'Open your PresetHub profile',url:'/?action=profile',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png'}]},
+        {name:'Notifications',short_name:'Notifications',description:'View your notifications',url:'/?action=notifications',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png'}]},
+        {name:'Logout',short_name:'Logout',description:'Log out of PresetHub',url:'/?action=logout',icons:[{src:'/assets/icons/icon-192.png',sizes:'192x192',type:'image/png'}]}
       ]
     }, null, 2)
   };
@@ -177,7 +183,6 @@ app.use(helmet({
       scriptSrc: [
         "'self'",
         "https://pagead2.googlesyndication.com",
-        "https://checkout.razorpay.com",
         "https://googleads.g.doubleclick.net"
       ],
       styleSrc: [
@@ -192,7 +197,6 @@ app.use(helmet({
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       connectSrc: [
         "'self'",
-        "https://api.razorpay.com",
         "https://pagead2.googlesyndication.com",
         "https://*.google.com",
         "https://*.googlesyndication.com",
@@ -200,8 +204,6 @@ app.use(helmet({
       ].filter(Boolean),
       frameSrc: [
         "'self'",
-        "https://api.razorpay.com",
-        "https://checkout.razorpay.com",
         "https://googleads.g.doubleclick.net",
         "https://*.google.com"
       ],
@@ -238,6 +240,14 @@ app.use((req, res, next) => {
 });
 
 app.use(cookieParser());
+app.use(botGuard); // blocks scanners / exploit probes before any route or static file
+app.use(status5xxWatcher);
+// Sensitive responses must never be cached by browsers or proxies.
+app.use(['/api/auth', '/api/payments', '/api/admin', '/api/users/me'], (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
 
 // Double-submit CSRF protection for cookie-authenticated state changes.
 // Bearer-token API clients remain supported for backwards compatibility.
@@ -256,6 +266,7 @@ function ensureCsrfCookie(req, res, next) {
     const supplied = String(req.get('X-CSRF-Token') || '');
     const expected = String(req.cookies.ph_csrf || '');
     if (!supplied || !expected || supplied !== expected) {
+      securityAlert(req, 'CSRF validation failed on an authenticated request', { reason: supplied ? 'token mismatch' : 'token missing' }, 'warning', 15 * 60 * 1000);
       return res.status(403).json({ error: 'CSRF validation failed. Refresh the page and try again.', code: 'CSRF_FAILED' });
     }
   }
@@ -270,14 +281,16 @@ const apiLimiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests. Please try again later.' }
+  message: { error: 'Too many requests. Please try again later.' },
+  handler: (req, res, next, options) => { securityAlert(req, 'API rate limit exceeded (possible scraping / DoS)', { limit: 300, window: '15 min' }, 'warning', 20 * 60 * 1000); res.status(429).json(options.message); }
 });
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 15,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many authentication attempts. Please try again later.' }
+  message: { error: 'Too many authentication attempts. Please try again later.' },
+  handler: (req, res, next, options) => { securityAlert(req, 'Too many login/signup attempts blocked (possible brute force)', { limit: 15, window: '15 min', path: req.originalUrl.split('?')[0] }, 'critical', 20 * 60 * 1000); res.status(429).json(options.message); }
 });
 app.use('/api/', apiLimiter);
 app.use('/api/auth', authLimiter);
@@ -290,13 +303,15 @@ const writeLimiter = rateLimit({
   message: { error: 'Too many write requests. Please slow down.' }
 });
 app.use('/api/presets', writeLimiter);
+app.use('/api/texts', writeLimiter);
 app.use('/api/comments', writeLimiter);
 app.use('/api/reviews', writeLimiter);
 app.use('/api/chat', writeLimiter);
 
 // ============ BODY PARSERS ============
-app.use(express.json({ limit: '2mb', verify: (req, res, buf) => { if (['/api/payments/webhook', '/api/payments/youpi/webhook'].includes(String(req.originalUrl || '').split('?')[0])) req.rawBody = Buffer.from(buf); } }));
+app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { if (['/api/payments/youpi/webhook'].includes(String(req.originalUrl || '').split('?')[0])) req.rawBody = Buffer.from(buf); } }));
 app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 1000 }));
+app.use(securityGuard); // blocks NoSQL/prototype injection + probes and alerts the admin
 
 // ============ MONGODB GRIDFS MEDIA ============
 // ALL user-uploaded binary data is stored in MongoDB GridFS. There is no
@@ -354,8 +369,8 @@ app.use(express.static(frontendRoot, {
 }));
 
 // ============ HEALTH CHECK ============
-app.get('/health', (req, res) => res.status(200).json({ ok: true, service: 'presethub', database: require('mongoose').connection.readyState === 1 ? 'connected' : 'disconnected', time: new Date().toISOString() }));
-app.get('/healthz', (req, res) => res.status(200).json({ ok: true, service: 'presethub', database: require('mongoose').connection.readyState === 1 ? 'connected' : 'disconnected', bot: getBotStatus(), time: new Date().toISOString() }));
+app.get('/health', (req, res) => res.status(200).json({ ok: true }));
+app.get('/healthz', (req, res) => res.status(200).json({ ok: true, database: require('mongoose').connection.readyState === 1 ? 'up' : 'down' })); // minimal: no internal details on public endpoint
 app.get('/api/bot/status', require('./middleware/auth').authenticate, require('./middleware/auth').isAdmin, (req, res) =>
   res.json({ ...getBotStatus(), time: new Date().toISOString() })
 );
@@ -371,6 +386,9 @@ app.use('/api/ads', adsRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/share', shareRoutes);
 app.use('/api/comments', commentRoutes);
+app.use('/api/texts', textRoutes);
+app.use('/api/features', featureRoutes);
+app.use('/api/collections', writeLimiter, collectionRoutes);
 app.use('/api/chat', chatRoutes);
 
 // ============ STATIC PAGES ============
@@ -410,7 +428,7 @@ function commonSeoHead({ title, description, canonical, image = `${SITE_URL}/ass
   const safeCanonical = escHtml(canonical);
   const safeImage = escHtml(image);
   const safeKeywords = escHtml(keywords);
-  return `<meta name="description" content="${safeDescription}"><meta name="keywords" content="${safeKeywords}"><meta name="author" content="${SITE_CREATOR}"><meta name="creator" content="${SITE_CREATOR}"><meta name="publisher" content="PresetHub"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#d4a373"><meta name="application-name" content="PresetHub"><meta property="og:site_name" content="PresetHub"><meta property="og:type" content="${escHtml(type)}"><meta property="og:locale" content="en_IN"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:url" content="${safeCanonical}"><meta property="og:image" content="${safeImage}"><meta property="og:image:secure_url" content="${safeImage}"><meta property="og:image:type" content="image/png"><meta property="og:image:alt" content="PresetHub preview"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}"><meta name="twitter:image" content="${safeImage}"><link rel="canonical" href="${safeCanonical}"><link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon"><link rel="icon" href="/assets/icons/icon-192.png" sizes="192x192" type="image/png"><link rel="apple-touch-icon" href="/assets/icons/icon-192.png"><link rel="stylesheet" href="${ICONS_CSS}"><link rel="stylesheet" href="/style.css?v=2.9.6"><link rel="stylesheet" href="/cookie-consent.css?v=2.9.6"><link rel="me" href="${SITE_SOCIAL}">`;
+  return `<meta name="description" content="${safeDescription}"><meta name="keywords" content="${safeKeywords}"><meta name="author" content="${SITE_CREATOR}"><meta name="creator" content="${SITE_CREATOR}"><meta name="publisher" content="PresetHub"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"><meta name="referrer" content="strict-origin-when-cross-origin"><meta name="theme-color" content="#d4a373"><meta name="application-name" content="PresetHub"><meta property="og:site_name" content="PresetHub"><meta property="og:type" content="${escHtml(type)}"><meta property="og:locale" content="hi_IN"><meta property="og:locale:alternate" content="en_IN"><meta property="og:title" content="${safeTitle}"><meta property="og:description" content="${safeDescription}"><meta property="og:url" content="${safeCanonical}"><meta property="og:image" content="${safeImage}"><meta property="og:image:secure_url" content="${safeImage}"><meta property="og:image:type" content="image/png"><meta property="og:image:alt" content="PresetHub"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${safeTitle}"><meta name="twitter:description" content="${safeDescription}"><meta name="twitter:image" content="${safeImage}"><link rel="canonical" href="${safeCanonical}"><link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/svg+xml" href="/assets/icons/favicon.svg"><link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32x32.png"><link rel="icon" type="image/png" sizes="48x48" href="/assets/icons/icon-48.png"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><link rel="manifest" href="/manifest.json"><link rel="alternate" hreflang="hi" href="${safeCanonical}"><link rel="alternate" hreflang="x-default" href="${safeCanonical}"><meta name="googlebot" content="index,follow,max-image-preview:large,max-snippet:-1"><meta name="color-scheme" content="light dark"><link rel="stylesheet" href="${ICONS_CSS}"><link rel="stylesheet" href="/style.css?v=3.2.0"><link rel="stylesheet" href="/cookie-consent.css?v=3.2.0"><link rel="me" href="${SITE_SOCIAL}">`;
 }
 
 function adsenseHead() {
@@ -489,7 +507,7 @@ ${commonSeoHead({ title: `${p.name} Lightroom Preset | PresetHub`, description, 
 <section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(preview)}" alt="${escHtml(p.name)} Lightroom preset preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">${escHtml(p.category || 'LIGHTROOM PRESET')}</span><h1>${escHtml(p.name)}</h1><p class="author">By ${escHtml(p.author || 'Creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-price ${price===0?'free':''}">${price===0?'Free':`₹${price.toFixed(2)}`}</div><div class="seo-tags">${(p.tags||[]).slice(0,10).map(t=>`<span>${escHtml(t)}</span>`).join('')}</div><div class="seo-actions"><a class="btn btn-primary" href="/"><i class="fas fa-download"></i> Open &amp; Download</a><a class="btn btn-outline" href="#details"><i class="fas fa-circle-info"></i> Show Details</a><a class="btn btn-outline" href="/profile/${p.authorId}/${slugify(author?.username || author?.name || p.author)}/"><i class="fas fa-user"></i> Creator</a></div></div></section>
 <div class="seo-info-grid"><div class="seo-info-card"><b>${Number(p.downloads||0)}</b><span>Downloads</span></div><div class="seo-info-card"><b>${Number(p.views||0)}</b><span>Views</span></div><div class="seo-info-card"><b>${Number(p.avgRating||0).toFixed(1)}</b><span>Rating</span></div><div class="seo-info-card"><b>${Number((p.likes||[]).length)}</b><span>Likes</span></div><div class="seo-info-card"><b>${Number(commentsCount)}</b><span>Comments</span></div><div class="seo-info-card"><b>${Number(p.shares||0)}</b><span>Shares</span></div></div><section id="details" class="seo-details"><h2>Preset Details</h2><p>${escHtml(p.description || 'A Lightroom preset published on PresetHub.')}</p><div class="seo-tags">${(p.tags||[]).slice(0,10).map(t=>`<span>#${escHtml(t)}</span>`).join('')}</div></section>
 <section class="seo-related"><div class="profile-section-head"><h2>More ${escHtml(p.category || 'Lightroom')} Presets</h2><a class="btn btn-outline btn-sm" href="/?q=${encodeURIComponent(p.category || '')}">View all</a></div><div class="seo-related-grid">${related.map(r=>`<a class="seo-related-card" href="/preset/${r._id}/${slugify(r.name)}/"><img src="${escHtml(seoAssetUrl(r.previewImage))}" alt="${escHtml(r.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(r.name)}</h3><p>${escHtml(r.author||'Creator')} · ${Number(r.price||0)===0?'Free':`₹${Number(r.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No related presets yet.</p>'}</div></section>
-<footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=2.9.6" defer></script></div></main></body></html>`;
+<footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=3.2.0" defer></script></div></main></body></html>`;
     res.type('html').send(html);
   } catch (e) { next(e); }
 });
@@ -503,7 +521,7 @@ app.get('/profile/:id/:slug?/', async (req, res, next) => {
     const presets = await Preset.find({ authorId:u._id, status:'approved' }).sort({createdAt:-1}).lean();
     const canonical = `${SITE_URL}/profile/${u._id}/${slugify(u.username || u.name)}/`;
     const avatar = seoAssetUrl(u.avatar); const description=(u.bio || `Lightroom presets by ${u.name || u.username} on PresetHub.`).slice(0,155);
-    const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${adsenseHead()}<title>${escHtml(u.name||u.username)} Presets &amp; Lightroom Presets | PresetHub</title>${commonSeoHead({ title: `${u.name||u.username} Presets | PresetHub`, description, canonical, image: avatar, type: 'profile', keywords: `${u.name||u.username}, Lightroom presets, preset creator, ${SITE_CREATOR}, PresetHub` })}<script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"ProfilePage","name":u.name||u.username,"url":canonical,"mainEntity":{"@type":"Person","name":u.name||u.username,"image":avatar,"sameAs":(u.socialLinks && Object.values(u.socialLinks).filter(Boolean).slice(0,4)) || []}})}</script></head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(avatar)}" alt="${escHtml(u.name||'Creator')} profile" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">CREATOR PROFILE</span><h1>${escHtml(u.name||u.username)}</h1><p class="author">@${escHtml(u.username||'creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-info-grid" style="margin:12px 0"><div class="seo-info-card"><b>${presets.length}</b><span>Presets</span></div><div class="seo-info-card"><b>${presets.reduce((a,p)=>a+Number(p.downloads||0),0)}</b><span>Downloads</span></div></div><a class="btn btn-primary" href="/"><i class="fas fa-arrow-left"></i> Open PresetHub</a></div></section><section class="seo-related"><div class="profile-section-head"><h2>Published Presets</h2><span>${presets.length} presets</span></div><div class="seo-related-grid">${presets.map(p=>`<a class="seo-related-card" href="/preset/${p._id}/${slugify(p.name)}/"><img src="${escHtml(seoAssetUrl(p.previewImage))}" alt="${escHtml(p.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(p.name)}</h3><p>${escHtml(p.category||'General')} · ${Number(p.price||0)===0?'Free':`₹${Number(p.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No published presets yet.</p>'}</div></section><footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=2.9.6" defer></script></div></main></body></html>`;
+    const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${adsenseHead()}<title>${escHtml(u.name||u.username)} Presets &amp; Lightroom Presets | PresetHub</title>${commonSeoHead({ title: `${u.name||u.username} Presets | PresetHub`, description, canonical, image: avatar, type: 'profile', keywords: `${u.name||u.username}, Lightroom presets, preset creator, ${SITE_CREATOR}, PresetHub` })}<script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"ProfilePage","name":u.name||u.username,"url":canonical,"mainEntity":{"@type":"Person","name":u.name||u.username,"image":avatar,"sameAs":(u.socialLinks && Object.values(u.socialLinks).filter(Boolean).slice(0,4)) || []}})}</script></head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(avatar)}" alt="${escHtml(u.name||'Creator')} profile" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">CREATOR PROFILE</span><h1>${escHtml(u.name||u.username)}</h1><p class="author">@${escHtml(u.username||'creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-info-grid" style="margin:12px 0"><div class="seo-info-card"><b>${presets.length}</b><span>Presets</span></div><div class="seo-info-card"><b>${presets.reduce((a,p)=>a+Number(p.downloads||0),0)}</b><span>Downloads</span></div></div><a class="btn btn-primary" href="/"><i class="fas fa-arrow-left"></i> Open PresetHub</a></div></section><section class="seo-related"><div class="profile-section-head"><h2>Published Presets</h2><span>${presets.length} presets</span></div><div class="seo-related-grid">${presets.map(p=>`<a class="seo-related-card" href="/preset/${p._id}/${slugify(p.name)}/"><img src="${escHtml(seoAssetUrl(p.previewImage))}" alt="${escHtml(p.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(p.name)}</h3><p>${escHtml(p.category||'General')} · ${Number(p.price||0)===0?'Free':`₹${Number(p.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No published presets yet.</p>'}</div></section><footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=3.2.0" defer></script></div></main></body></html>`;
     res.type('html').send(html);
   } catch(e){ next(e); }
 });
@@ -513,7 +531,7 @@ app.get('/sitemap.xml', async (req, res, next) => {
   try {
     const { Preset, User } = require('./models');
     const urls = [
-      '/', '/about.html', '/blog.html', '/contact.html', '/faq.html',
+      '/', '/about.html', '/blog.html', '/contact.html', '/faq.html', '/tools.html',
       '/privacy.html', '/terms.html', '/creator-program.html',
       '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html'
     ];
@@ -522,6 +540,20 @@ app.get('/sitemap.xml', async (req, res, next) => {
     for (const p of presets) {
       urls.push({ loc: `/preset/${p._id}/${slugify(p.name)}/`, lastmod: p.updatedAt, image: p.previewImage });
     }
+
+    const { TextPost, TEXT_CATEGORIES } = require('./models');
+    urls.push('/presets/', '/tags/');
+    const presetRows = await Preset.find({ status: 'approved' }).sort({ createdAt: -1 }).limit(5000).select('_id name updatedAt').lean();
+    for (const p of presetRows) urls.push({ loc: `/preset/${p._id}/${String(p.name || 'preset').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'preset'}/`, lastmod: p.updatedAt });
+    const cats = await Preset.distinct('category', { status: 'approved' });
+    for (const c of cats.filter(Boolean)) urls.push({ loc: `/presets/category/${encodeURIComponent(c)}/` });
+    const tagCounts = new Map();
+    for (const row of await Preset.aggregate([{ $match: { status: 'approved' } }, { $unwind: '$tags' }, { $group: { _id: { $toLower: '$tags' }, n: { $sum: 1 } } }, { $match: { n: { $gte: 2 } } }, { $limit: 2000 }])) tagCounts.set(row._id, row.n);
+    for (const t of tagCounts.keys()) if (/^[\p{L}\p{N}_-]{2,30}$/u.test(t)) urls.push({ loc: `/tags/${encodeURIComponent(t)}/` });
+    urls.push('/shayari/');
+    for (const c of TEXT_CATEGORIES) urls.push({ loc: `/shayari/category/${c}/` });
+    const texts = await TextPost.find({ status: 'approved' }).sort({ createdAt: -1 }).limit(5000).select('_id title text category slug updatedAt').lean();
+    for (const t of texts) urls.push({ loc: `/shayari/${t._id}/${t.slug || t.category + '-shayari'}/`, lastmod: t.updatedAt });
 
     const creators = await User.find({ status: 'active' }).select('_id username name').lean();
     for (const u of creators) {
@@ -539,6 +571,10 @@ app.get('/sitemap.xml', async (req, res, next) => {
     );
   } catch (e) { next(e); }
 });
+
+const shayariSeo = { SITE_URL, SITE_CREATOR, SITE_SOCIAL, escHtml, safeJson, commonSeoHead };
+registerShayariRoutes(app, shayariSeo);
+registerListPages(app, { ...shayariSeo, seoAssetUrl });
 
 // ============ 404 FALLBACK ============
 app.get('*', (req, res) => {
@@ -562,7 +598,26 @@ app.use(errorHandler);
     await connectDB();
     await ensureAdminUser();
     await autoPublishPendingPresets();
-    app.listen(PORT, '0.0.0.0', async () => {
+    // Once per India day, post the "Preset & Shayari of the day" to the Telegram channel.
+let lastChannelDay = '';
+async function postDailyToChannel() {
+  try {
+    if (!process.env.TELEGRAM_CHANNEL_ID || !process.env.BOT_TOKEN) return;
+    const { dayKey } = require('./utils/features');
+    const today = dayKey();
+    if (lastChannelDay === today) return;
+    const { getDailyPicks } = require('./routes/features');
+    const d = await getDailyPicks();
+    const base = (process.env.CLIENT_URL || SITE_URL).replace(/\/+$/, '');
+    const lines = ['🌟 Today on PresetHub', ''];
+    if (d.preset) lines.push(`🎨 Preset: ${d.preset.name} — by ${d.preset.author}`, `${base}/preset/${d.preset.id}/`, '');
+    if (d.text) lines.push(`✍️ Shayari: ${(d.text.title ? d.text.title + '\n' : '') + d.text.text.slice(0, 250)}`, `${base}/shayari/${d.text.id}/`);
+    if (lines.length > 2) { const { postToChannel } = require('./utils/alerts'); if (await postToChannel(lines.join('\n'))) lastChannelDay = today; }
+  } catch (e) { console.warn('Daily channel post failed:', e.message); }
+}
+setInterval(postDailyToChannel, 60 * 60 * 1000).unref?.();
+
+app.listen(PORT, '0.0.0.0', async () => {
       console.log('');
       console.log('═══════════════════════════════════════');
       console.log(`🚀 PresetHub listening on port ${PORT}`);
