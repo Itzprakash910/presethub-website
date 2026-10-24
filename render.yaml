@@ -25,7 +25,15 @@ services:
       - key: MONGODB_URI
         sync: false
       - key: PAYMENT_PROVIDER
-        value: youpi
+        value: cashfree
+      - key: CASHFREE_ENV
+        value: sandbox
+      - key: CASHFREE_APP_ID
+        sync: false
+      - key: CASHFREE_SECRET_KEY
+        sync: false
+      - key: CASHFREE_API_VERSION
+        value: 2025-01-01
       - key: YOUPI_API_URL
         sync: false
       - key: YOUPI_MERCHANT_ID
