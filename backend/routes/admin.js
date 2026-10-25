@@ -6,8 +6,10 @@ const bcrypt = require('bcryptjs');
 const auth = require('../middleware/auth');
 
 const {
-  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Report
+  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Report, Payout
 } = require('../models');
+const { decrypt, isKeyConfigured } = require('../utils/crypto');
+const { createNotification: notifyUser } = require('../utils/notifications');
 const { getDbUsage, adminAlert } = require('../utils/alerts');
 const { getPlans, isProUser } = require('../utils/plans');
 const { getBotStatus } = require('../bot');
@@ -1946,6 +1948,70 @@ router.put('/reports/:id', async (req, res) => {
   // Close every other open report on the same item in one go.
   if (action !== 'restore') await Report.updateMany({ targetType: report.targetType, targetId: report.targetId, status: 'open' }, { $set: { status: report.status, resolvedBy: req.user.id, resolvedAt: new Date() } });
   res.json({ success: true, status: report.status });
+});
+
+// ---------- CREATOR PAYOUTS (admin pays manually, then records the bank reference) ----------
+router.get('/payouts', async (req, res) => {
+  try {
+    const f = {};
+    if (['requested', 'approved', 'paid', 'rejected'].includes(String(req.query.status))) f.status = req.query.status;
+    const { skip, limit, page } = paginate(req.query.page, req.query.limit || 30);
+    const [rows, total] = await Promise.all([
+      Payout.find(f).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('userId', 'name username email').lean(),
+      Payout.countDocuments(f)
+    ]);
+    res.json({
+      items: rows.map(x => ({
+        id: String(x._id), creator: x.userId?.name || x.userId?.username || '—', creatorEmail: x.userId?.email || '', creatorId: String(x.userId?._id || ''),
+        amount: Math.round(x.amountPaise) / 100, method: x.method, destination: x.destinationMasked, status: x.status,
+        reference: x.reference || '', note: x.adminNote || '', createdAt: x.createdAt, processedAt: x.processedAt
+      })),
+      total, page, pages: Math.max(1, Math.ceil(total / limit))
+    });
+  } catch (e) { res.status(500).json({ error: 'Failed to load payouts' }); }
+});
+
+// Full bank/UPI details are decrypted only on request and every view is recorded.
+router.get('/payouts/:id/details', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  if (!isKeyConfigured()) return res.status(503).json({ error: 'PAYOUT_ENC_KEY is not configured' });
+  const payout = await Payout.findById(req.params.id).select('destinationEnc amountPaise userId').lean();
+  if (!payout) return res.status(404).json({ error: 'Payout not found' });
+  let detail;
+  try { detail = JSON.parse(decrypt(payout.destinationEnc)); } catch (_) { return res.status(500).json({ error: 'Stored details could not be decrypted' }); }
+  adminAlert({ type: 'payment', severity: 'info', title: 'Payout bank details viewed by admin', fingerprint: `payout-view-${req.params.id}`, throttleMs: 1000, email: false, details: { payoutId: String(req.params.id), byAdmin: req.user.email, amountRupees: Math.round(payout.amountPaise) / 100 } });
+  res.set('Cache-Control', 'no-store');
+  res.json({ method: detail.upi ? 'upi' : 'bank', holder: detail.holder, upi: detail.upi || '', account: detail.account || '', ifsc: detail.ifsc || '' });
+});
+
+// approve -> paid (needs reference), or reject (needs a note). Each step is an atomic status change.
+router.put('/payouts/:id', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  const action = String(req.body?.action || '');
+  const reference = String(req.body?.reference || '').trim().slice(0, 60);
+  const note = String(req.body?.note || '').trim().slice(0, 300);
+  const id = req.params.id, byAdmin = req.user.id;
+  let update, from;
+  if (action === 'approve') { from = ['requested']; update = { status: 'approved', processedBy: byAdmin, processedAt: new Date(), adminNote: note }; }
+  else if (action === 'paid') {
+    if (!/^[A-Za-z0-9\-_\/]{6,60}$/.test(reference)) return res.status(400).json({ error: 'Enter the bank/UPI reference (6–60 letters or numbers).' });
+    from = ['requested', 'approved']; update = { status: 'paid', reference, processedBy: byAdmin, processedAt: new Date(), adminNote: note };
+  }
+  else if (action === 'reject') {
+    if (note.length < 3) return res.status(400).json({ error: 'Add a reason for rejecting (shown to the creator).' });
+    from = ['requested', 'approved']; update = { status: 'rejected', processedBy: byAdmin, processedAt: new Date(), adminNote: note };
+  }
+  else return res.status(400).json({ error: 'Invalid action' });
+
+  const payout = await Payout.findOneAndUpdate({ _id: id, status: { $in: from } }, { $set: update }, { new: true }).lean();
+  if (!payout) return res.status(409).json({ error: 'This payout was already processed or does not exist.' });
+  const amount = Math.round(payout.amountPaise) / 100;
+  const msg = action === 'paid' ? `✅ ₹${amount} has been sent to your ${payout.method === 'upi' ? 'UPI' : 'bank'} account. Reference: ${reference}`
+    : action === 'approve' ? `⏳ Your payout of ₹${amount} is approved and will be sent shortly.`
+    : `❌ Your payout of ₹${amount} was not approved. ${note}`;
+  await notifyUser(payout.userId, 'payout', msg, '/creator.html', 'Payout update');
+  adminAlert({ type: 'payment', severity: 'info', title: `Payout ${action === 'paid' ? 'paid' : action + 'd'}: ₹${amount}`, fingerprint: `payout-${id}-${action}`, throttleMs: 1000, email: false, details: { payoutId: String(id), byAdmin: req.user.email, reference: reference || '—', status: payout.status } });
+  res.json({ success: true, status: payout.status });
 });
 
 module.exports = router;
