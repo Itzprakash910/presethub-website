@@ -33,6 +33,10 @@ const UserSchema = new Schema({
   streakLastDay: { type: String, default: '' },
   tipsTotal: { type: Number, default: 0 },
   phone: { type: String, default: '', maxlength: 10 },
+  payoutMethod: { type: String, enum: ['', 'upi', 'bank'], default: '' },
+  payoutMasked: { type: String, default: '', maxlength: 120 },
+  payoutEnc: { type: String, default: '', select: false },
+  payoutUpdatedAt: { type: Date, default: null },
   following: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   wishlist: [{ type: Schema.Types.ObjectId, ref: 'Preset' }],
   notifications: { type: [NotificationSchema], default: [], validate: v => Array.isArray(v) && v.length <= 200 },
@@ -309,6 +313,22 @@ const ReportSchema = new Schema({
 }, { timestamps: true });
 ReportSchema.index({ reporterId: 1, targetType: 1, targetId: 1 }, { unique: true });
 
+
+// ========== PAYOUTS (creator withdrawals; admin pays manually and records the reference) ==========
+const PayoutSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  amountPaise: { type: Number, required: true, min: 1 },
+  method: { type: String, enum: ['upi', 'bank'], required: true },
+  destinationMasked: { type: String, default: '', maxlength: 120 },
+  destinationEnc: { type: String, default: '', select: false },
+  status: { type: String, enum: ['requested', 'approved', 'paid', 'rejected'], default: 'requested', index: true },
+  reference: { type: String, default: '', maxlength: 60 },
+  adminNote: { type: String, default: '', maxlength: 300 },
+  processedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+  processedAt: { type: Date, default: null },
+}, { timestamps: true });
+PayoutSchema.index({ userId: 1, status: 1 });
+
 const User = mongoose.model('User', UserSchema);
 const Preset = mongoose.model('Preset', PresetSchema);
 const Order = mongoose.model('Order', OrderSchema);
@@ -325,5 +345,6 @@ const TextPost = mongoose.model('TextPost', TextPostSchema);
 const AlertLog = mongoose.model('AlertLog', AlertLogSchema);
 const Collection = mongoose.model('Collection', CollectionSchema);
 const Report = mongoose.model('Report', ReportSchema);
+const Payout = mongoose.model('Payout', PayoutSchema);
 
-module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Collection, Report, TEXT_CATEGORIES };
+module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Collection, Report, Payout, TEXT_CATEGORIES };
