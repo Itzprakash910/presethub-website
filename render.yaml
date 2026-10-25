@@ -26,6 +26,12 @@ services:
         sync: false
       - key: PAYMENT_PROVIDER
         value: cashfree
+      - key: PAYOUT_ENC_KEY
+        sync: false
+      - key: CREATOR_SHARE
+        value: "0.8"
+      - key: PAYOUT_MIN_RUPEES
+        value: "100"
       - key: CASHFREE_ENV
         value: sandbox
       - key: CASHFREE_APP_ID
