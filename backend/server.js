@@ -28,6 +28,7 @@ const { connectDB } = require('./config/db');
 const textRoutes = require('./routes/texts');
 const featureRoutes = require('./routes/features');
 const collectionRoutes = require('./routes/collections');
+const creatorRoutes = require('./routes/creator');
 const registerShayariRoutes = require('./seo/shayariPages');
 const registerListPages = require('./seo/listPages');
 const { botGuard } = require('./utils/security');
@@ -246,7 +247,7 @@ app.use(cookieParser());
 app.use(botGuard); // blocks scanners / exploit probes before any route or static file
 app.use(status5xxWatcher);
 // Sensitive responses must never be cached by browsers or proxies.
-app.use(['/api/auth', '/api/payments', '/api/admin', '/api/users/me'], (req, res, next) => {
+app.use(['/api/auth', '/api/payments', '/api/admin', '/api/users/me', '/api/creator'], (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   next();
@@ -353,6 +354,8 @@ app.get('/media/:id', require('./middleware/auth').optionalAuth, async (req, res
     res.setHeader('Content-Type', kind === 'preset' ? 'application/octet-stream' : (contentType.startsWith('image/') ? contentType : 'application/octet-stream'));
     res.setHeader('Cache-Control', kind === 'preset' ? 'private, no-store' : 'public, max-age=31536000, immutable');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Preview images are public and embedded by search engines and other sites; binaries of presets stay same-origin.
+    if (kind !== 'preset') res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     if (req.query.download === '1') {
       const filename = String(meta.filename || 'download').replace(/[\r\n"\\]/g, '_');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -393,6 +396,7 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/texts', textRoutes);
 app.use('/api/features', featureRoutes);
 app.use('/api/collections', writeLimiter, collectionRoutes);
+app.use('/api/creator', creatorRoutes);
 app.use('/api/chat', chatRoutes);
 
 // ============ STATIC PAGES ============
