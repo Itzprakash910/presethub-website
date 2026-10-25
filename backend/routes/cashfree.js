@@ -14,7 +14,9 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const auth = require('../middleware/auth');
 const cf = require('../utils/cashfree');
-const { Order, Preset, User, Download } = require('../models');
+const { Order, Preset, User, Download, Coupon, TextPost } = require('../models');
+const C = require('../utils/coupons');
+const B = require('../utils/boosts');
 const { getPlans } = require('../utils/plans');
 const { adminAlert, securityAlert } = require('../utils/alerts');
 const { createNotification } = require('../utils/notifications');
@@ -48,8 +50,21 @@ async function resolvePhone(user, bodyPhone) {
   return null;
 }
 
-async function startCheckout(req, res, { userId, presetId = null, kind, plan = '', recipientId = null, note = '', amountRupees, label, customerPhone }) {
-  let orderId = '';
+// Resolves an optional coupon to a server-side discount. Returns { final, list, code, couponId } or throws a 400.
+async function resolveCoupon({ couponCode, kind, presetId, listRupees }) {
+  const list = Math.round(Number(listRupees) * 100);
+  const code = couponCode ? C.normaliseCode(couponCode) : null;
+  if (couponCode && !code) throw Object.assign(new Error('Enter a valid coupon code.'), { status: 400 });
+  if (!code) return { finalPaise: list, listPaise: list, code: '', couponId: null };
+  const c = await Coupon.findOne({ code }).lean();
+  const check = C.isUsable(c, { kind, presetId });
+  if (!check.ok) throw Object.assign(new Error(check.reason), { status: 400 });
+  const { finalPaise } = C.applyDiscount(list, c);
+  return { finalPaise, listPaise: list, code, couponId: c._id };
+}
+
+async function startCheckout(req, res, { userId, presetId = null, kind, plan = '', recipientId = null, note = '', amountRupees, label, customerPhone, couponCode = '', boost = null }) {
+  let orderId = '', couponId = null;
   try {
     if (!cf.isConfigured()) return res.status(503).json({ error: 'Cashfree is not configured yet.' });
     const user = await User.findById(userId).select('name username email phone').lean();
@@ -57,11 +72,19 @@ async function startCheckout(req, res, { userId, presetId = null, kind, plan = '
     const phone = await resolvePhone(user, customerPhone);
     if (!phone) return res.status(400).json({ code: 'PHONE_REQUIRED', error: 'Please enter your 10-digit mobile number to continue.' });
 
-    const amount = Math.round(Number(amountRupees) * 100) / 100;
-    if (!Number.isFinite(amount) || amount < 1 || amount > 100000) return res.status(400).json({ error: 'Amount is outside the supported range.' });
+    const list = Math.round(Number(amountRupees) * 100) / 100;
+    if (!Number.isFinite(list) || list < 1 || list > 100000) return res.status(400).json({ error: 'Amount is outside the supported range.' });
+    const priced = await resolveCoupon({ couponCode, kind, presetId, listRupees: list });
+    const amount = priced.finalPaise / 100;
 
     orderId = newOrderId();
-    await Order.create({ _id: orderId, userId, presetId, kind, plan, recipientId, note: String(note || '').slice(0, 140), amount, currency: 'INR', status: 'created', provider: 'cashfree' });
+    // Reserve one use of the coupon atomically; released again if the checkout fails.
+    if (priced.couponId) {
+      const reserved = await Coupon.updateOne({ _id: priced.couponId, $or: [{ maxUses: 0 }, { $expr: { $lt: ['$usedCount', '$maxUses'] } }] }, { $inc: { usedCount: 1 } });
+      if (!reserved.modifiedCount) throw Object.assign(new Error('This coupon has been fully used.'), { status: 400 });
+      couponId = priced.couponId;
+    }
+    await Order.create({ _id: orderId, userId, presetId, kind, plan, recipientId, note: String(note || '').slice(0, 140), amount, listAmount: list, couponCode: priced.code, currency: 'INR', status: 'created', provider: 'cashfree', boostTargetType: boost?.targetType || '', boostTargetId: boost?.targetId || '', boostDays: boost?.days || 0 });
 
     const session = await cf.createOrder({
       orderId, amount, currency: 'INR', customerId: userId, phone, email: user.email, name: user.name || user.username,
@@ -73,6 +96,9 @@ async function startCheckout(req, res, { userId, presetId = null, kind, plan = '
     await Order.updateOne({ _id: orderId, status: 'created' }, { $set: { paymentSessionId: session.payment_session_id, gatewayPaymentId: String(session.cf_order_id || '') } });
     res.json({ provider: 'cashfree', mode: cf.ENV(), orderId, paymentSessionId: session.payment_session_id, amount, currency: 'INR' });
   } catch (err) {
+    if (couponId && !orderId) { /* not reserved yet, nothing to release */ }
+    if (couponId) await Coupon.updateOne({ _id: couponId, usedCount: { $gt: 0 } }, { $inc: { usedCount: -1 } }).catch(() => {});
+    if (err.status === 400) return res.status(400).json({ error: err.message });
     if (orderId) await Order.updateOne({ _id: orderId, status: 'created' }, { $set: { status: 'failed', failureReason: String(err.message || 'Checkout failed').slice(0, 300) } }).catch(() => {});
     console.error('Cashfree checkout error:', err.message);
     adminAlert({ type: 'payment', severity: 'warning', title: 'Cashfree checkout could not be started', fingerprint: 'cf-start-fail', details: { error: err.message, kind, orderId } });
@@ -109,13 +135,13 @@ router.post('/create-order', auth, textPostLimiter, async (req, res) => {
   if (!(Number(preset.price) > 0)) return res.status(400).json({ error: 'Preset is free or has an invalid price' });
   if (String(preset.authorId) === req.user.id) return res.status(400).json({ error: 'You cannot purchase your own preset.' });
   if (await Order.exists({ presetId: preset._id, userId: req.user.id, status: 'paid' })) return res.status(400).json({ error: 'You already own this preset.' });
-  return startCheckout(req, res, { userId: req.user.id, presetId: preset._id, kind: 'preset', amountRupees: preset.price, label: preset.name, customerPhone });
+  return startCheckout(req, res, { userId: req.user.id, presetId: preset._id, kind: 'preset', amountRupees: preset.price, label: preset.name, customerPhone, couponCode: req.body?.couponCode });
 });
 
 router.post('/subscribe', auth, textPostLimiter, async (req, res) => {
   const plan = getPlans()[String(req.body?.plan || '')];
   if (!plan) return res.status(400).json({ error: 'Invalid subscription plan.' });
-  return startCheckout(req, res, { userId: req.user.id, kind: 'subscription', plan: plan.id, amountRupees: plan.price, label: plan.label, customerPhone: req.body?.customerPhone });
+  return startCheckout(req, res, { userId: req.user.id, kind: 'subscription', plan: plan.id, amountRupees: plan.price, label: plan.label, customerPhone: req.body?.customerPhone, couponCode: req.body?.couponCode });
 });
 
 router.post('/tip', auth, textPostLimiter, async (req, res) => {
@@ -126,7 +152,51 @@ router.post('/tip', auth, textPostLimiter, async (req, res) => {
   if (!(value >= 10 && value <= 500)) return res.status(400).json({ error: 'Tip must be between ₹10 and ₹500.' });
   const creator = await User.findOne({ _id: recipientId, status: 'active' }).select('name username').lean();
   if (!creator) return res.status(404).json({ error: 'Creator not found' });
-  return startCheckout(req, res, { userId: req.user.id, kind: 'tip', recipientId, note, amountRupees: value, label: `Tip to ${creator.name || creator.username}`, customerPhone });
+  return startCheckout(req, res, { userId: req.user.id, kind: 'tip', recipientId, note, amountRupees: value, label: `Tip to ${creator.name || creator.username}`, customerPhone, couponCode: req.body?.couponCode });
+});
+
+// Boost a profile, preset or text prompt for 7, 14 or 30 days. Only the owner can boost, and the price comes from the server table.
+router.post('/boost', auth, textPostLimiter, async (req, res) => {
+  const { targetType, targetId, days, customerPhone, couponCode } = req.body || {};
+  if (!B.TARGETS.includes(targetType)) return res.status(400).json({ error: 'Boost a profile, preset or text prompt.' });
+  if (!isId(targetId)) return res.status(400).json({ error: 'Invalid item' });
+  const price = B.priceFor(targetType, days);
+  if (price === null) return res.status(400).json({ error: 'Choose 7, 14 or 30 days.' });
+  let owner = null;
+  if (targetType === 'profile') owner = targetId;
+  else if (targetType === 'preset') {
+    const p = await Preset.findById(targetId).select('authorId status').lean();
+    if (!p || p.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
+    owner = String(p.authorId);
+  } else {
+    const t = await TextPost.findById(targetId).select('authorId status').lean();
+    if (!t || t.status !== 'approved') return res.status(404).json({ error: 'Text post not found' });
+    owner = String(t.authorId);
+  }
+  if (owner !== req.user.id) return res.status(403).json({ error: 'You can only boost your own content.' });
+  return startCheckout(req, res, { userId: req.user.id, kind: 'boost', amountRupees: price, label: `Boost ${targetType} ${days}d`, customerPhone, couponCode, boost: { targetType, targetId: String(targetId), days: Number(days) } });
+});
+
+// Preview a coupon before paying (does not reserve a use).
+router.post('/coupon/check', auth, async (req, res) => {
+  try {
+    const { couponCode, kind, presetId, plan } = req.body || {};
+    let list = 0;
+    if (kind === 'preset') {
+      if (!isId(presetId)) return res.status(400).json({ error: 'Invalid preset' });
+      const p = await Preset.findById(presetId).select('price status').lean();
+      if (!p || p.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
+      list = Number(p.price || 0);
+    } else if (kind === 'subscription') {
+      const pl = getPlans()[String(plan || '')];
+      if (!pl) return res.status(400).json({ error: 'Invalid plan' });
+      list = pl.price;
+    } else return res.status(400).json({ error: 'Coupons apply to presets and Pro plans.' });
+    const priced = await resolveCoupon({ couponCode, kind, presetId, listRupees: list });
+    res.json({ valid: true, code: priced.code, listRupees: priced.listPaise / 100, finalRupees: priced.finalPaise / 100, discountRupees: (priced.listPaise - priced.finalPaise) / 100 });
+  } catch (e) {
+    res.status(e.status || 400).json({ valid: false, error: e.message || 'Invalid coupon' });
+  }
 });
 
 // ----- webhook (signed by Cashfree; raw body captured in server.js) -----

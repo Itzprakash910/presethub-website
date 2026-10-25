@@ -146,6 +146,19 @@ async function markOrderPaid(order, payload) {
   if (result.modifiedCount) {
     if (order.kind === 'subscription') {
       await activateSubscription(order);
+    } else if (order.kind === 'boost') {
+      const { boostWindow, nextBoostEnd } = require('../utils/boosts');
+      const { Boost, TextPost: TP } = require('../models');
+      const model = { profile: User, preset: Preset, text: TP }[order.boostTargetType];
+      if (model) {
+        const cur = await model.findById(order.boostTargetId).select('boostUntil').lean();
+        const until = nextBoostEnd(cur?.boostUntil, order.boostDays);
+        await model.updateOne({ _id: order.boostTargetId }, { $set: { boostUntil: until } });
+        const w = boostWindow(new Date(), order.boostDays);
+        await Boost.create({ userId: order.userId, targetType: order.boostTargetType, targetId: String(order.boostTargetId), days: order.boostDays, amount: order.amount, orderId: String(order._id), startsAt: w.startsAt, endsAt: until });
+        await createNotification(order.userId, 'boost', `⚡ Your ${order.boostTargetType} is boosted for ${order.boostDays} days. It now appears first.`, '/creator.html', 'Boost active');
+        adminAlert({ type: 'payment', severity: 'info', title: `Boost ₹${order.amount} (${order.boostTargetType})`, details: { orderId: String(order._id), target: String(order.boostTargetId), days: order.boostDays }, email: false });
+      }
     } else if (order.kind === 'tip') {
       await User.updateOne({ _id: order.recipientId }, { $inc: { tipsTotal: order.amount } });
       const tipper = await User.findById(order.userId).select('name username').lean();

@@ -57,7 +57,7 @@ function rupees(p) { return Math.round(Number(p || 0)) / 100; }
 // ---------- dashboard ----------
 router.get('/dashboard', auth, async (req, res) => {
   const uid = req.user.id;
-  const user = await User.findById(uid).select('name username avatar bio followers following verified subscription tipsTotal payoutMethod payoutMasked payoutUpdatedAt createdAt').lean();
+  const user = await User.findById(uid).select('name username avatar bio followers following verified subscription tipsTotal payoutMethod payoutMasked payoutUpdatedAt createdAt proTheme').lean();
   if (!user) return res.status(404).json({ error: 'User not found' });
   const money = await earningsFor(uid);
   const [presets, texts, presetTotals, textTotals] = await Promise.all([
@@ -94,7 +94,7 @@ router.get('/dashboard', auth, async (req, res) => {
       id: String(user._id), name: user.name, username: user.username, avatar: user.avatar || '', bio: user.bio || '',
       followers: (user.followers || []).length, following: (user.following || []).length,
       tick: tickForFollowers((user.followers || []).length), isPro: isProUser(user), verified: !!user.verified,
-      memberSince: user.createdAt, level
+      memberSince: user.createdAt, level, theme: user.proTheme || 'gold'
     },
     money: {
       earned: rupees(money.earnedPaise), available: rupees(money.availablePaise), pending: rupees(money.pendingPaise), paid: rupees(money.paidPaise),
@@ -173,9 +173,30 @@ router.post('/payouts', auth, payoutLimiter, async (req, res) => {
     await Payout.deleteOne({ _id: payout._id });
     return res.status(409).json({ error: 'Another payout request was made at the same time. Please check your balance and try again.' });
   }
-  await createNotification(req.user.id, 'payout', `💸 Payout request of ₹${amountPaise / 100} received. It will be paid within a few working days.`, '/creator.html', 'Payout requested');
+  // Small payouts are approved automatically (limit from PAYOUT_AUTO_APPROVE_RUPEES). Money is still sent by the admin.
+  const autoLimit = Math.round(Number(process.env.PAYOUT_AUTO_APPROVE_RUPEES || 500) * 100);
+  let status = 'requested';
+  if (amountPaise <= autoLimit) {
+    await Payout.updateOne({ _id: payout._id, status: 'requested' }, { $set: { status: 'approved', adminNote: 'Auto-approved (small amount)', processedAt: new Date() } });
+    status = 'approved';
+  }
+  await createNotification(req.user.id, 'payout', status === 'approved'
+    ? `💸 Payout of ₹${amountPaise / 100} is approved and will be sent shortly.`
+    : `💸 Payout request of ₹${amountPaise / 100} received. It will be paid within a few working days.`, '/creator.html', 'Payout update');
   adminAlert({ type: 'payment', severity: 'info', title: `Payout requested: ₹${amountPaise / 100}`, details: { payoutId: String(payout._id), creator: user.username, method: user.payoutMethod, amountRupees: amountPaise / 100 }, email: false });
-  res.status(201).json({ success: true, id: String(payout._id), amount: amountPaise / 100, status: 'requested' });
+  res.status(201).json({ success: true, id: String(payout._id), amount: amountPaise / 100, status });
+});
+
+// ---------- Pro perks: colour theme (Pro members only; the colour is applied on the site) ----------
+const PRO_THEMES = { gold: '#d4a373', rose: '#e88da0', ocean: '#4ca1af', emerald: '#2fa37a', classic: '#5b5b5b' };
+router.get('/themes', (req, res) => res.json({ themes: Object.keys(PRO_THEMES).map(k => ({ key: k, color: PRO_THEMES[k] })) }));
+router.put('/theme', auth, async (req, res) => {
+  const user = await User.findById(req.user.id).select('subscription proTheme').lean();
+  if (!isProUser(user)) return res.status(403).json({ error: 'Pro members can choose a theme colour. Go Pro to unlock it.' });
+  const key = String(req.body?.theme || '');
+  if (!Object.prototype.hasOwnProperty.call(PRO_THEMES, key)) return res.status(400).json({ error: 'Choose a valid theme.' });
+  await User.updateOne({ _id: req.user.id }, { $set: { proTheme: key } });
+  res.json({ success: true, theme: key, color: PRO_THEMES[key] });
 });
 
 module.exports = router;

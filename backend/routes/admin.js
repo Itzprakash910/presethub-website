@@ -6,8 +6,10 @@ const bcrypt = require('bcryptjs');
 const auth = require('../middleware/auth');
 
 const {
-  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Report, Payout
+  User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Report, Payout, Coupon, Boost
 } = require('../models');
+const C = require('../utils/coupons');
+const { broadcast } = require('../utils/viral');
 const { decrypt, isKeyConfigured } = require('../utils/crypto');
 const { createNotification: notifyUser } = require('../utils/notifications');
 const { getDbUsage, adminAlert } = require('../utils/alerts');
@@ -2012,6 +2014,159 @@ router.put('/payouts/:id', async (req, res) => {
   await notifyUser(payout.userId, 'payout', msg, '/creator.html', 'Payout update');
   adminAlert({ type: 'payment', severity: 'info', title: `Payout ${action === 'paid' ? 'paid' : action + 'd'}: ₹${amount}`, fingerprint: `payout-${id}-${action}`, throttleMs: 1000, email: false, details: { payoutId: String(id), byAdmin: req.user.email, reference: reference || '—', status: payout.status } });
   res.json({ success: true, status: payout.status });
+});
+
+// ---------- COUPONS (discounts for presets and Pro plans) ----------
+function couponOut(c) {
+  return { id: String(c._id), code: c.code, type: c.type, value: c.value, appliesTo: c.appliesTo, presetId: c.presetId ? String(c.presetId) : '', maxUses: c.maxUses, usedCount: c.usedCount, validFrom: c.validFrom, validUntil: c.validUntil, active: c.active, note: c.note || '', createdAt: c.createdAt };
+}
+function couponInput(b, partial = false, currentType = '') {
+  const out = {};
+  if (!partial || b.code !== undefined) { const code = C.normaliseCode(b.code); if (!code) throw Object.assign(new Error('Code must be 3–32 letters, numbers, _ or -.'), { status: 400 }); out.code = code; }
+  if (!partial || b.type !== undefined) { if (!['percent', 'fixed'].includes(b.type)) throw Object.assign(new Error('Type must be percent or fixed.'), { status: 400 }); out.type = b.type; }
+  if (!partial || b.value !== undefined) {
+    const v = Number(b.value);
+    const effectiveType = out.type || currentType;
+    if (!Number.isFinite(v) || v <= 0 || (effectiveType === 'percent' ? v > 100 : v > 100000)) throw Object.assign(new Error('Value must be above 0 (max 100 for percent).'), { status: 400 });
+    out.value = v;
+  }
+  if (!partial || b.appliesTo !== undefined) { if (!C.KINDS.includes(b.appliesTo || 'all')) throw Object.assign(new Error('Applies to: preset, subscription, tip or all.'), { status: 400 }); out.appliesTo = b.appliesTo || 'all'; }
+  if (b.presetId !== undefined) { if (b.presetId && !validObjectId(b.presetId)) throw Object.assign(new Error('Invalid preset ID.'), { status: 400 }); out.presetId = b.presetId || null; }
+  if (b.maxUses !== undefined) { const m = Math.round(Number(b.maxUses)); if (!(m >= 0 && m <= 1000000)) throw Object.assign(new Error('Max uses must be 0 (unlimited) or more.'), { status: 400 }); out.maxUses = m; }
+  if (b.validFrom !== undefined) out.validFrom = b.validFrom ? new Date(b.validFrom) : null;
+  if (b.validUntil !== undefined) out.validUntil = b.validUntil ? new Date(b.validUntil) : null;
+  if (b.active !== undefined) out.active = b.active === true || b.active === 'true';
+  if (b.note !== undefined) out.note = String(b.note || '').slice(0, 200);
+  return out;
+}
+router.get('/coupons', async (req, res) => {
+  const rows = await Coupon.find({}).sort({ createdAt: -1 }).limit(300).lean();
+  res.json({ items: rows.map(couponOut) });
+});
+router.post('/coupons', async (req, res) => {
+  try {
+    const data = couponInput(req.body || {});
+    const c = await Coupon.create(data);
+    adminAlert({ type: 'payment', severity: 'info', title: `Coupon created: ${c.code}`, throttleMs: 1000, email: false, details: { by: req.user.email, type: c.type, value: c.value, appliesTo: c.appliesTo } });
+    res.status(201).json(couponOut(c));
+  } catch (e) {
+    if (e.code === 11000) return res.status(409).json({ error: 'That code already exists.' });
+    res.status(e.status || 400).json({ error: e.message || 'Could not create coupon' });
+  }
+});
+router.put('/coupons/:id', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  try {
+    const existing = await Coupon.findById(req.params.id).select('type').lean();
+    if (!existing) return res.status(404).json({ error: 'Coupon not found' });
+    const data = couponInput(req.body || {}, true, existing.type);
+    const c = await Coupon.findByIdAndUpdate(req.params.id, { $set: data }, { new: true }).lean();
+    if (!c) return res.status(404).json({ error: 'Coupon not found' });
+    res.json(couponOut(c));
+  } catch (e) {
+    if (e.code === 11000) return res.status(409).json({ error: 'That code already exists.' });
+    res.status(e.status || 400).json({ error: e.message || 'Could not update coupon' });
+  }
+});
+router.delete('/coupons/:id', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  await Coupon.deleteOne({ _id: req.params.id });
+  res.json({ success: true });
+});
+
+// ---------- GIFT PRO TO EVERYONE (confirmed, atomic, notifies all users) ----------
+router.post('/subscriptions/grant-all', async (req, res) => {
+  const days = Math.round(Number(req.body?.days));
+  if (!(days >= 1 && days <= 365)) return res.status(400).json({ error: 'Days must be between 1 and 365.' });
+  if (String(req.body?.confirm || '') !== 'GRANT ALL') return res.status(400).json({ error: 'Type GRANT ALL to confirm.' });
+  const now = new Date();
+  // Adds the days on top of each user's remaining Pro time (or from now). Done in one pipeline update.
+  const r = await User.updateMany({ status: 'active' }, [{ $set: {
+    'subscription.expiry': { $add: [ { $cond: [{ $gt: ['$subscription.expiry', now] }, '$subscription.expiry', now] }, days * 86400000 ] },
+    'subscription.tier': 'pro',
+    'subscription.plan': { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ['$subscription.plan', ''] } }, 0] }, '$subscription.plan', 'gift'] },
+    'subscription.since': { $ifNull: ['$subscription.since', now] }
+  } }]);
+  const message = `🎁 PresetHub gifted you ${days} day(s) of Pro. Enjoy ad-free presets and shayari!`;
+  await broadcast({ type: 'subscription', title: '🎁 Pro gift', message, link: '/', tick: '' });
+  adminAlert({ type: 'subscription', severity: 'warning', title: `Pro gifted to all users: ${days} day(s)`, throttleMs: 1000, email: true, details: { by: req.user.email, usersUpdated: r.modifiedCount, days } });
+  res.json({ success: true, usersUpdated: r.modifiedCount });
+});
+
+// ---------- BOOSTS (active promotions, admin can revoke) ----------
+router.get('/boosts', async (req, res) => {
+  const rows = await Boost.find({ endsAt: { $gt: new Date() }, revokedAt: null }).sort({ endsAt: 1 }).limit(200).populate('userId', 'name username').lean();
+  res.json({ items: rows.map(b => ({ id: String(b._id), creator: b.userId?.name || b.userId?.username || '—', targetType: b.targetType, targetId: b.targetId, days: b.days, amount: b.amount, startsAt: b.startsAt, endsAt: b.endsAt })) });
+});
+router.post('/boosts/:id/revoke', async (req, res) => {
+  if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  const b = await Boost.findOneAndUpdate({ _id: req.params.id, revokedAt: null }, { $set: { revokedAt: new Date() } }).lean();
+  if (!b) return res.status(404).json({ error: 'Boost not found or already revoked' });
+  const model = { profile: User, preset: Preset, text: TextPost }[b.targetType];
+  if (model) await model.updateOne({ _id: b.targetId }, { $set: { boostUntil: null } });
+  adminAlert({ type: 'payment', severity: 'warning', title: `Boost revoked (${b.targetType})`, throttleMs: 1000, email: false, details: { by: req.user.email, boostId: String(b._id), target: b.targetId } });
+  res.json({ success: true });
+});
+
+// ---------- REFUNDS (mark after the refund is done in the Cashfree dashboard) ----------
+// Reverses what the order gave: preset access and creator earnings (earnings only count paid orders),
+// Pro time granted by that order, tip totals and boosts. Money is NOT sent back by this endpoint.
+router.post('/orders/:id/refund', async (req, res) => {
+  if (!validObjectId(req.params.id) && !/^PH-[A-Z0-9-]{6,40}$/.test(String(req.params.id))) return res.status(400).json({ error: 'Invalid order ID' });
+  const reference = String(req.body?.reference || '').trim().slice(0, 60);
+  const reason = String(req.body?.reason || '').trim().slice(0, 300);
+  if (!/^[A-Za-z0-9\-_\/]{4,60}$/.test(reference)) return res.status(400).json({ error: 'Enter the refund reference from Cashfree (4–60 letters or numbers).' });
+  if (reason.length < 3) return res.status(400).json({ error: 'Enter a reason for the refund.' });
+  const order = await Order.findOneAndUpdate(
+    { _id: String(req.params.id), status: 'paid' },
+    { $set: { status: 'refunded', failureReason: `Refunded: ${reason}`.slice(0, 300), refundReference: reference, refundedAt: new Date() } },
+    { new: true }
+  ).lean();
+  if (!order) return res.status(409).json({ error: 'Order not found, or it is not in the paid state.' });
+
+  const amount = Math.round(order.amount * 100) / 100;
+  if (order.kind === 'preset' && order.presetId) await Preset.updateOne({ _id: order.presetId }, { $inc: { totalRevenue: -amount } });
+  if (order.kind === 'tip' && order.recipientId) await User.updateOne({ _id: order.recipientId }, { $inc: { tipsTotal: -amount } });
+  if (order.kind === 'subscription') {
+    // Only revoke Pro if this order is the one that set the current expiry.
+    const u = await User.findById(order.userId).select('subscription').lean();
+    if (u?.subscription?.lastOrderId === String(order._id)) await User.updateOne({ _id: order.userId }, { $set: { 'subscription.expiry': null, 'subscription.tier': 'free', 'subscription.plan': '' } });
+  }
+  if (order.kind === 'boost') {
+    const b = await Boost.findOneAndUpdate({ orderId: String(order._id), revokedAt: null }, { $set: { revokedAt: new Date() } }).lean();
+    const model = { profile: User, preset: Preset, text: TextPost }[order.boostTargetType];
+    if (b && model) await model.updateOne({ _id: order.boostTargetId }, { $set: { boostUntil: null } });
+  }
+  await notifyUser(order.userId, 'refund', `↩️ Your payment of ₹${amount} was refunded. Reference: ${reference}.`, '/', 'Refund processed');
+  adminAlert({ type: 'payment', severity: 'warning', title: `Order refunded: ₹${amount} (${order.kind})`, throttleMs: 1000, email: false, details: { orderId: String(order._id), by: req.user.email, reference, reason } });
+  res.json({ success: true, status: 'refunded', orderId: String(order._id) });
+});
+
+// ---------- PAYOUT CSV EXPORT (for the accountant; no bank details) ----------
+function csvCell(v) {
+  const s = v === null || v === undefined ? '' : String(v);
+  // Protect against spreadsheet formula injection.
+  const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+router.get('/payouts/export.csv', async (req, res) => {
+  const f = {};
+  if (['requested', 'approved', 'paid', 'rejected'].includes(String(req.query.status))) f.status = req.query.status;
+  const from = req.query.from ? new Date(String(req.query.from)) : null;
+  const to = req.query.to ? new Date(String(req.query.to)) : null;
+  if (from && !isNaN(from)) f.createdAt = { ...(f.createdAt || {}), $gte: from };
+  if (to && !isNaN(to)) f.createdAt = { ...(f.createdAt || {}), $lte: new Date(to.getTime() + 86400000) };
+  const rows = await Payout.find(f).sort({ createdAt: 1 }).limit(20000).populate('userId', 'name username email').lean();
+  const head = ['payout_id', 'requested_at', 'processed_at', 'creator', 'creator_email', 'amount_inr', 'method', 'destination_masked', 'status', 'reference', 'note'];
+  const lines = [head.join(',')].concat(rows.map(x => [
+    String(x._id), x.createdAt?.toISOString(), x.processedAt?.toISOString() || '', x.userId?.name || x.userId?.username || '', x.userId?.email || '',
+    (Math.round(x.amountPaise) / 100).toFixed(2), x.method, x.destinationMasked, x.status, x.reference || '', x.adminNote || ''
+  ].map(csvCell).join(',')));
+  res.set('Content-Type', 'text/csv; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="payouts-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.set('Cache-Control', 'no-store');
+  res.send('\uFEFF' + lines.join('\r\n'));
+  adminAlert({ type: 'payment', severity: 'info', title: 'Payout CSV exported', throttleMs: 1000, email: false, details: { by: req.user.email, rows: rows.length } });
 });
 
 module.exports = router;

@@ -68,12 +68,17 @@ router.get('/', optionalAuth, async (req, res) => {
     filter.$or = [{ title: rx }, { text: rx }, { tags: rx }, { author: rx }];
   }
   const sort = req.query.sort === 'popular' ? { copies: -1, shares: -1, views: -1, _id: -1 } : { createdAt: -1, _id: -1 };
-  const [items, total] = await Promise.all([
+  const plainList = page === 1 && !q && !req.query.category && !req.query.author;
+  const boostedTexts = plainList ? await TextPost.find({ status: 'approved', boostUntil: { $gt: new Date() } }).sort({ boostUntil: -1 }).limit(4).lean() : [];
+  if (boostedTexts.length) filter._id = { $nin: boostedTexts.map(b => b._id) };
+  const [rawItems, total] = await Promise.all([
     TextPost.find(filter).sort(sort).skip((page - 1) * limit).limit(limit).lean(),
     TextPost.countDocuments(filter)
   ]);
+  const items = [...boostedTexts, ...rawItems].slice(0, limit);
+  const boostedSet = new Set(boostedTexts.map(b => String(b._id)));
   const authors = await authorMap(items);
-  res.json({ items: items.map(i => serialize(i, authors, req.user?.id)), page, pages: Math.max(1, Math.ceil(total / limit)), total });
+  res.json({ items: items.map(i => ({ ...serialize(i, authors, req.user?.id), boosted: boostedSet.has(String(i._id)) })), page, pages: Math.max(1, Math.ceil(total / limit)), total });
 });
 
 router.get('/:id', optionalAuth, async (req, res) => {

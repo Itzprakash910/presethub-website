@@ -95,13 +95,19 @@ router.get('/', async (req, res) => {
   const p = Math.max(1, parseInt(page));
   const l = Math.min(50, Math.max(1, parseInt(limit)));
 
-  const [presets, total] = await Promise.all([
+  // Boosted presets come first on page 1 of an unfiltered list.
+  const plain = p === 1 && !q && !category && !price && !rating;
+  const boosted = plain ? await Preset.find({ status: 'approved', boostUntil: { $gt: new Date() } }).sort({ boostUntil: -1 }).limit(6).lean() : [];
+  const boostedIds = boosted.map(b => b._id);
+  if (boostedIds.length) filter._id = { $nin: boostedIds };
+  const [presetsRaw, total] = await Promise.all([
     Preset.find(filter).sort(sortObj).skip((p - 1) * l).limit(l).lean(),
     Preset.countDocuments(filter)
   ]);
+  const presets = [...boosted.map(b => ({ ...b, boosted: true })), ...presetsRaw].slice(0, l);
 
   res.json({
-    presets: presets.map(toPublicPreset),
+    presets: presets.map(x => ({ ...toPublicPreset(x), boosted: !!x.boosted })),
     total, page: p, totalPages: Math.ceil(total / l), limit: l
   });
 });
@@ -362,7 +368,10 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
 
   if (preset.price > 0) {
     if (!req.user) return res.status(401).json({ error: 'Please log in to purchase or download paid presets' });
-    if (preset.authorId.toString() !== req.user.id) {
+    // Pro members download premium presets for free (checked on the server, not in the browser).
+    const dlUser = await User.findById(req.user.id).select('subscription').lean();
+    const proFree = isProUser(dlUser);
+    if (preset.authorId.toString() !== req.user.id && !proFree) {
       const paid = await Order.findOne({ presetId: preset._id, userId: req.user.id, status: 'paid' });
       if (!paid) return res.status(403).json({ error: 'Please purchase this preset first' });
     }
@@ -447,7 +456,8 @@ router.post('/bulk-download', auth, bulkLimiter, async (req, res) => {
   const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
   if (!validIds.length) return res.status(400).json({ error: 'No valid preset IDs' });
   const presets = await Preset.find({ _id: { $in: validIds }, status: 'approved' }).lean();
-  const paidIds = presets.filter(p => Number(p.price || 0) > 0 && p.authorId.toString() !== req.user.id).map(p => p._id);
+  const bulkIsPro = isProUser(bulkUser);
+  const paidIds = presets.filter(p => Number(p.price || 0) > 0 && p.authorId.toString() !== req.user.id && !bulkIsPro).map(p => p._id);
   let paid = [];
   if (paidIds.length) paid = await Order.find({ userId: req.user.id, presetId: { $in: paidIds }, status: 'paid' }).select('presetId').lean();
   const owned = new Set(paid.map(o => o.presetId.toString()));
@@ -456,7 +466,7 @@ router.post('/bulk-download', auth, bulkLimiter, async (req, res) => {
   const downloadUser = await User.findById(req.user.id).select('sessionVersion').lean();
   const sessionVersion = Number(downloadUser?.sessionVersion || 0);
   for (const p of presets) {
-    const requiresPayment = Number(p.price || 0) > 0 && p.authorId.toString() !== req.user.id;
+    const requiresPayment = Number(p.price || 0) > 0 && p.authorId.toString() !== req.user.id && !bulkIsPro;
     if (requiresPayment && !owned.has(p._id.toString())) {
       skipped.push({ id: p._id.toString(), name: p.name, reason: 'Purchase required' });
       continue;

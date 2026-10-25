@@ -83,7 +83,14 @@ router.get('/leaderboard', async (req, res) => {
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'u' } },
       { $unwind: '$u' }
     ]);
-    return res.json({ type, items: rows.map((r, i) => ({ rank: i + 1, userId: String(r._id), name: r.u.name || r.u.username, username: r.u.username, avatar: r.u.avatar || '', downloads: r.downloads, presets: r.presets, tick: tickForFollowers(r.u.followers?.length), isPro: isProUser(r.u) })) });
+    const boostedUsers = await User.find({ boostUntil: { $gt: new Date() }, status: 'active' }).sort({ boostUntil: -1 }).limit(3).select('name username avatar followers subscription').lean();
+    const boostedIds = new Set(boostedUsers.map(u => String(u._id)));
+    const organic = rows.filter(r => !boostedIds.has(String(r._id)));
+    const top = [
+      ...boostedUsers.map(u => ({ _id: u._id, downloads: 0, presets: 0, u, boosted: true })),
+      ...organic
+    ].slice(0, 10);
+    return res.json({ type, items: top.map((r, i) => ({ rank: i + 1, userId: String(r._id), name: r.u.name || r.u.username, username: r.u.username, avatar: r.u.avatar || '', downloads: r.downloads, presets: r.presets, boosted: !!r.boosted, tick: tickForFollowers(r.u.followers?.length), isPro: isProUser(r.u) })) });
   }
   const rows = await TextPost.find({ status: 'approved', createdAt: { $gte: since } }).sort({ copies: -1, shares: -1 }).limit(10).lean();
   res.json({ type, items: rows.map((t, i) => ({ rank: i + 1, ...textOut(t) })) });
