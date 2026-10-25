@@ -23,12 +23,13 @@
   </div>
   <div id="message" role="status" aria-live="polite"></div>
 
-  <section class="admin-card">
+  <nav class="adm-nav" aria-label="Admin sections"><div class="adm-nav-in"><a href="#platform-analytics">Platform Analytics</a><a href="#overview-system-health">Overview &amp; system health</a><a href="#alerts">Alerts</a><a href="#subscriptions">Subscriptions</a><a href="#shayari-text-prompts">Shayari &amp; text prompts</a><a href="#reports">Reports</a><a href="#payouts">Payouts</a><a href="#refunds">Refunds</a><a href="#coupons-discounts">Coupons &amp; discounts</a><a href="#gift-pro-to-all-users">Gift Pro to all users</a><a href="#active-boosts">Active boosts</a><a href="#home-ads">Home ads</a><a href="#user-requests">User requests</a><a href="#presets">Presets</a><a href="#users">Users</a></div></nav>
+<section class="admin-card" id="platform-analytics">
     <div class="admin-section-head"><div><span class="eyebrow">MONITORING</span><h2><i class="fas fa-chart-simple"></i> Platform Analytics</h2></div></div>
     <div class="stats-grid" id="analytics"><div class="skeleton" style="height:80px"></div></div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="overview-system-health">
     <div class="admin-section-head"><div><span class="eyebrow">LIVE</span><h2><i class="fas fa-gauge"></i> Overview &amp; system health</h2></div><button id="v32Refresh" class="btn btn-outline btn-sm"><i class="fas fa-rotate"></i> Reload</button></div>
     <div class="stats-grid" id="v32Overview"><div class="skeleton" style="height:80px"></div></div>
     <div class="v32-two">
@@ -37,7 +38,7 @@
     </div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="alerts">
     <div class="admin-section-head"><div><span class="eyebrow">SECURITY &amp; ERRORS</span><h2><i class="fas fa-bell"></i> Alerts</h2></div>
       <div class="v32-toolbar">
         <select id="alertType" aria-label="Alert type"><option value="">All types</option><option value="security">Security</option><option value="error">Errors</option><option value="database">Database</option><option value="payment">Payments</option><option value="subscription">Subscriptions</option><option value="new_user">New users</option><option value="viral">Viral</option><option value="system">System</option></select>
@@ -51,7 +52,7 @@
     <div id="alertList"><div class="skeleton" style="height:120px"></div></div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="subscriptions">
     <div class="admin-section-head"><div><span class="eyebrow">PRO</span><h2><i class="fas fa-crown"></i> Subscriptions</h2></div></div>
     <div class="v32-plans" id="subPlans"></div>
     <h3 class="v32-h">Pro members</h3>
@@ -60,14 +61,14 @@
     <div class="table-wrap"><table class="user-table"><thead><tr><th>User</th><th>Plan</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead><tbody id="subOrders"></tbody></table></div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="shayari-text-prompts">
     <div class="admin-section-head"><div><span class="eyebrow">CONTENT</span><h2><i class="fas fa-pen-nib"></i> Shayari &amp; text prompts</h2></div>
       <div class="v32-toolbar"><input id="txtSearch" class="admin-search" placeholder="Search text or author…" autocomplete="off"><select id="txtStatus" aria-label="Status"><option value="">All</option><option value="approved">Visible</option><option value="rejected">Hidden</option></select></div>
     </div>
     <div id="txtList"><div class="skeleton" style="height:120px"></div></div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="reports">
     <div class="admin-section-head"><div><span class="eyebrow">TRUST &amp; SAFETY</span><h2><i class="fas fa-flag"></i> Reports</h2></div>
       <div class="v32-toolbar"><select id="repStatus" aria-label="Status"><option value="open">Open</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option></select><select id="repType" aria-label="Type"><option value="">All types</option><option value="text">Shayari</option><option value="preset">Preset</option><option value="comment">Comment</option><option value="user">User</option></select></div>
     </div>
@@ -75,13 +76,56 @@
     <div id="repList"><div class="skeleton" style="height:100px"></div></div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="payouts">
     <div class="admin-section-head"><div><span class="eyebrow">CREATORS</span><h2><i class="fas fa-money-bill-transfer"></i> Payouts</h2></div>
-      <div class="v32-toolbar"><select id="poStatus" aria-label="Status"><option value="requested">Requested</option><option value="approved">Approved</option><option value="paid">Paid</option><option value="rejected">Rejected</option></select></div>
+      <div class="v32-toolbar"><select id="poStatus" aria-label="Status"><option value="requested">Requested</option><option value="approved">Approved</option><option value="paid">Paid</option><option value="rejected">Rejected</option></select><input type="date" id="poFrom" aria-label="From date"><input type="date" id="poTo" aria-label="To date"><button class="btn btn-outline btn-sm" id="poExport" type="button"><i class="fas fa-file-csv"></i> Export CSV</button></div>
     </div>
     <p class="admin-note">Creator ke bank/UPI details sirf "Show details" par dikhte hain. Har view admin log mein record hota hai. Paise bhejne ke baad UTR/reference zaroor daalein.</p>
     <p class="admin-note" id="poCount"></p>
     <div id="poList"><div class="skeleton" style="height:100px"></div></div>
+  </section>
+
+  <section class="admin-card" id="coupons-discounts">
+    <div class="admin-section-head"><div><span class="eyebrow">OFFERS</span><h2><i class="fas fa-tags"></i> Coupons &amp; discounts</h2></div></div>
+    <form class="v32-form" id="cpForm" autocomplete="off">
+      <input name="code" placeholder="Code (e.g. DIWALI20)" maxlength="32" required>
+      <select name="type"><option value="percent">% off</option><option value="fixed">₹ off</option></select>
+      <input name="value" type="number" min="1" step="1" placeholder="Value" required>
+      <select name="appliesTo"><option value="all">All purchases</option><option value="preset">Presets</option><option value="subscription">Pro plans</option><option value="tip">Tips</option></select>
+      <input name="presetId" placeholder="Preset ID (optional, for one preset)" maxlength="24">
+      <input name="maxUses" type="number" min="0" step="1" value="0" placeholder="Max uses (0 = unlimited)">
+      <input name="validUntil" type="date" aria-label="Valid until">
+      <input name="note" placeholder="Note (internal)" maxlength="200">
+      <button class="btn btn-primary btn-sm" type="submit">Create coupon</button>
+    </form>
+    <div id="cpList"><div class="skeleton" style="height:90px"></div></div>
+  </section>
+
+  <section class="admin-card" id="gift-pro-to-all-users">
+    <div class="admin-section-head"><div><span class="eyebrow">GIFTS</span><h2><i class="fas fa-gift"></i> Gift Pro to all users</h2></div></div>
+    <p class="admin-note">Har active user ko din add honge (unke baki Pro time ke upar). Sabko notification jayega. Ye undo nahi hota, is liye confirm karna zaroori hai.</p>
+    <form class="v32-form" id="giftForm" autocomplete="off">
+      <input name="days" type="number" min="1" max="365" step="1" value="7" required aria-label="Days">
+      <input name="confirm" placeholder='Type GRANT ALL to confirm' required aria-label="Confirmation">
+      <button class="btn btn-danger btn-sm" type="submit">Gift Pro</button>
+    </form>
+  </section>
+
+  <section class="admin-card" id="active-boosts">
+    <div class="admin-section-head"><div><span class="eyebrow">PROMOTIONS</span><h2><i class="fas fa-bolt"></i> Active boosts</h2></div><button class="btn btn-outline btn-sm" id="boostRefresh" type="button">Refresh</button></div>
+    <p class="admin-note">Boosts jo abhi chal rahe hain. Revoke karne par item turant normal order mein wapas aa jata hai.</p>
+    <div id="boostList"><div class="skeleton" style="height:90px"></div></div>
+  </section>
+
+  <section class="admin-card" id="refunds">
+    <div class="admin-section-head"><div><span class="eyebrow">MONEY</span><h2><i class="fas fa-rotate-left"></i> Refunds</h2></div></div>
+    <p class="admin-note">Pehle refund Cashfree dashboard mein karein, phir yahan Order ID aur refund reference daalein. Ye preset access, creator earnings, Pro time, tip total aur boost sab reverse karta hai. Paisa is form se wapas nahi bhejta.</p>
+    <form class="v32-form" id="refundForm" autocomplete="off">
+      <input name="orderId" placeholder="Order ID (PH-…)" maxlength="60" required>
+      <input name="reference" placeholder="Cashfree refund reference" maxlength="60" required>
+      <input name="reason" placeholder="Reason (shown to the buyer)" maxlength="300" required>
+      <button class="btn btn-danger btn-sm" type="submit">Mark refunded</button>
+    </form>
   </section>
 
   <section class="admin-card admin-tools-grid">
@@ -111,22 +155,22 @@
     </div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="home-ads">
     <div class="admin-section-head"><div><span class="eyebrow">LIVE PROMOTIONS</span><h2><i class="fas fa-bolt"></i> Home ads</h2></div></div>
     <div id="adsList" class="admin-ad-list"><div class="skeleton" style="height:120px"></div></div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="user-requests">
     <div class="admin-section-head"><div><span class="eyebrow">ACCOUNT SUPPORT</span><h2><i class="fas fa-life-ring"></i> User requests</h2></div><select id="supportStatus"><option value="open">Open</option><option value="in_progress">In progress</option><option value="all">All</option></select></div>
     <div id="supportList"><div class="skeleton" style="height:120px"></div></div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="presets">
     <div class="admin-section-head"><div><span class="eyebrow">CONTENT</span><h2><i class="fas fa-cubes"></i> Presets</h2></div><span class="admin-note">Uploads are live immediately; status controls are for admin moderation only.</span></div>
     <div id="presetsList"><div class="skeleton" style="height:120px"></div></div>
   </section>
 
-  <section class="admin-card">
+  <section class="admin-card" id="users">
     <div class="admin-section-head"><div><span class="eyebrow">ACCOUNT CONTROL</span><h2><i class="fas fa-users"></i> Users</h2></div><input id="userSearch" class="admin-search" placeholder="Search name, username, email…" autocomplete="off"></div>
     <div class="table-wrap" id="usersList"><div class="skeleton" style="height:120px"></div></div>
   </section>
@@ -140,8 +184,8 @@
   </div>
   <div class="container footer-bottom"><span>© PresetHub</span><span>Secure Admin Console</span></div>
 </footer>
-<script src="/admin.js?v=3.8.0"></script>
-<script src="/admin-v32.js?v=3.8.0"></script>
+<script src="/admin.js?v=3.12.0"></script>
+<script src="/admin-v32.js?v=3.12.0"></script>
 <script src="/cookie-consent.js?v=3.2.0" defer></script>
 </body>
 </html>

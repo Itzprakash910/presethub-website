@@ -65,7 +65,7 @@
   function cardHtml(t, { full = false } = {}) {
     return `<article class="text-card" data-text-card data-text-id="${esc(t.id)}" data-author-id="${esc(t.authorId)}">
       <div class="text-card-top"><a class="text-cat" href="/shayari/category/${esc(t.category)}/">${esc(CATS[t.category] || t.category)}</a><small>${new Date(t.createdAt).toLocaleDateString()}</small></div>
-      ${t.title ? `<h3 class="text-title"><a href="${esc(postUrl(t))}">${esc(t.title)}</a></h3>` : ''}
+      ${t.title ? `<h3 class="text-title"><a href="${esc(postUrl(t))}">${esc(t.title)}</a></h3>` : ''}${t.boosted ? '<span class="boost-chip" title="Boosted">⚡ Boosted</span>' : ''}
       <p class="text-body ${full ? 'full' : ''}" data-text-body>${esc(t.text)}</p>
       ${t.tags?.length ? `<div class="tx-tags">${tagLinks(t.tags)}</div>` : ''}
       <div class="text-by"><a href="/profile/${esc(t.authorId)}/${esc(slug(t.authorUsername || t.author))}/">${esc(t.author)}</a> ${tick(t.authorTick)}${pro(t.authorPro)}</div>

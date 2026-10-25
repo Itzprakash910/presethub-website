@@ -168,6 +168,54 @@
     await loadPayouts();
   }
 
+  // ---------- COUPONS & GIFTS ----------
+  async function loadCoupons() {
+    const d = await api('/coupons');
+    $('#cpList').innerHTML = (d.items || []).length ? `<div class="table-wrap"><table class="user-table"><thead><tr><th>Code</th><th>Discount</th><th>Applies to</th><th>Used</th><th>Valid until</th><th>Status</th><th></th></tr></thead><tbody>${d.items.map(c => `
+      <tr><td><b>${esc(c.code)}</b>${c.note ? `<br><small>${esc(c.note)}</small>` : ''}</td>
+      <td>${c.type === 'percent' ? c.value + '%' : '₹' + c.value} off</td><td>${esc(c.appliesTo)}${c.presetId ? ' · 1 preset' : ''}</td>
+      <td>${c.usedCount}${c.maxUses ? ' / ' + c.maxUses : ''}</td><td>${c.validUntil ? when(c.validUntil) : '—'}</td>
+      <td><span class="v32-badge-state ${c.active ? 'on' : 'off'}">${c.active ? 'Active' : 'Off'}</span></td>
+      <td class="actions"><button class="btn btn-sm btn-outline" data-cp-toggle="${esc(c.id)}" data-on="${c.active ? '0' : '1'}">${c.active ? 'Turn off' : 'Turn on'}</button>
+      <button class="btn btn-sm btn-danger" data-cp-del="${esc(c.id)}">Delete</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="admin-note">No coupons yet.</p>';
+  }
+  async function createCoupon(form) {
+    const f = Object.fromEntries(new FormData(form).entries());
+    const body = { ...f, maxUses: Number(f.maxUses || 0), validUntil: f.validUntil || null, presetId: f.presetId || '' };
+    await api('/coupons', { method: 'POST', body: JSON.stringify(body) });
+    form.reset(); note('Coupon created'); await loadCoupons();
+  }
+
+  // ---------- BOOSTS ----------
+  async function loadBoosts() {
+    const d = await api('/boosts');
+    $('#boostList').innerHTML = (d.items || []).length ? `<div class="table-wrap"><table class="user-table"><thead><tr><th>Creator</th><th>Item</th><th>Days</th><th>Paid</th><th>Ends</th><th></th></tr></thead><tbody>${d.items.map(b => `
+      <tr><td>${esc(b.creator)}</td><td>${esc(b.targetType)} <small>${esc(b.targetId).slice(0, 8)}…</small></td><td>${b.days}</td><td>₹${b.amount}</td><td>${when(b.endsAt)}</td>
+      <td><button class="btn btn-sm btn-danger" data-boost-revoke="${esc(b.id)}">Revoke</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="admin-note">No active boosts.</p>';
+  }
+
+  // ---------- REFUNDS ----------
+  async function markRefund(form) {
+    const f = Object.fromEntries(new FormData(form).entries());
+    if (!confirm(`Mark order ${f.orderId} as refunded? This removes its access and earnings. Make sure the money was refunded in Cashfree first.`)) return;
+    await api(`/orders/${encodeURIComponent(f.orderId.trim())}/refund`, { method: 'POST', body: JSON.stringify({ reference: f.reference.trim(), reason: f.reason.trim() }) });
+    form.reset(); note('Order marked refunded'); await Promise.allSettled([loadOverview(), loadSubscriptions(), loadBoosts()]);
+  }
+
+  // ---------- PAYOUT CSV EXPORT ----------
+  async function exportPayoutsCsv() {
+    const q = new URLSearchParams();
+    if ($('#poStatus').value) q.set('status', $('#poStatus').value);
+    if ($('#poFrom').value) q.set('from', $('#poFrom').value);
+    if ($('#poTo').value) q.set('to', $('#poTo').value);
+    const r = await fetch(`${API}/payouts/export.csv?${q}`, { credentials: 'same-origin' });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'Export failed'); }
+    const blob = await r.blob();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = (r.headers.get('content-disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'payouts.csv';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
   // ---------- actions ----------
   document.addEventListener('click', async e => {
     const t = e.target.closest('button'); if (!t) return;
@@ -184,6 +232,9 @@
         await api(`/users/${id}/pro`, { method: 'POST', body: JSON.stringify({ days }) });
         note(t.dataset.proRevoke ? 'Pro removed' : `Added ${days} day(s) of Pro`); await loadSubscriptions();
       }
+      else if (t.dataset.boostRevoke) { if (!confirm('Revoke this boost now? No refund is made automatically.')) return; await api(`/boosts/${t.dataset.boostRevoke}/revoke`, { method: 'POST', body: '{}' }); note('Boost revoked'); await loadBoosts(); }
+      else if (t.dataset.cpToggle) { await api(`/coupons/${t.dataset.cpToggle}`, { method: 'PUT', body: JSON.stringify({ active: t.dataset.on === '1' }) }); note('Coupon updated'); await loadCoupons(); }
+      else if (t.dataset.cpDel) { if (!confirm('Delete this coupon?')) return; await api(`/coupons/${t.dataset.cpDel}`, { method: 'DELETE' }); note('Coupon deleted'); await loadCoupons(); }
       else if (t.dataset.poShow) { await showPayoutDetails(t.dataset.poShow); }
       else if (t.dataset.poAct) { await payoutAction(t.dataset.poAct, t.dataset.id, t.dataset.amount); }
       else if (t.dataset.rep) {
@@ -196,19 +247,32 @@
       else if (t.id === 'v32Refresh') { await refreshAll(); }
     } catch (err) { note(err.message, 'error'); }
   });
-  document.addEventListener('change', e => { if (e.target.matches('#poStatus')) loadPayouts().catch(err => note(err.message, 'error')); });
+  document.addEventListener('submit', async e => {
+    if (e.target.id === 'refundForm') { e.preventDefault(); try { await markRefund(e.target); } catch (err) { note(err.message, 'error'); } }
+    if (e.target.id === 'cpForm') { e.preventDefault(); try { await createCoupon(e.target); } catch (err) { note(err.message, 'error'); } }
+    if (e.target.id === 'giftForm') {
+      e.preventDefault();
+      const f = Object.fromEntries(new FormData(e.target).entries());
+      if (!confirm(`Give ${f.days} day(s) of Pro to EVERY active user? This cannot be undone.`)) return;
+      try { const r = await api('/subscriptions/grant-all', { method: 'POST', body: JSON.stringify({ days: Number(f.days), confirm: f.confirm }) }); note(`Pro gifted to ${r.usersUpdated} user(s)`); e.target.reset(); await loadOverview(); }
+      catch (err) { note(err.message, 'error'); }
+    }
+  });
+  document.addEventListener('click', e => { if (e.target.closest('#poExport')) exportPayoutsCsv().catch(err => note(err.message, 'error')); });
+  document.addEventListener('change', e => { if (e.target.matches('#poStatus') || e.target.matches('#poFrom') || e.target.matches('#poTo')) loadPayouts().catch(err => note(err.message, 'error')); });
   ['#repStatus', '#repType'].forEach(sel => document.addEventListener('change', e => { if (e.target.matches(sel)) loadReports().catch(err => note(err.message, 'error')); }));
   ['#alertType', '#alertSeverity', '#alertUnread'].forEach(sel => document.addEventListener('change', e => { if (e.target.matches(sel)) loadAlerts().catch(err => note(err.message, 'error')); }));
   document.addEventListener('change', e => { if (e.target.matches('#txtStatus')) loadTexts().catch(err => note(err.message, 'error')); });
   document.addEventListener('input', e => { if (e.target.matches('#txtSearch')) { clearTimeout(loadTexts.t); loadTexts.t = setTimeout(() => loadTexts().catch(() => {}), 350); } });
 
   async function refreshAll() {
-    await Promise.allSettled([loadOverview(), loadAlerts(), loadSubscriptions(), loadTexts(), loadReports(), loadPayouts()]);
+    await Promise.allSettled([loadOverview(), loadAlerts(), loadSubscriptions(), loadTexts(), loadReports(), loadPayouts(), loadCoupons(), loadBoosts()]);
   }
   function boot() {
     if (!$('#v32Overview')) return;
     refreshAll();
     setInterval(() => { loadOverview().catch(() => {}); if (document.visibilityState === 'visible') loadAlerts().catch(() => {}); }, 60000);
+    $('#boostRefresh')?.addEventListener('click', () => loadBoosts().catch(() => {}));
     $('#refreshAdmin')?.addEventListener('click', () => setTimeout(refreshAll, 200));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();

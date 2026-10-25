@@ -76,3 +76,9 @@
   .legal-page { margin: 18px 12px 40px; border-radius: 18px; }
   .legal-page h2 { font-size: 1.2rem; }
 }
+
+/* v3.9 — footer is the same on every page; keep it full width under the content card */
+.site-footer { margin-top: 40px; }
+.site-footer .footer-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 28px; }
+@media (max-width: 760px) { .site-footer .footer-grid { grid-template-columns: 1fr 1fr; gap: 22px; } }
+@media (max-width: 420px) { .site-footer .footer-grid { grid-template-columns: 1fr; } }

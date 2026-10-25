@@ -1544,3 +1544,6 @@ img.img-failed { visibility: hidden; }
 }
 .remember-row { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); margin: 4px 0 10px; }
 .remember-row input { width: auto; margin: 0; }
+
+/* v3.10 — boost badge and Pro theme */
+.boost-chip { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: .7rem; font-weight: 800; background: linear-gradient(135deg,#ffe08a,#f0b43c); color: #1c1c1c; vertical-align: middle; }

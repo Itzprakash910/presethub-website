@@ -288,8 +288,13 @@
   }
 
   // Pro members see no ads anywhere (the flag is also read by cookie-consent.js on every page).
+  const PRO_THEME_COLORS = { gold: '#d4a373', rose: '#e88da0', ocean: '#4ca1af', emerald: '#2fa37a', classic: '#5b5b5b' };
   function applyProState(isPro, expiry) {
     document.body.classList.toggle('is-pro', !!isPro);
+    // Pro members see their chosen accent colour; everyone else sees the default.
+    const themeColor = isPro ? PRO_THEME_COLORS[state.user?.proTheme] : null;
+    if (themeColor) { document.documentElement.style.setProperty('--accent', themeColor); document.documentElement.style.setProperty('--accent-text', themeColor); }
+    else { document.documentElement.style.removeProperty('--accent'); document.documentElement.style.removeProperty('--accent-text'); }
     try {
       if (isPro && expiry) localStorage.setItem('ph_pro_until', String(new Date(expiry).getTime()));
       else localStorage.removeItem('ph_pro_until');
@@ -351,7 +356,7 @@
           <span class="thumb-price ${Number(p.price || 0) === 0 ? 'free' : ''}">${money(p.price)}</span>
         </div>
         <div class="info">
-          <h3>${esc(p.name)}</h3>
+          <h3>${esc(p.name)}${p.boosted ? ' <span class="boost-chip" title="Boosted">⚡</span>' : ''}</h3>
           <button class="author-link" data-action="profile" data-id="${esc(p.authorId || '')}">${esc(p.author || 'Creator')}</button>
           <div class="preset-stats" aria-label="Preset statistics"><span title="Rating">⭐ ${rating}</span><span title="Downloads">↓ ${downloads}</span><span title="Views">👁 ${views}</span></div>
           <div class="card-actions">
@@ -664,22 +669,43 @@
     }
     return cfSdkPromise;
   }
-  // Asks for the 10-digit mobile Cashfree needs. Resolves null if the user closes the dialog.
-  function askMobile() {
+  // Checkout details step: mobile number (if the server does not have one yet) and an optional coupon.
+  // Resolves to { phone, couponCode } or null if the user closes the dialog.
+  function askCheckoutDetails({ needPhone, couponKind, presetId, plan }) {
     return new Promise(resolve => {
       openModal(`<div class="pro-modal">
-        <div class="pro-hero"><span class="pro-crown"><i class="fas fa-mobile-screen"></i></span><h2>Mobile number</h2><p>Payment ke liye 10-digit mobile number chahiye. Ye aapke profile mein save ho jayega.</p></div>
-        <input id="cfPhone" class="feat-input" inputmode="numeric" maxlength="12" autocomplete="tel" placeholder="9876543210" aria-label="Mobile number" style="width:100%;margin:10px 0">
-        <button class="btn btn-primary pro-buy" id="cfPhoneGo" type="button">Continue to payment</button></div>`);
-      const input = $('#cfPhone'), go = $('#cfPhoneGo');
-      input?.focus();
-      let done = false;
-      const watch = setInterval(() => { if (!done && !$('#cfPhone')) { done = true; clearInterval(watch); resolve(null); } }, 400);
-      go?.addEventListener('click', () => {
-        const v = String(input.value || '').replace(/\D/g, '').slice(-10);
-        if (!/^[6-9]\d{9}$/.test(v)) { toast('Enter a valid 10-digit Indian mobile number', 'error'); return; }
-        done = true; clearInterval(watch); closeModal(); resolve(v);
+        <div class="pro-hero"><span class="pro-crown"><i class="fas fa-lock"></i></span><h2>Secure checkout</h2><p>${needPhone ? 'Payment ke liye 10-digit mobile number chahiye (profile mein save hoga).' : 'Coupon hai to yahan daalein.'}</p></div>
+        ${needPhone ? '<input id="cfPhone" class="feat-input" inputmode="numeric" maxlength="12" autocomplete="tel" placeholder="Mobile number" aria-label="Mobile number" style="width:100%;margin:8px 0">' : ''}
+        ${couponKind ? `<div class="feat-row" style="margin:8px 0"><input id="cfCoupon" class="feat-input" maxlength="32" placeholder="Coupon code (optional)" aria-label="Coupon code" autocapitalize="characters" style="flex:1"><button class="btn btn-outline btn-sm" id="cfCouponApply" type="button">Apply</button></div><p id="cfCouponMsg" class="pro-note" role="status"></p>` : ''}
+        <button class="btn btn-primary pro-buy" id="cfGo" type="button">Continue to payment</button></div>`);
+      let applied = '';
+      const watch = setInterval(() => { if (!$('#cfGo')) { clearInterval(watch); resolve(null); } }, 400);
+      const msg = (text, ok) => { const el = $('#cfCouponMsg'); if (el) { el.textContent = text; el.style.color = ok ? 'var(--tick-green)' : '#b3261e'; } };
+      $('#cfCouponApply')?.addEventListener('click', async () => {
+        const code = String($('#cfCoupon').value || '').trim().toUpperCase();
+        if (!code) { applied = ''; msg('', true); return; }
+        try {
+          const r = await api('/payments/cashfree/coupon/check', { method: 'POST', body: JSON.stringify({ couponCode: code, kind: couponKind, presetId, plan }) });
+          applied = code;
+          msg(`✓ ${code} applied: ₹${r.listRupees} → ₹${r.finalRupees} (you save ₹${r.discountRupees})`, true);
+        } catch (e) { applied = ''; msg(e.message || 'Invalid coupon', false); }
       });
+      $('#cfGo').addEventListener('click', async () => {
+        const code = couponKind ? String($('#cfCoupon')?.value || '').trim().toUpperCase() : '';
+        if (code && code !== applied) {
+          try {
+            await api('/payments/cashfree/coupon/check', { method: 'POST', body: JSON.stringify({ couponCode: code, kind: couponKind, presetId, plan }) });
+            applied = code;
+          } catch (e) { msg(e.message || 'Invalid coupon', false); return; }
+        }
+        let phone = '';
+        if (needPhone) {
+          phone = String($('#cfPhone')?.value || '').replace(/\D/g, '').slice(-10);
+          if (!/^[6-9]\d{9}$/.test(phone)) { toast('Enter a valid 10-digit Indian mobile number', 'error'); return; }
+        }
+        clearInterval(watch); closeModal(); resolve({ phone, couponCode: applied });
+      });
+      $('#cfPhone')?.focus();
     });
   }
 
@@ -693,19 +719,21 @@
       const cashfree = config.provider === 'cashfree';
       const url = cashfree ? endpoint.replace('/payments/youpi/', '/payments/cashfree/') : endpoint;
       const payload = { ...body };
-      if (cashfree && !state.user?.phone) {
-        const phone = await askMobile();
-        if (!phone) return;
-        payload.customerPhone = phone;
+      if (cashfree) {
+        const couponKind = endpoint.includes('create-order') ? 'preset' : endpoint.includes('subscribe') ? 'subscription' : '';
+        const details = await askCheckoutDetails({ needPhone: !state.user?.phone, couponKind, presetId: body.presetId, plan: body.plan });
+        if (!details) return;
+        if (details.phone) payload.customerPhone = details.phone;
+        if (details.couponCode) payload.couponCode = details.couponCode;
       }
       let order;
       try {
         order = await api(url, { method: 'POST', body: JSON.stringify(payload) });
       } catch (e) {
         if (e.code !== 'PHONE_REQUIRED') throw e;
-        const phone = await askMobile();
-        if (!phone) return;
-        payload.customerPhone = phone;
+        const details = await askCheckoutDetails({ needPhone: true });
+        if (!details) return;
+        payload.customerPhone = details.phone;
         order = await api(url, { method: 'POST', body: JSON.stringify(payload) });
       }
       if (payload.customerPhone && state.user) state.user = { ...state.user, phone: payload.customerPhone };

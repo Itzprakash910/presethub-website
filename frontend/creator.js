@@ -8,6 +8,7 @@
   const csrf = () => { const m = document.cookie.match(/(?:^|; )ph_csrf=([^;]+)/); return m ? decodeURIComponent(m[1]) : ''; };
   const main = $('#cdMain');
   let state = { data: null, method: 'upi' };
+  const PRO_THEME_COLORS = { gold: '#d4a373', rose: '#e88da0', ocean: '#4ca1af', emerald: '#2fa37a', classic: '#5b5b5b' };
 
   function toast(msg, type = 'ok') {
     const box = $('#cdToast');
@@ -21,7 +22,7 @@
     if (method !== 'GET') { const c = csrf(); if (c) headers.set('X-CSRF-Token', c); }
     const r = await fetch(`/api${path}`, { ...opts, headers, credentials: 'same-origin' });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { const e = new Error(d.error || `Request failed (${r.status})`); e.status = r.status; throw e; }
+    if (!r.ok) { const e = new Error(d.error || `Request failed (${r.status})`); e.status = r.status; e.code = d.code || ''; throw e; }
     return d;
   }
   function loginNeeded() {
@@ -65,6 +66,34 @@
           <div class="cd-badges">${badges}</div>
         </div>
         <a class="cd-btn ghost" href="/profile/${esc(p.id)}/${esc(p.username)}/">View public profile</a>
+      </section>
+
+
+      <section class="cd-card" aria-label="Boost">
+        <h2><i class="fas fa-bolt"></i> Boost your content</h2>
+        <p class="cd-muted">Boosted items appear first on the site until the boost ends. Payment is secure via Cashfree.</p>
+        <form class="cd-form" id="cdBoostForm">
+          <label>What to boost
+            <select name="targetType">
+              <option value="profile">My profile (top of Creators)</option>
+              ${d.presets.length ? '<option value="preset">A preset</option>' : ''}
+              ${d.texts.length ? '<option value="text">A shayari / text prompt</option>' : ''}
+            </select></label>
+          ${d.presets.length ? `<label>Preset <select name="presetId">${d.presets.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></label>` : ''}
+          ${d.texts.length ? `<label>Text prompt <select name="textId">${d.texts.map(x => `<option value="${esc(x.id)}">${esc(x.title || x.text.slice(0, 50))}</option>`).join('')}</select></label>` : ''}
+          <label>Duration
+            <select name="days"><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option></select></label>
+          <div id="cdBoostPhone"></div>
+          <div class="cd-muted" id="cdBoostPrice">Choose an option to see the price.</div>
+          <button class="cd-btn" type="submit">Continue to payment</button>
+        </form>
+      </section>
+
+      <section class="cd-card" aria-label="Pro theme">
+        <h2><i class="fas fa-palette"></i> Pro colour theme</h2>
+        ${p.isPro ? `<p class="cd-muted">Choose the accent colour for the site when you are signed in.</p>
+          <div class="cd-seg" role="group" aria-label="Theme colour">${Object.keys(PRO_THEME_COLORS).map(k => `<button type="button" data-theme="${k}" aria-pressed="${d.profile.theme === k}" style="background:${PRO_THEME_COLORS[k]};color:#1c1c1c;border:0;min-width:44px" title="${k}">${k[0].toUpperCase()}</button>`).join('')}</div>`
+          : '<p class="cd-muted">Pro members can choose a colour theme. <a href="/?action=pro">Go Pro</a></p>'}
       </section>
 
       <section class="cd-card" aria-label="Earnings">
@@ -138,12 +167,46 @@
   }
 
   function bind() {
+    document.querySelectorAll('[data-theme]').forEach(b => b.addEventListener('click', async () => {
+      try { await api('/creator/theme', { method: 'PUT', body: JSON.stringify({ theme: b.dataset.theme }) }); applyTheme(b.dataset.theme); toast('Theme saved'); load(); }
+      catch (err) { toast(err.message, 'err'); }
+    }));
+    const bf = $('#cdBoostForm');
+    const priceEl = $('#cdBoostPrice');
+    const priceOf = (type, days) => ({ profile: { 7: 99, 14: 179, 30: 299 }, preset: { 7: 49, 14: 89, 30: 149 }, text: { 7: 29, 14: 49, 30: 89 } })[type]?.[days];
+    const refresh = () => {
+      const f = new FormData(bf); const type = f.get('targetType'); const days = Number(f.get('days'));
+      const pr = priceOf(type, days);
+      priceEl.textContent = pr ? `Price: ₹${pr} for ${days} days` : 'Choose an option to see the price.';
+      document.querySelectorAll('[name=presetId]').forEach(sel => sel.closest('label').style.display = type === 'preset' ? '' : 'none');
+      document.querySelectorAll('[name=textId]').forEach(sel => sel.closest('label').style.display = type === 'text' ? '' : 'none');
+    };
+    bf?.addEventListener('change', refresh); refresh();
+    bf?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const f = new FormData(bf); const type = f.get('targetType'); const days = Number(f.get('days'));
+      const targetId = type === 'preset' ? f.get('presetId') : type === 'text' ? f.get('textId') : state.data.profile.id;
+      const phoneInput = bf.querySelector('[name=customerPhone]');
+      const body = { targetType: type, targetId, days, customerPhone: phoneInput ? String(phoneInput.value || '').replace(/\D/g, '').slice(-10) : undefined };
+      try {
+        const order = await api('/payments/cashfree/boost', { method: 'POST', body: JSON.stringify(body) });
+        await openCashfree(order);
+      } catch (err) {
+        if (err.code === 'PHONE_REQUIRED' && !phoneInput) {
+          $('#cdBoostPhone').innerHTML = '<label>Mobile number (10 digits) <input name="customerPhone" inputmode="numeric" maxlength="12" required></label>';
+          toast('Enter your mobile number to continue', 'err');
+        } else toast(err.message, 'err');
+      }
+    });
     document.querySelectorAll('[data-method]').forEach(b => b.addEventListener('click', () => { state.method = b.dataset.method; load(); }));
     const det = $('#cdDetailsForm');
     det?.addEventListener('submit', async e => {
       e.preventDefault();
       const f = new FormData(det);
-      const body = { method: state.method, accountHolder: f.get('accountHolder'), upi: f.get('upi'), accountNumber: f.get('accountNumber'), ifsc: f.get('ifsc') };
+      const body = { method: state.method, accountHolder: String(f.get('accountHolder') || '').trim(), upi: String(f.get('upi') || '').trim(), accountNumber: String(f.get('accountNumber') || '').trim(), ifsc: String(f.get('ifsc') || '').trim() };
+      if (!body.accountHolder) return toast('Enter the account holder name', 'err');
+      if (state.method === 'upi' && !body.upi) return toast('Enter your UPI ID', 'err');
+      if (state.method === 'bank' && (!body.accountNumber || !body.ifsc)) return toast('Enter account number and IFSC', 'err');
       try { await api('/creator/payout-details', { method: 'PUT', body: JSON.stringify(body) }); toast('Payout details saved'); load(); }
       catch (err) { toast(err.message, 'err'); }
     });
@@ -157,9 +220,38 @@
     });
   }
 
+  // Loads Cashfree's checkout script only when a payment starts.
+  let cfPromise = null;
+  function loadCashfree() {
+    if (window.Cashfree) return Promise.resolve(window.Cashfree);
+    if (!cfPromise) cfPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script'); s.src = 'https://sdk.cashfree.com/js/v3/cashfree.js'; s.async = true;
+      s.onload = () => (window.Cashfree ? resolve(window.Cashfree) : reject(new Error('Checkout did not load.')));
+      s.onerror = () => { cfPromise = null; reject(new Error('Could not load secure checkout.')); };
+      document.head.appendChild(s);
+    });
+    return cfPromise;
+  }
+  async function openCashfree(order) {
+    if (!order.paymentSessionId) throw new Error('Payment session was not created. Please try again.');
+    const Factory = await loadCashfree();
+    const cf = Factory({ mode: order.mode === 'production' ? 'production' : 'sandbox' });
+    toast('Opening secure checkout…');
+    await cf.checkout({ paymentSessionId: order.paymentSessionId, redirectTarget: '_self' });
+  }
+  // Pro theme: colours the accent on this page too.
+  function applyTheme(key) {
+    const c = PRO_THEME_COLORS[key]; if (!c) return;
+    document.documentElement.style.setProperty('--accent', c);
+    document.documentElement.style.setProperty('--accent-text', c);
+  }
+
   async function load() {
     try {
       const d = await api('/creator/dashboard');
+      // Start on the method the creator already saved (UPI is only the default for new users).
+      if (!state.methodInitialised) { if (d.payoutDetails?.method) state.method = d.payoutDetails.method; state.methodInitialised = true; }
+      applyTheme(d.profile.theme || 'gold');
       state.data = d; render(d);
     } catch (e) {
       if (e.status === 401) return loginNeeded();
