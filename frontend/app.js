@@ -61,7 +61,7 @@
     if (!src) return `<span class="avatar-fallback ${cls}" aria-hidden="true">${initial}</span>`;
     return `<span class="avatar-shell ${cls}"><img src="${esc(assetUrl(src))}" alt="${esc(name || 'User')} profile photo" loading="lazy" decoding="async" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.hidden=false"><span class="avatar-fallback" hidden aria-hidden="true">${initial}</span></span>`;
   };
-  const imgTag = (src, alt, cls='') => `<img class="${cls}" src="${esc(assetUrl(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackPreview}'">`;
+  const imgTag = (src, alt, cls='') => `<img class="${cls}" src="${esc(assetUrl(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer-when-downgrade" onerror="this.onerror=null;this.classList.add('img-failed');var w=this.parentElement;if(w){w.classList.add('img-failed-wrap');w.setAttribute('data-initial',(this.alt||'P').trim().charAt(0).toUpperCase());}">`;
 
   // ============ PERSISTENT CLIENT QUEUE / CACHE ============
   const UPLOAD_DB = 'presethub-client-v2';
@@ -1047,7 +1047,8 @@
         <h2>${mode === 'login' ? 'Welcome back' : 'Create your PresetHub account'}</h2>
         <form id="authForm" data-mode="${mode}">
           ${mode === 'signup' ? '<div class="form-group"><label>Name</label><input name="name" maxlength="50" required></div><div class="form-group"><label>Username</label><input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" required></div>' : ''}
-          <div class="form-group"><label>Email</label><input type="email" name="email" required autocomplete="email"></div>
+          <div class="form-group"><label>Email</label><input type="email" name="email" required autocomplete="${mode === 'login' ? 'username' : 'email'}" value="${mode === 'login' ? esc(rememberedEmail()) : ''}"></div>
+          ${mode === 'login' ? `<label class="check-row remember-row"><input type="checkbox" name="remember" ${rememberedEmail() ? 'checked' : ''}> Email yaad rakhein (password kabhi save nahi hoga)</label>` : ''}
           ${passwordField('password', 'Password', mode === 'login' ? 'current-password' : 'new-password', 'minlength="8" required')}
           ${mode === 'signup' ? '<small>At least 8 characters with upper/lowercase and a number.</small>' : ''}
           <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
@@ -1064,9 +1065,18 @@
     openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}">${passwordField('password', 'New password', 'new-password', 'minlength="8" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
   }
 
+  // Only the email is remembered on this device. Passwords are never stored in the browser.
+  const REMEMBER_KEY = 'ph_remember_email';
+  function rememberedEmail() { try { return localStorage.getItem(REMEMBER_KEY) || ''; } catch (_) { return ''; } }
+  function saveRememberedEmail(on, email) {
+    try { if (on && email) localStorage.setItem(REMEMBER_KEY, email); else localStorage.removeItem(REMEMBER_KEY); } catch (_) {}
+  }
   async function submitAuth(form) {
     const mode = form.dataset.mode;
     const data = Object.fromEntries(new FormData(form).entries());
+    const remember = data.remember === 'on';
+    delete data.remember;
+    if (mode === 'login') saveRememberedEmail(remember, String(data.email || '').trim().toLowerCase());
     try {
       const r = await api(`/auth/${mode}`, { method: 'POST', body: JSON.stringify(data) });
       state.token = '';

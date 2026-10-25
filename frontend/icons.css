@@ -101,3 +101,10 @@
 .far.fa-eye{mask-image:url('/assets/icons-pack/svg/fa-eye.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-eye.svg');}
 .far.fa-user{mask-image:url('/assets/icons-pack/svg/fa-user.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-user.svg');}
 .fa-circle-check.fas{mask-image:url('/assets/icons-pack/svg/fa-check.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-check.svg')}
+
+/* v3.6 additions */
+.fas.fa-bookmark,.far.fa-bookmark{mask-image:url('/assets/icons-pack/svg/fa-bookmark.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-bookmark.svg');}
+.fas.fa-flag,.far.fa-flag{mask-image:url('/assets/icons-pack/svg/fa-flag.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-flag.svg');}
+.fas.fa-hand-holding-heart,.far.fa-hand-holding-heart{mask-image:url('/assets/icons-pack/svg/fa-hand-holding-heart.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-hand-holding-heart.svg');}
+.fas.fa-mobile-screen,.far.fa-mobile-screen{mask-image:url('/assets/icons-pack/svg/fa-mobile-screen.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-mobile-screen.svg');}
+.fas.fa-wand-magic-sparkles,.far.fa-wand-magic-sparkles{mask-image:url('/assets/icons-pack/svg/fa-wand-magic-sparkles.svg');-webkit-mask-image:url('/assets/icons-pack/svg/fa-wand-magic-sparkles.svg');}

@@ -123,6 +123,51 @@
       </article>`).join('') || '<p class="admin-note">Nothing to review ✅</p>';
   }
 
+  // ---------- PAYOUTS ----------
+  async function loadPayouts() {
+    const st = $('#poStatus').value;
+    const d = await api(`/payouts?status=${st}&limit=30`);
+    $('#poCount').textContent = `${fmt(d.total)} ${st} payout(s)`;
+    $('#poList').innerHTML = (d.items || []).map(x => `
+      <article class="v32-text">
+        <div><b>${esc(x.creator)}</b> <small>${esc(x.creatorEmail)} · ${when(x.createdAt)}</small>
+        <p>₹${Number(x.amount).toFixed(2)} · ${esc(x.method.toUpperCase())} · ${esc(x.destination)}</p>
+        <small>Status: <b>${esc(x.status)}</b>${x.reference ? ` · Ref: ${esc(x.reference)}` : ''}${x.note ? ` · ${esc(x.note)}` : ''}</small>
+        <div class="po-detail" data-po-box="${esc(x.id)}"></div></div>
+        <div class="actions">
+          <button class="btn btn-sm btn-outline" data-po-show="${esc(x.id)}">Show details</button>
+          ${x.status === 'requested' ? `<button class="btn btn-sm btn-outline" data-po-act="approve" data-id="${esc(x.id)}">Approve</button>` : ''}
+          ${['requested', 'approved'].includes(x.status) ? `<button class="btn btn-sm btn-primary" data-po-act="paid" data-id="${esc(x.id)}" data-amount="${esc(x.amount)}">Mark paid</button>
+          <button class="btn btn-sm btn-danger" data-po-act="reject" data-id="${esc(x.id)}">Reject</button>` : ''}
+        </div>
+      </article>`).join('') || '<p class="admin-note">Nothing here.</p>';
+  }
+  async function showPayoutDetails(id) {
+    const box = document.querySelector(`[data-po-box="${id}"]`);
+    if (!box) return;
+    const d = await api(`/payouts/${id}/details`);
+    box.innerHTML = d.method === 'upi'
+      ? `<div class="v32-kv"><div><b>UPI</b><span>${esc(d.upi)}</span></div><div><b>Holder</b><span>${esc(d.holder)}</span></div></div>`
+      : `<div class="v32-kv"><div><b>Account</b><span>${esc(d.account)}</span></div><div><b>IFSC</b><span>${esc(d.ifsc)}</span></div><div><b>Holder</b><span>${esc(d.holder)}</span></div></div>`;
+  }
+  async function payoutAction(action, id, amount) {
+    if (action === 'paid') {
+      const ref = prompt(`Enter the bank/UPI reference (UTR) for ₹${amount} after you have sent the money:`);
+      if (!ref) return;
+      if (!confirm(`Confirm: ₹${amount} was sent with reference ${ref}? This cannot be undone.`)) return;
+      await api(`/payouts/${id}`, { method: 'PUT', body: JSON.stringify({ action, reference: ref, note: 'Paid' }) });
+    } else if (action === 'reject') {
+      const why = prompt('Reason for rejecting (the creator will see this):');
+      if (!why) return;
+      await api(`/payouts/${id}`, { method: 'PUT', body: JSON.stringify({ action, note: why }) });
+    } else {
+      if (!confirm('Approve this payout request?')) return;
+      await api(`/payouts/${id}`, { method: 'PUT', body: JSON.stringify({ action }) });
+    }
+    note(`Payout ${action === 'paid' ? 'marked as paid' : action + 'd'}`);
+    await loadPayouts();
+  }
+
   // ---------- actions ----------
   document.addEventListener('click', async e => {
     const t = e.target.closest('button'); if (!t) return;
@@ -139,6 +184,8 @@
         await api(`/users/${id}/pro`, { method: 'POST', body: JSON.stringify({ days }) });
         note(t.dataset.proRevoke ? 'Pro removed' : `Added ${days} day(s) of Pro`); await loadSubscriptions();
       }
+      else if (t.dataset.poShow) { await showPayoutDetails(t.dataset.poShow); }
+      else if (t.dataset.poAct) { await payoutAction(t.dataset.poAct, t.dataset.id, t.dataset.amount); }
       else if (t.dataset.rep) {
         if (t.dataset.rep === 'hide' && !confirm('Hide this content from the public site?')) return;
         await api(`/reports/${t.dataset.id}`, { method: 'PUT', body: JSON.stringify({ action: t.dataset.rep }) });
@@ -149,13 +196,14 @@
       else if (t.id === 'v32Refresh') { await refreshAll(); }
     } catch (err) { note(err.message, 'error'); }
   });
+  document.addEventListener('change', e => { if (e.target.matches('#poStatus')) loadPayouts().catch(err => note(err.message, 'error')); });
   ['#repStatus', '#repType'].forEach(sel => document.addEventListener('change', e => { if (e.target.matches(sel)) loadReports().catch(err => note(err.message, 'error')); }));
   ['#alertType', '#alertSeverity', '#alertUnread'].forEach(sel => document.addEventListener('change', e => { if (e.target.matches(sel)) loadAlerts().catch(err => note(err.message, 'error')); }));
   document.addEventListener('change', e => { if (e.target.matches('#txtStatus')) loadTexts().catch(err => note(err.message, 'error')); });
   document.addEventListener('input', e => { if (e.target.matches('#txtSearch')) { clearTimeout(loadTexts.t); loadTexts.t = setTimeout(() => loadTexts().catch(() => {}), 350); } });
 
   async function refreshAll() {
-    await Promise.allSettled([loadOverview(), loadAlerts(), loadSubscriptions(), loadTexts(), loadReports()]);
+    await Promise.allSettled([loadOverview(), loadAlerts(), loadSubscriptions(), loadTexts(), loadReports(), loadPayouts()]);
   }
   function boot() {
     if (!$('#v32Overview')) return;
