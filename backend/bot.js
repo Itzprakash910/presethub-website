@@ -333,11 +333,26 @@ function registerHandlers() {
   });
 
   bot.start(async ctx => {
-    await ctx.reply(`🎨 *PresetHub Bot*\n\nनमस्ते ${safeText(ctx.from.first_name || 'Creator')} 👋\n\nWebsite के presets खोजें, preview करें, download करें, upload करें और अपना dashboard manage करें।\n\n🌐 ${SITE_URL}`, { parse_mode: 'Markdown', ...mainMenu(ctx.dbUser) });
+    const name = safeText(ctx.from.first_name || 'Creator', 40);
+    const linked = loggedIn(ctx);
+    const lines = [
+      '🎨 *PresetHub*  —  Lightroom presets और shayari',
+      '',
+      `नमस्ते *${name}* 👋`,
+      '',
+      '🔍 Presets खोजें, preview देखें और download करें',
+      '✍️ Shayari पढ़ें, copy करें और share करें',
+      '👑 Pro लें — ads नहीं, और premium presets free',
+      '',
+      linked ? '🔗 आपका account link है। नीचे के buttons से शुरू करें।' : '🔐 Account link करने के लिए /login लिखें, या नया account बनाएं: /signup',
+      '',
+      `🌐 ${SITE_URL}`
+    ];
+    await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown', ...mainMenu(ctx.dbUser) });
     if (ADMIN_CHAT_ID && String(ctx.chat.id) !== ADMIN_CHAT_ID) bot.telegram.sendMessage(ADMIN_CHAT_ID, `👤 New bot user: ${safeText(ctx.from.first_name)} (@${safeText(ctx.from.username || 'No username')})`).catch(() => {});
   });
 
-  bot.command('help', ctx => ctx.reply(`📚 Commands\n\nAccount: /start /signup /login /logout /profile /dashboard\nPresets: /search <query> /latest /presets /popular /categories /category <name> /preset <id> /download <id> /downloads /mypresets /share <preset-id> /upload /top /viral\nShayari: /shayari /shayari sad /latestshayari /postshayari <category> | <text>\nMoney: /myorders /subscription /pro /earnings /referral\nHelp: /accounthelp /passwordhelp /deletehelp /accesshelp /blockhelp\nAdmin: /admin /adminusers /alerts /system`, mainMenu(ctx.dbUser)));
+  bot.command(['help', 'menu'], ctx => ctx.reply('👇 नीचे से option चुनें। Commands की ज़रूरत नहीं है।', mainMenu(ctx.dbUser)));
   bot.command('signup', ctx => ctx.reply(`📝 Website पर account बनाएं:\n${SITE_URL}/?action=signup`, mainMenu(ctx.dbUser)));
   bot.command('login', async ctx => {
     if (isLinkedAccount(ctx.dbUser)) return ctx.reply('✅ आपका account पहले से linked है।', mainMenu(ctx.dbUser));
@@ -524,20 +539,23 @@ async function startBot() {
     await connectDB();
     if (!bot) { bot=new Telegraf(BOT_TOKEN); registerHandlers(); }
     await bot.launch({ dropPendingUpdates: true });
-    await bot.telegram.setMyCommands([
-      {command:'start',description:'Open PresetHub bot'}, {command:'signup',description:'Create account on website'},
-      {command:'login',description:'Link your PresetHub account'}, {command:'profile',description:'View profile'},
-      {command:'dashboard',description:'Open dashboard'}, {command:'search',description:'Search presets/users/tags'},
-      {command:'latest',description:'Latest presets'}, {command:'presets',description:'Browse presets'},
-      {command:'downloads',description:'My downloaded presets'}, {command:'mypresets',description:'My uploaded presets'},
-      {command:'notifications',description:'View notifications'}, {command:'share',description:'Create preset share link'},
-      {command:'upload',description:'Upload a preset'}, {command:'myorders',description:'My orders'},
-      {command:'shayari',description:'Shayari by category'}, {command:'latestshayari',description:'Latest shayari'},
-      {command:'postshayari',description:'Post a shayari'}, {command:'pro',description:'PresetHub Pro plans'},
-      {command:'viral',description:'Trending presets'}, {command:'help',description:'All commands'},
-      {command:'admin',description:'Admin dashboard (admin only)'}, {command:'alerts',description:'Admin alerts (admin only)'},
-      {command:'system',description:'Server & database status (admin only)'}
-    ]).catch(e => console.warn('Telegram command menu setup failed:', e.message));
+    // Short menu for everyone; the rest is reached with the buttons. Admin commands are only shown in the admin chat.
+    const userMenu = [
+      { command: 'start', description: 'Open PresetHub' },
+      { command: 'menu', description: 'Buttons menu' },
+      { command: 'search', description: 'Search presets and creators' },
+      { command: 'shayari', description: 'Shayari & text prompts' },
+      { command: 'pro', description: 'Go Pro (no ads)' }
+    ];
+    const adminMenu = [
+      ...userMenu,
+      { command: 'admin', description: 'Admin dashboard' },
+      { command: 'alerts', description: 'Latest alerts' },
+      { command: 'system', description: 'Server and database status' }
+    ];
+    await bot.telegram.setMyCommands(userMenu).catch(e => console.warn('Telegram command menu setup failed:', e.message));
+    const adminChat = process.env.ADMIN_CHAT_ID;
+    if (adminChat) await bot.telegram.setMyCommands(adminMenu, { scope: { type: 'chat', chat_id: adminChat } }).catch(e => console.warn('Telegram admin menu setup failed:', e.message));
     botStarted=true;
     console.log('✅ Telegram bot started inside PresetHub web server.');
     return true;
