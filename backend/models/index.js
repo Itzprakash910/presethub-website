@@ -37,6 +37,8 @@ const UserSchema = new Schema({
   payoutMasked: { type: String, default: '', maxlength: 120 },
   payoutEnc: { type: String, default: '', select: false },
   payoutUpdatedAt: { type: Date, default: null },
+  proTheme: { type: String, enum: ['gold', 'rose', 'ocean', 'emerald', 'classic'], default: 'gold' },
+  boostUntil: { type: Date, default: null, index: true },
   following: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   wishlist: [{ type: Schema.Types.ObjectId, ref: 'Preset' }],
   notifications: { type: [NotificationSchema], default: [], validate: v => Array.isArray(v) && v.length <= 200 },
@@ -112,6 +114,7 @@ const PresetSchema = new Schema({
   adImpressions: { type: Number, default: 0 },
   totalRevenue: { type: Number, default: 0 },
   viralNotifiedAt: { type: Date, default: null },
+  boostUntil: { type: Date, default: null, index: true },
   bulkUploadBatch: { type: Number },
   uploadId: { type: String, unique: true, sparse: true, index: true },
 }, { timestamps: true });
@@ -144,7 +147,10 @@ const OrderSchema = new Schema({
   _id: { type: String },
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   presetId: { type: Schema.Types.ObjectId, ref: 'Preset', default: null, index: true },
-  kind: { type: String, enum: ['preset', 'subscription', 'tip'], default: 'preset', index: true },
+  kind: { type: String, enum: ['preset', 'subscription', 'tip', 'boost'], default: 'preset', index: true },
+  boostTargetType: { type: String, enum: ['', 'profile', 'preset', 'text'], default: '' },
+  boostTargetId: { type: String, default: '' },
+  boostDays: { type: Number, default: 0 },
   recipientId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   note: { type: String, default: '', maxlength: 140 },
   plan: { type: String, enum: ['', 'monthly', 'quarterly', 'yearly'], default: '' },
@@ -153,6 +159,10 @@ const OrderSchema = new Schema({
   status: { type: String, enum: ['created', 'paid', 'refunded', 'cancelled', 'failed', 'expired', 'suspicious'], default: 'created', index: true },
   provider: { type: String, enum: ['youpi', 'cashfree', 'legacy'], default: 'youpi', index: true },
   paymentSessionId: { type: String, default: '' },
+  listAmount: { type: Number, default: null },
+  refundReference: { type: String, default: '', maxlength: 60 },
+  refundedAt: { type: Date, default: null },
+  couponCode: { type: String, default: '', maxlength: 32 },
   paymentId: { type: String },
   gatewayPaymentId: { type: String },
   checkoutUrl: { type: String },
@@ -270,6 +280,7 @@ const TextPostSchema = new Schema({
   commentsCount: { type: Number, default: 0 },
   shareStats: { type: Map, of: Number, default: {} },
   viralNotifiedAt: { type: Date, default: null },
+  boostUntil: { type: Date, default: null, index: true },
 }, { timestamps: true });
 TextPostSchema.index({ title: 'text', text: 'text', tags: 'text' });
 TextPostSchema.index({ status: 1, createdAt: -1 });
@@ -329,6 +340,22 @@ const PayoutSchema = new Schema({
 }, { timestamps: true });
 PayoutSchema.index({ userId: 1, status: 1 });
 
+
+// ========== COUPONS (admin-created discounts) ==========
+const CouponSchema = new Schema({
+  code: { type: String, required: true, unique: true, uppercase: true, trim: true, maxlength: 32 },
+  type: { type: String, enum: ['percent', 'fixed'], default: 'percent' },
+  value: { type: Number, required: true, min: 0 },
+  appliesTo: { type: String, enum: ['preset', 'subscription', 'tip', 'all'], default: 'all' },
+  presetId: { type: Schema.Types.ObjectId, ref: 'Preset', default: null },
+  maxUses: { type: Number, default: 0, min: 0 },
+  usedCount: { type: Number, default: 0, min: 0 },
+  validFrom: { type: Date, default: null },
+  validUntil: { type: Date, default: null },
+  active: { type: Boolean, default: true, index: true },
+  note: { type: String, default: '', maxlength: 200 },
+}, { timestamps: true });
+
 const User = mongoose.model('User', UserSchema);
 const Preset = mongoose.model('Preset', PresetSchema);
 const Order = mongoose.model('Order', OrderSchema);
@@ -346,5 +373,19 @@ const AlertLog = mongoose.model('AlertLog', AlertLogSchema);
 const Collection = mongoose.model('Collection', CollectionSchema);
 const Report = mongoose.model('Report', ReportSchema);
 const Payout = mongoose.model('Payout', PayoutSchema);
+const Coupon = mongoose.model('Coupon', CouponSchema);
 
-module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Collection, Report, Payout, TEXT_CATEGORIES };
+const BoostSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  targetType: { type: String, enum: ['profile', 'preset', 'text'], required: true },
+  targetId: { type: String, required: true, index: true },
+  days: { type: Number, required: true },
+  amount: { type: Number, required: true },
+  orderId: { type: String, default: '' },
+  startsAt: { type: Date, required: true },
+  endsAt: { type: Date, required: true, index: true },
+  revokedAt: { type: Date, default: null },
+}, { timestamps: true });
+const Boost = mongoose.model('Boost', BoostSchema);
+
+module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Collection, Report, Payout, Coupon, Boost, TEXT_CATEGORIES };
