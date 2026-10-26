@@ -710,6 +710,13 @@
   }
 
   // One checkout entry point for presets, Pro plans and tips. Provider comes from the server.
+  // Shows a spinner in the modal while the payment order is created and the checkout opens.
+  function showCheckoutBusy(title) {
+    openModal(`<div class="pro-modal cf-busy" role="status" aria-live="polite">
+      <span class="cf-spin" aria-hidden="true"></span>
+      <h2>${esc(title)}</h2>
+      <p class="pro-note">Kripya intezaar karein. Page band na karein.</p></div>`);
+  }
   async function openYoupiCheckout(endpoint, body) {
     if (paymentStartInFlight) { toast('Checkout is already starting. Please wait a moment.', 'info'); return; }
     paymentStartInFlight = true;
@@ -725,6 +732,7 @@
         if (!details) return;
         if (details.phone) payload.customerPhone = details.phone;
         if (details.couponCode) payload.couponCode = details.couponCode;
+        showCheckoutBusy('Payment order ban raha hai…');
       }
       let order;
       try {
@@ -742,14 +750,24 @@
         if (!order.paymentSessionId) throw new Error('Payment session was not created. Please try again.');
         const CashfreeFactory = await loadCashfreeSdk();
         const cf = CashfreeFactory({ mode: config.mode === 'production' ? 'production' : 'sandbox' });
-        toast('Opening secure Cashfree checkout…', 'info');
-        await cf.checkout({ paymentSessionId: order.paymentSessionId, redirectTarget: '_self' });
+        showCheckoutBusy('Secure checkout khul raha hai…');
+        // If the checkout does not open within 25 seconds, release the screen instead of leaving it blurred.
+        const watchdog = setTimeout(() => {
+          closeModal(); paymentStartInFlight = false;
+          toast('Checkout did not open. Check your connection and try again.', 'error', 6000);
+        }, 25000);
+        try { await cf.checkout({ paymentSessionId: order.paymentSessionId, redirectTarget: '_self' }); }
+        catch (err) { clearTimeout(watchdog); throw err; }
         return;
       }
       if (!order.checkoutUrl || !/^https?:\/\//i.test(order.checkoutUrl)) throw new Error('Payment gateway returned an invalid checkout URL.');
       toast('Opening secure YOUPI PG checkout…', 'info');
       window.location.assign(order.checkoutUrl);
-    } catch (e) { toast(e.message || 'Could not start payment. Please try again.', 'error'); }
+    } catch (e) {
+      closeModal();
+      console.error('Checkout failed:', e);
+      toast(e.message || 'Could not start payment. Please try again.', 'error');
+    }
     finally { paymentStartInFlight = false; }
   }
   async function startPayment(p) {

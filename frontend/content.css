@@ -82,3 +82,8 @@
 .site-footer .footer-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 28px; }
 @media (max-width: 760px) { .site-footer .footer-grid { grid-template-columns: 1fr 1fr; gap: 22px; } }
 @media (max-width: 420px) { .site-footer .footer-grid { grid-template-columns: 1fr; } }
+
+/* v3.14 — content paragraphs and buttons (same scale as style.css) */
+.legal-page h2 { line-height: 1.3; }
+.legal-page p + p { margin-top: 0; }
+.legal-page .back-link { min-height: 44px; }
