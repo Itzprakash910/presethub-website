@@ -501,7 +501,10 @@ app.get('/preset/:id/:slug?/', async (req, res, next) => {
     if (!p) return indexFallback(res);
     const author = await User.findById(p.authorId).select('username name avatar').lean();
     const canonical = `${SITE_URL}/preset/${p._id}/${slugify(p.name)}/`;
-    const description = (p.description || `Download ${p.name} Lightroom preset on PresetHub.`).slice(0, 155);
+    // Search snippet: name, creator, price and format first, then the creator's own words (kept under 155 characters).
+    const priceText = Number(p.price || 0) > 0 ? `₹${Number(p.price).toFixed(0)}` : 'Free';
+    const snippetHead = `${p.name} Lightroom preset by ${p.author || 'PresetHub creator'} — ${priceText} · XMP & DNG.`;
+    const description = [snippetHead, String(p.description || '').replace(/\s+/g, ' ').trim()].filter(Boolean).join(' ').slice(0, 155);
     const keywords = [...new Set([p.name, `${p.name} Lightroom preset`, 'Lightroom preset', 'free Lightroom preset', 'XMP preset', 'DNG preset', 'mobile Lightroom preset', p.category || 'photo preset', ...(p.tags || [])])].slice(0, 30).join(', ');
     const preview = seoAssetUrl(p.previewImage);
     const price = Number(p.price || 0);
@@ -544,15 +547,14 @@ app.get('/sitemap.xml', async (req, res, next) => {
       '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html'
     ];
 
-    const presets = await Preset.find({ status: 'approved' }).select('_id name previewImage updatedAt').lean();
+    // One entry per preset, with its preview image for Google Images.
+    const presets = await Preset.find({ status: 'approved' }).sort({ createdAt: -1 }).limit(5000).select('_id name previewImage updatedAt').lean();
     for (const p of presets) {
       urls.push({ loc: `/preset/${p._id}/${slugify(p.name)}/`, lastmod: p.updatedAt, image: p.previewImage });
     }
 
     const { TextPost, TEXT_CATEGORIES } = require('./models');
     urls.push('/presets/', '/tags/');
-    const presetRows = await Preset.find({ status: 'approved' }).sort({ createdAt: -1 }).limit(5000).select('_id name updatedAt').lean();
-    for (const p of presetRows) urls.push({ loc: `/preset/${p._id}/${String(p.name || 'preset').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'preset'}/`, lastmod: p.updatedAt });
     const cats = await Preset.distinct('category', { status: 'approved' });
     for (const c of cats.filter(Boolean)) urls.push({ loc: `/presets/category/${encodeURIComponent(c)}/` });
     const tagCounts = new Map();
