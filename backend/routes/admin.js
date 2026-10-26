@@ -2020,6 +2020,15 @@ router.put('/payouts/:id', async (req, res) => {
 function couponOut(c) {
   return { id: String(c._id), code: c.code, type: c.type, value: c.value, appliesTo: c.appliesTo, presetId: c.presetId ? String(c.presetId) : '', maxUses: c.maxUses, usedCount: c.usedCount, validFrom: c.validFrom, validUntil: c.validUntil, active: c.active, note: c.note || '', createdAt: c.createdAt };
 }
+// 'YYYY-MM-DD' -> start or end of that day in IST. Full timestamps are used as given.
+function istDate(v, edge) {
+  if (!v) return null;
+  const str = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return new Date(`${str}T${edge === 'end' ? '23:59:59' : '00:00:00'}+05:30`);
+  const d = new Date(str);
+  if (isNaN(d)) throw Object.assign(new Error('Invalid date.'), { status: 400 });
+  return d;
+}
 function couponInput(b, partial = false, currentType = '') {
   const out = {};
   if (!partial || b.code !== undefined) { const code = C.normaliseCode(b.code); if (!code) throw Object.assign(new Error('Code must be 3–32 letters, numbers, _ or -.'), { status: 400 }); out.code = code; }
@@ -2033,8 +2042,9 @@ function couponInput(b, partial = false, currentType = '') {
   if (!partial || b.appliesTo !== undefined) { if (!C.KINDS.includes(b.appliesTo || 'all')) throw Object.assign(new Error('Applies to: preset, subscription, tip or all.'), { status: 400 }); out.appliesTo = b.appliesTo || 'all'; }
   if (b.presetId !== undefined) { if (b.presetId && !validObjectId(b.presetId)) throw Object.assign(new Error('Invalid preset ID.'), { status: 400 }); out.presetId = b.presetId || null; }
   if (b.maxUses !== undefined) { const m = Math.round(Number(b.maxUses)); if (!(m >= 0 && m <= 1000000)) throw Object.assign(new Error('Max uses must be 0 (unlimited) or more.'), { status: 400 }); out.maxUses = m; }
-  if (b.validFrom !== undefined) out.validFrom = b.validFrom ? new Date(b.validFrom) : null;
-  if (b.validUntil !== undefined) out.validUntil = b.validUntil ? new Date(b.validUntil) : null;
+  // A date picked in the admin panel means that whole day in India time (IST), not midnight UTC.
+  if (b.validFrom !== undefined) out.validFrom = istDate(b.validFrom, 'start');
+  if (b.validUntil !== undefined) out.validUntil = istDate(b.validUntil, 'end');
   if (b.active !== undefined) out.active = b.active === true || b.active === 'true';
   if (b.note !== undefined) out.note = String(b.note || '').slice(0, 200);
   return out;
