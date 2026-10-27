@@ -368,6 +368,20 @@ app.get('/media/:id', require('./middleware/auth').optionalAuth, async (req, res
 // must be migrated to GridFS instead of becoming an accidental public folder.
 app.use('/uploads', (req, res) => res.status(404).end());
 
+// Homepage: injects the Google Search Console verification meta tag from GSC_VERIFICATION_TOKEN (if set).
+// Served before express.static so the placeholder is always replaced.
+const GSC_TOKEN = String(process.env.GSC_VERIFICATION_TOKEN || '').trim().replace(/[^A-Za-z0-9_\-]/g, '');
+app.get(['/', '/index.html'], (req, res, next) => {
+  try {
+    const file = path.join(frontendRoot, 'index.html');
+    let html = fs.readFileSync(file, 'utf8');
+    const tag = GSC_TOKEN ? `<meta name="google-site-verification" content="${GSC_TOKEN}">` : '';
+    html = html.replace('<!--GSC_VERIFY-->', tag);
+    res.set('Cache-Control', 'public, max-age=300');
+    res.type('html').send(html);
+  } catch (e) { next(e); }
+});
+
 // Frontend static files
 app.use(express.static(frontendRoot, {
   index: 'index.html',
