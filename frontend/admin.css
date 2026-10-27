@@ -69,22 +69,3 @@
 .v32-grant input { width: 74px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border, #ddd); }
 .v32-text { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border, #eee); border-radius: 12px; margin-bottom: 10px; }
 .v32-text p { margin: 6px 0; white-space: pre-wrap; word-break: break-word; }
-
-/* v3.9 admin forms */
-.v32-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 14px; }
-.v32-form input, .v32-form select { padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border, #ddd); background: var(--input-bg, #fff); color: inherit; font: inherit; min-width: 0; }
-.v32-form input[name=code] { width: 190px; text-transform: uppercase; }
-.v32-form input[name=presetId] { width: 230px; }
-.v32-form input[name=note] { flex: 1 1 200px; }
-.v32-form input[name=days] { width: 90px; }
-.v32-form input[name=confirm] { width: 230px; }
-.v32-badge-state { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 700; }
-.v32-badge-state.on { background: rgba(34,160,107,.14); color: #22a06b; }
-.v32-badge-state.off { background: rgba(179,38,30,.1); color: #b3261e; }
-
-/* v3.11 admin navigation */
-.adm-nav { position: sticky; top: 0; z-index: 30; background: var(--card-bg, #fff); border-bottom: 1px solid var(--border, #eee); margin: 0 -4px 14px; }
-.adm-nav-in { display: flex; gap: 6px; overflow-x: auto; padding: 10px 4px; scrollbar-width: thin; }
-.adm-nav-in a { flex: 0 0 auto; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border, #ddd); color: inherit; text-decoration: none; font-size: .8rem; font-weight: 700; white-space: nowrap; }
-.adm-nav-in a:hover, .adm-nav-in a:focus-visible { background: var(--accent, #d4a373); color: #1c1c1c; border-color: transparent; }
-section[id] { scroll-margin-top: 70px; }
