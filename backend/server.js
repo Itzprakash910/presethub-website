@@ -37,6 +37,27 @@ const { GridFSBucket, ObjectId } = require('mongoose').mongo;
 const { startBot, stopBot, getBotStatus } = require('./bot');
 
 const app = express();
+// Public content API that Google must be able to read (it renders the homepage and listing pages with these calls).
+// Private/sensitive endpoints stay disallowed. Longest matching rule wins, so the Allow lines override "Disallow: /api/".
+const ROBOTS_TXT = `User-agent: *
+Allow: /
+Allow: /presets/
+Allow: /tags/
+Allow: /shayari/
+Allow: /api/presets
+Allow: /api/texts
+Allow: /api/features/daily
+Allow: /api/features/leaderboard
+Allow: /api/users/top
+Allow: /api/ads/home
+Disallow: /api/presets/*/download
+Disallow: /api/presets/*/file
+Disallow: /api/
+Disallow: /admin
+Disallow: /s/
+
+Sitemap: https://presethub.site/sitemap.xml
+`;
 const PORT = Number(process.env.PORT || 4000);
 
 // ============ PATH DETECTION ============
@@ -114,7 +135,7 @@ function ensureStructure() {
   }
 
   const required = {
-    'robots.txt': `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /s/\nAllow: /shayari/\nSitemap: ${SITE_URL}/sitemap.xml\n`,
+    'robots.txt': ROBOTS_TXT,
     'ads.txt': `google.com, ${(process.env.ADSENSE_CLIENT || 'ca-pub-3554311294133493').replace(/^ca-/, '')}, DIRECT, f08c47fec0942fa0\n`,
     'manifest.json': JSON.stringify({
       name:'PresetHub – Free & Premium Lightroom Presets Marketplace',
@@ -169,6 +190,14 @@ try { ensureStructure(); } catch (err) { console.error('ensureStructure error:',
 // ============ APP CONFIG ============
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+// One canonical host: www.presethub.site -> presethub.site (301). Only GET/HEAD are redirected, so webhooks and API writes are never affected.
+app.use((req, res, next) => {
+  const host = String(req.headers.host || '').toLowerCase();
+  if (host === 'www.presethub.site' && (req.method === 'GET' || req.method === 'HEAD')) {
+    return res.redirect(301, `https://presethub.site${req.originalUrl}`);
+  }
+  next();
+});
 
 const allowedOrigins = new Set(
   [process.env.CLIENT_URL, SITE_URL, 'https://www.presethub.site']
