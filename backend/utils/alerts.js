@@ -252,6 +252,14 @@ function installProcessHandlers() {
 // Catches every 5xx (including ones routes handle themselves with try/catch).
 function status5xxWatcher(req, res, next) {
   res.on('finish', () => {
+    // Google crawlers getting 403/429 hurts indexing: report it to the admin so it can be traced.
+    if ((res.statusCode === 403 || res.statusCode === 429) && /Google/i.test(String(req.headers['user-agent'] || ''))) {
+      adminAlert({
+        type: 'system', severity: 'warning', title: `Google crawler got HTTP ${res.statusCode} on ${String(req.originalUrl).split('?')[0].slice(0, 100)}`,
+        fingerprint: `gbot-${res.statusCode}-${String(req.originalUrl).split('?')[0].slice(0, 80)}`, throttleMs: 60 * 60 * 1000, email: false,
+        details: { ...requestInfo(req), status: res.statusCode, note: 'If this comes from the Render/CDN edge, it never reached the app. Check Render logs and any Cloudflare/WAF rules.' }
+      });
+    }
     if (res.statusCode >= 500 && !res.locals.alerted && !String(req.originalUrl).startsWith('/healthz')) {
       adminAlert({
         type: 'error', severity: res.statusCode === 503 ? 'warning' : 'critical',

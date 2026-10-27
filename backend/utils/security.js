@@ -70,12 +70,15 @@ const textPostLimiter = rateLimit({
 
 // ---------- bot / scanner blocking ----------
 const BAD_UA = /(sqlmap|nikto|nmap|masscan|acunetix|netsparker|nessus|openvas|wpscan|dirbuster|gobuster|havij|zgrab|python-requests\/2\.[0-9]+ .*scan)/i;
+const GOOGLE_CRAWLER = /(Googlebot|Google-InspectionTool|AdsBot-Google|APIs-Google|Storebot-Google|Google-Extended)/i;
 const PROBE_PATH = /(\.\.(\/|%2f|%5c)|\/\.(env|git|svn|hg|ds_store|aws|docker)|wp-(admin|login|content|includes)|phpmyadmin|\/cgi-bin\/|\.php(\?|$)|\/etc\/(passwd|shadow)|\/proc\/self|web\.config|\.bak$|\.sql$|\.old$)/i;
 function botGuard(req, res, next) {
   const ua = String(req.headers['user-agent'] || '');
   let path = String(req.originalUrl || '').slice(0, 1000);
   try { path = decodeURIComponent(path); } catch (_) { /* malformed encoding is itself suspicious */ return res.status(400).type('text').send('Bad request'); }
-  if (BAD_UA.test(ua) || PROBE_PATH.test(path)) {
+  // Google's own crawlers are never blocked by the user-agent rule (their pages must stay reachable for indexing).
+  const isGoogleCrawler = GOOGLE_CRAWLER.test(ua);
+  if ((!isGoogleCrawler && BAD_UA.test(ua)) || PROBE_PATH.test(path)) {
     securityAlert(req, 'Scanner / exploit probe blocked', { userAgent: ua.slice(0, 160), path: path.slice(0, 200) }, 'warning', 10 * 60 * 1000);
     return res.status(403).type('text').send('Forbidden');
   }
