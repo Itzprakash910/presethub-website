@@ -3,6 +3,14 @@ Allow: /
 Allow: /presets/
 Allow: /tags/
 Allow: /shayari/
+Allow: /api/presets
+Allow: /api/texts
+Allow: /api/features/daily
+Allow: /api/features/leaderboard
+Allow: /api/users/top
+Allow: /api/ads/home
+Disallow: /api/presets/*/download
+Disallow: /api/presets/*/file
 Disallow: /api/
 Disallow: /admin
 Disallow: /s/
