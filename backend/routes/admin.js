@@ -45,6 +45,31 @@ const isAdmin = (req, res, next) => {
 
 router.use(auth, isAdmin);
 
+// Audit trail: every admin change is recorded (who, when, which route, which fields). Values are never stored.
+router.use((req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+  res.on('finish', () => {
+    require('../models').AuditLogEntry.create({
+      actorId: req.user?.id || null, actorEmail: String(req.user?.email || '').slice(0, 200),
+      method: req.method, path: String(req.originalUrl || '').split('?')[0].slice(0, 200), status: res.statusCode,
+      ip: String(req.ip || '').slice(0, 64), userAgent: String(req.headers['user-agent'] || '').slice(0, 160),
+      fields: Object.keys(req.body && typeof req.body === 'object' ? req.body : {}).slice(0, 30).map(k => k.slice(0, 60))
+    }).catch(() => {});
+  });
+  next();
+});
+
+router.get('/audit', async (req, res) => {
+  const { skip, limit, page } = paginate(req.query.page, req.query.limit || 50);
+  const f = {};
+  if (req.query.actor) f.actorEmail = String(req.query.actor).slice(0, 200);
+  const [items, total] = await Promise.all([
+    require('../models').AuditLogEntry.find(f).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    require('../models').AuditLogEntry.countDocuments(f)
+  ]);
+  res.json({ items: items.map(x => ({ id: String(x._id), actor: x.actorEmail, method: x.method, path: x.path, status: x.status, ip: x.ip, fields: x.fields, at: x.createdAt })), total, page, pages: Math.max(1, Math.ceil(total / limit)) });
+});
+
 
 // ============================================================
 // HELPERS
