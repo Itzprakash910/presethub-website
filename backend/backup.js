@@ -11,9 +11,12 @@ const mongoose = require('mongoose');
 const SKIP = new Set(['presethub_media.chunks']);
 const KEEP = 7;
 
-async function run() {
-  if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is not set');
-  await mongoose.connect(process.env.MONGODB_URI);
+async function run({ reuse = false } = {}) {
+  const own = mongoose.connection.readyState !== 1;
+  if (own) {
+    if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is not set');
+    await mongoose.connect(process.env.MONGODB_URI);
+  }
   const db = mongoose.connection.db;
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const dir = path.join(__dirname, '..', 'backups', stamp);
@@ -31,7 +34,8 @@ async function run() {
   const all = fs.readdirSync(root).filter(n => fs.statSync(path.join(root, n)).isDirectory()).sort();
   for (const old of all.slice(0, Math.max(0, all.length - KEEP))) fs.rmSync(path.join(root, old), { recursive: true, force: true });
   console.log('Backup written to', dir, summary);
-  await mongoose.disconnect();
+  if (own && !reuse) await mongoose.disconnect();
+  return { dir, summary };
 }
 
 if (require.main === module) {

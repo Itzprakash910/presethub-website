@@ -39,11 +39,58 @@ const { startBot, stopBot, getBotStatus } = require('./bot');
 const app = express();
 // Public content API that Google must be able to read (it renders the homepage and listing pages with these calls).
 // Private/sensitive endpoints stay disallowed. Longest matching rule wins, so the Allow lines override "Disallow: /api/".
-const ROBOTS_TXT = `User-agent: *
+const ROBOTS_TXT = `# Search engines and all other crawlers
+User-agent: *
 Allow: /
 Allow: /presets/
 Allow: /tags/
 Allow: /shayari/
+Allow: /llms.txt
+Allow: /api/presets
+Allow: /api/texts
+Allow: /api/features/daily
+Allow: /api/features/leaderboard
+Allow: /api/users/top
+Allow: /api/ads/home
+Disallow: /api/presets/*/download
+Disallow: /api/presets/*/file
+Disallow: /api/
+Disallow: /admin
+Disallow: /s/
+
+# AI search and answer engines (allowed: we want to be found and cited)
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+Allow: /
+Allow: /presets/
+Allow: /tags/
+Allow: /shayari/
+Allow: /llms.txt
+Allow: /api/presets
+Allow: /api/texts
+Allow: /api/features/daily
+Allow: /api/features/leaderboard
+Allow: /api/users/top
+Allow: /api/ads/home
+Disallow: /api/presets/*/download
+Disallow: /api/presets/*/file
+Disallow: /api/
+Disallow: /admin
+Disallow: /s/
+
+# AI training crawlers (owner choice: currently allowed; change to Disallow: / to opt out)
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Google-Extended
+Allow: /
+Allow: /presets/
+Allow: /tags/
+Allow: /shayari/
+Allow: /llms.txt
 Allow: /api/presets
 Allow: /api/texts
 Allow: /api/features/daily
@@ -211,6 +258,8 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: [
+        "https://www.googletagmanager.com",
+        "https://connect.facebook.net",
         "'self'",
         "https://pagead2.googlesyndication.com",
         "https://googleads.g.doubleclick.net",
@@ -227,6 +276,13 @@ app.use(helmet({
       ],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       connectSrc: [
+        "https://www.google-analytics.com",
+        "https://*.google-analytics.com",
+        "https://analytics.google.com",
+        "https://*.analytics.google.com",
+        "https://www.googletagmanager.com",
+        "https://www.facebook.com",
+        "https://connect.facebook.net",
         "'self'",
         "https://pagead2.googlesyndication.com",
         "https://*.google.com",
@@ -400,12 +456,25 @@ app.use('/uploads', (req, res) => res.status(404).end());
 // Homepage: injects the Google Search Console verification meta tag from GSC_VERIFICATION_TOKEN (if set).
 // Served before express.static so the placeholder is always replaced.
 const GSC_TOKEN = String(process.env.GSC_VERIFICATION_TOKEN || '').trim().replace(/[^A-Za-z0-9_\-]/g, '');
-app.get(['/', '/index.html'], (req, res, next) => {
+// HTML pages: fills the Google Search Console tag (homepage) and the analytics loader (public pages).
+// Analytics only loads after cookie consent (see frontend/tracking.js). IDs are validated before use.
+const GA_ID = /^G-[A-Z0-9]{6,12}$/.test(String(process.env.GA_MEASUREMENT_ID || '').trim()) ? String(process.env.GA_MEASUREMENT_ID).trim() : '';
+const PIXEL_ID = /^\d{8,20}$/.test(String(process.env.META_PIXEL_ID || '').trim()) ? String(process.env.META_PIXEL_ID).trim() : '';
+const TRACKING_TAG = (GA_ID || PIXEL_ID) ? `<script src="/tracking.js" data-ga="${GA_ID}" data-pixel="${PIXEL_ID}" defer></script>` : '';
+const PRIVATE_PAGES = new Set(['admin.html', 'creator.html']);
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  let reqPath;
+  try { reqPath = decodeURIComponent(req.path || '/'); } catch (_) { return next(); }
+  if (!(reqPath === '/' || reqPath.endsWith('.html'))) return next();
+  const rel = reqPath === '/' ? 'index.html' : reqPath.replace(/^\/+/, '');
+  const file = path.normalize(path.join(frontendRoot, rel));
+  if (!file.startsWith(frontendRoot + path.sep) || !fs.existsSync(file)) return next();
   try {
-    const file = path.join(frontendRoot, 'index.html');
+    const name = path.basename(file);
     let html = fs.readFileSync(file, 'utf8');
-    const tag = GSC_TOKEN ? `<meta name="google-site-verification" content="${GSC_TOKEN}">` : '';
-    html = html.replace('<!--GSC_VERIFY-->', tag);
+    html = html.replace('<!--GSC_VERIFY-->', name === 'index.html' && GSC_TOKEN ? `<meta name="google-site-verification" content="${GSC_TOKEN}">` : '');
+    html = html.replace('<!--TRACKING-->', PRIVATE_PAGES.has(name) ? '' : TRACKING_TAG);
     res.set('Cache-Control', 'public, max-age=300');
     res.type('html').send(html);
   } catch (e) { next(e); }
@@ -651,7 +720,25 @@ app.use(errorHandler);
     await connectDB();
     await ensureAdminUser();
     await autoPublishPendingPresets();
-    // Once per India day, post the "Preset & Shayari of the day" to the Telegram channel.
+    // Daily database backup (JSON per collection, last 7 kept). BACKUP_DAILY=off disables it.
+// Note: backups are written to the server disk. Copy them off-site (e.g. Drive/S3) for real disaster recovery.
+async function runDailyBackup() {
+  if (String(process.env.BACKUP_DAILY || 'on').toLowerCase() === 'off') return;
+  if (require('mongoose').connection.readyState !== 1) return;
+  try {
+    const { run } = require('./backup');
+    const r = await run({ reuse: true });
+    const { adminAlert } = require('./utils/alerts');
+    adminAlert({ type: 'database', severity: 'info', title: 'Daily database backup completed', fingerprint: 'backup-ok', throttleMs: 20 * 60 * 60 * 1000, email: false, details: { folder: r.dir, documents: Object.values(r.summary).reduce((a, b) => a + b, 0), collections: Object.keys(r.summary).length } });
+  } catch (e) {
+    console.warn('Daily backup failed:', e.message);
+    require('./utils/alerts').adminAlert({ type: 'database', severity: 'critical', title: 'Daily database backup FAILED', fingerprint: 'backup-fail', throttleMs: 6 * 60 * 60 * 1000, details: { error: e.message } });
+  }
+}
+setTimeout(runDailyBackup, 5 * 60 * 1000).unref?.();
+setInterval(runDailyBackup, 24 * 60 * 60 * 1000).unref?.();
+
+// Once per India day, post the "Preset & Shayari of the day" to the Telegram channel.
 let lastChannelDay = '';
 async function postDailyToChannel() {
   try {
