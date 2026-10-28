@@ -387,5 +387,20 @@ const BoostSchema = new Schema({
   revokedAt: { type: Date, default: null },
 }, { timestamps: true });
 const Boost = mongoose.model('Boost', BoostSchema);
+// ========== AUDIT LOG (every admin change: who, when, what route; body VALUES are never stored) ==========
+const AuditLogEntrySchema = new Schema({
+  actorId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+  actorEmail: { type: String, default: '', maxlength: 200 },
+  method: { type: String, required: true, maxlength: 10 },
+  path: { type: String, required: true, maxlength: 200 },
+  status: { type: Number, default: 0 },
+  ip: { type: String, default: '', maxlength: 64 },
+  userAgent: { type: String, default: '', maxlength: 160 },
+  fields: [{ type: String, maxlength: 60 }],
+  createdAt: { type: Date, default: Date.now, index: true },
+});
+AuditLogEntrySchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 365 }); // keep one year
+const AuditLogEntry = mongoose.model('AuditLogEntry', AuditLogEntrySchema);
 
-module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Collection, Report, Payout, Coupon, Boost, TEXT_CATEGORIES };
+
+module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Collection, Report, Payout, Coupon, Boost, AuditLogEntry, TEXT_CATEGORIES };
