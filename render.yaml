@@ -32,6 +32,38 @@ services:
         value: "0.8"
       - key: PAYOUT_MIN_RUPEES
         value: "100"
+      - key: GA_MEASUREMENT_ID
+        sync: false
+      - key: META_PIXEL_ID
+        sync: false
+      - key: GSC_VERIFICATION_TOKEN
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: ADMIN_ALERT_EMAIL
+        sync: false
+      - key: PAYOUT_AUTO_APPROVE_RUPEES
+        value: "500"
+      - key: PRO_PRICE_MONTHLY
+        value: "49"
+      - key: PRO_PRICE_QUARTERLY
+        value: "129"
+      - key: PRO_PRICE_YEARLY
+        value: "399"
+      - key: VIRAL_SCORE
+        value: "300"
+      - key: AUTO_HIDE_REPORTS
+        value: "5"
+      - key: BACKUP_DAILY
+        value: "on"
+      - key: DB_LIMIT_MB
+        value: "512"
+      - key: LOGIN_LOCK_AFTER
+        value: "8"
+      - key: SIGNUP_PER_HOUR
+        value: "10"
+      - key: UPLOAD_PER_HOUR
+        value: "30"
       - key: CASHFREE_ENV
         value: sandbox
       - key: CASHFREE_APP_ID
