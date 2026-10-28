@@ -199,7 +199,7 @@
     const f = Object.fromEntries(new FormData(form).entries());
     if (!confirm(`Mark order ${f.orderId} as refunded? This removes its access and earnings. Make sure the money was refunded in Cashfree first.`)) return;
     await api(`/orders/${encodeURIComponent(f.orderId.trim())}/refund`, { method: 'POST', body: JSON.stringify({ reference: f.reference.trim(), reason: f.reason.trim() }) });
-    form.reset(); note('Order marked refunded'); await Promise.allSettled([loadOverview(), loadSubscriptions(), loadBoosts()]);
+    form.reset(); note('Order marked refunded'); await Promise.allSettled([loadOverview(), loadSubscriptions(), loadBoosts(), loadAudit()]);
   }
 
   // ---------- PAYOUT CSV EXPORT ----------
@@ -214,6 +214,14 @@
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = (r.headers.get('content-disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'payouts.csv';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+
+  // ---------- AUDIT LOG ----------
+  async function loadAudit() {
+    const actor = ($('#auditActor')?.value || '').trim();
+    const d = await api(`/audit?limit=50${actor ? '&actor=' + encodeURIComponent(actor) : ''}`);
+    $('#auditList').innerHTML = (d.items || []).length ? `<div class="table-wrap"><table class="user-table"><thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Fields</th><th>Status</th><th>IP</th></tr></thead><tbody>${d.items.map(x => `
+      <tr><td>${when(x.at)}</td><td>${esc(x.actor)}</td><td><code>${esc(x.method)} ${esc(x.path)}</code></td><td>${esc((x.fields || []).join(', ')) || '—'}</td><td>${esc(x.status)}</td><td>${esc(x.ip)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="admin-note">No admin changes yet.</p>';
   }
 
   // ---------- actions ----------
@@ -272,6 +280,8 @@
     if (!$('#v32Overview')) return;
     refreshAll();
     setInterval(() => { loadOverview().catch(() => {}); if (document.visibilityState === 'visible') loadAlerts().catch(() => {}); }, 60000);
+    $('#auditRefresh')?.addEventListener('click', () => loadAudit().catch(() => {}));
+    $('#auditActor')?.addEventListener('change', () => loadAudit().catch(() => {}));
     $('#boostRefresh')?.addEventListener('click', () => loadBoosts().catch(() => {}));
     $('#refreshAdmin')?.addEventListener('click', () => setTimeout(refreshAll, 200));
   }

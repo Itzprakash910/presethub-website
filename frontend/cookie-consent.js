@@ -8,6 +8,7 @@
   };
   const write = value => {
     try { localStorage.setItem(CONSENT_KEY, value); } catch (_) {}
+    try { window.dispatchEvent(new CustomEvent('presethub:consent', { detail: value })); } catch (_) {}
   };
   // Pro members never load ads (flag is written by app.js after a verified subscription).
   const isPro = () => { try { return Number(localStorage.getItem('ph_pro_until') || 0) > Date.now(); } catch (_) { return false; } };

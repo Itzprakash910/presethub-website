@@ -1,0 +1,25 @@
+# PresetHub
+
+> PresetHub is a Lightroom preset marketplace and shayari platform. Free and premium Lightroom presets (XMP and DNG) by creators, shayari and text prompts you can copy, share and post, and tools for creators.
+
+## Key pages
+
+- [Home](https://presethub.site/): presets, shayari and today's pick
+- [All presets](https://presethub.site/presets/): browse Lightroom presets by category and price
+- [Shayari and text prompts](https://presethub.site/shayari/): sad shayari, true lines, love, attitude and captions
+- [Hashtags](https://presethub.site/tags/): every tag across presets and shayari
+- [Lightroom guide](https://presethub.site/lightroom-guide.html): how to install and use XMP and DNG presets
+- [Download guide](https://presethub.site/download-guide.html): how to download and install presets from PresetHub
+- [Creator programme](https://presethub.site/creator-program.html): sell presets and shayari on PresetHub
+- [Tools](https://presethub.site/tools.html): caption and hashtag generator, text on photo
+- [FAQ](https://presethub.site/faq.html): common questions about presets, payments and Pro membership
+
+## Policies
+
+- [Privacy policy](https://presethub.site/privacy.html)
+- [Terms of service](https://presethub.site/terms.html)
+- [Cookie policy](https://presethub.site/cookies.html)
+
+## Sitemap
+
+- [sitemap.xml](https://presethub.site/sitemap.xml)

@@ -1,8 +1,55 @@
+# Search engines and all other crawlers
 User-agent: *
 Allow: /
 Allow: /presets/
 Allow: /tags/
 Allow: /shayari/
+Allow: /llms.txt
+Allow: /api/presets
+Allow: /api/texts
+Allow: /api/features/daily
+Allow: /api/features/leaderboard
+Allow: /api/users/top
+Allow: /api/ads/home
+Disallow: /api/presets/*/download
+Disallow: /api/presets/*/file
+Disallow: /api/
+Disallow: /admin
+Disallow: /s/
+
+# AI search and answer engines (allowed: we want to be found and cited)
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+Allow: /
+Allow: /presets/
+Allow: /tags/
+Allow: /shayari/
+Allow: /llms.txt
+Allow: /api/presets
+Allow: /api/texts
+Allow: /api/features/daily
+Allow: /api/features/leaderboard
+Allow: /api/users/top
+Allow: /api/ads/home
+Disallow: /api/presets/*/download
+Disallow: /api/presets/*/file
+Disallow: /api/
+Disallow: /admin
+Disallow: /s/
+
+# AI training crawlers (owner choice: currently allowed; change to Disallow: / to opt out)
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Google-Extended
+Allow: /
+Allow: /presets/
+Allow: /tags/
+Allow: /shayari/
+Allow: /llms.txt
 Allow: /api/presets
 Allow: /api/texts
 Allow: /api/features/daily

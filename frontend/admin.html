@@ -27,7 +27,7 @@
   </div>
   <div id="message" role="status" aria-live="polite"></div>
 
-  <nav class="adm-nav" aria-label="Admin sections"><div class="adm-nav-in"><a href="#platform-analytics">Platform Analytics</a><a href="#overview-system-health">Overview &amp; system health</a><a href="#alerts">Alerts</a><a href="#subscriptions">Subscriptions</a><a href="#shayari-text-prompts">Shayari &amp; text prompts</a><a href="#reports">Reports</a><a href="#payouts">Payouts</a><a href="#refunds">Refunds</a><a href="#coupons-discounts">Coupons &amp; discounts</a><a href="#gift-pro-to-all-users">Gift Pro to all users</a><a href="#active-boosts">Active boosts</a><a href="#home-ads">Home ads</a><a href="#user-requests">User requests</a><a href="#presets">Presets</a><a href="#users">Users</a></div></nav>
+  <nav class="adm-nav" aria-label="Admin sections"><div class="adm-nav-in"><a href="#platform-analytics">Platform Analytics</a><a href="#overview-system-health">Overview &amp; system health</a><a href="#alerts">Alerts</a><a href="#subscriptions">Subscriptions</a><a href="#shayari-text-prompts">Shayari &amp; text prompts</a><a href="#reports">Reports</a><a href="#payouts">Payouts</a><a href="#refunds">Refunds</a><a href="#audit-log">Audit log</a><a href="#coupons-discounts">Coupons &amp; discounts</a><a href="#gift-pro-to-all-users">Gift Pro to all users</a><a href="#active-boosts">Active boosts</a><a href="#home-ads">Home ads</a><a href="#user-requests">User requests</a><a href="#presets">Presets</a><a href="#users">Users</a></div></nav>
 <section class="admin-card" id="platform-analytics">
     <div class="admin-section-head"><div><span class="eyebrow">MONITORING</span><h2><i class="fas fa-chart-simple"></i> Platform Analytics</h2></div></div>
     <div class="stats-grid" id="analytics"><div class="skeleton" style="height:80px"></div></div>
@@ -132,6 +132,14 @@
     </form>
   </section>
 
+  <section class="admin-card" id="audit-log">
+    <div class="admin-section-head"><div><span class="eyebrow">SECURITY</span><h2><i class="fas fa-list-check"></i> Audit log</h2></div>
+      <div class="v32-toolbar"><input id="auditActor" placeholder="Filter by admin email" aria-label="Admin email"><button class="btn btn-outline btn-sm" id="auditRefresh" type="button">Refresh</button></div>
+    </div>
+    <p class="admin-note">Har admin change yahan dikhta hai: kisne, kab, kaunsa route, kaunse fields. Values (passwords, secrets) kabhi store nahi hoti.</p>
+    <div id="auditList"><div class="skeleton" style="height:90px"></div></div>
+  </section>
+
   <section class="admin-card admin-tools-grid">
     <div>
       <span class="eyebrow">ANNOUNCEMENTS</span><h2><i class="fas fa-bell"></i> Send notification</h2>
@@ -188,8 +196,8 @@
   </div>
   <div class="container footer-bottom"><span>© PresetHub</span><span>Secure Admin Console</span></div>
 </footer>
-<script src="/admin.js?v=3.12.0"></script>
-<script src="/admin-v32.js?v=3.12.0"></script>
+<script src="/admin.js?v=3.18.0"></script>
+<script src="/admin-v32.js?v=3.18.0"></script>
 <script src="/cookie-consent.js?v=3.2.0" defer></script>
 </body>
 </html>
