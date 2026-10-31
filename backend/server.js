@@ -483,7 +483,16 @@ app.use((req, res, next) => {
 // Frontend static files
 app.use(express.static(frontendRoot, {
   index: 'index.html',
-  dotfiles: 'deny'
+  dotfiles: 'deny',
+  maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+  etag: true,
+  lastModified: true,
+  setHeaders(res, filePath) {
+    // HTML is served by the dynamic page handler above; static assets can be cached.
+    if (/\.(?:js|css|png|jpe?g|webp|avif|svg|woff2?|ico)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', process.env.NODE_ENV === 'production' ? 'public, max-age=86400, stale-while-revalidate=604800' : 'no-cache');
+    }
+  }
 }));
 
 // ============ HEALTH CHECK ============
