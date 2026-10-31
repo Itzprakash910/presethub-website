@@ -59,7 +59,7 @@
   // ---------- ALERTS ----------
   async function loadAlerts() {
     const type = $('#alertType').value, severity = $('#alertSeverity').value, unread = $('#alertUnread').checked ? '1' : '';
-    const q = [type && `type=${type}`, severity && `severity=${severity}`, unread && `unread=${unread}`, 'limit=40'].filter(Boolean).join('&');
+    const q = [type && `type=${type}`, severity && `severity=${severity}`, unread && `unread=${unread}`, 'limit=25'].filter(Boolean).join('&');
     const d = await api(`/alerts?${q}`);
     $('#alertList').innerHTML = (d.items || []).map(a => `
       <article class="v32-alert sev-${esc(a.severity)} ${a.read ? 'read' : ''}">
@@ -131,13 +131,13 @@
     $('#poList').innerHTML = (d.items || []).map(x => `
       <article class="v32-text">
         <div><b>${esc(x.creator)}</b> <small>${esc(x.creatorEmail)} · ${when(x.createdAt)}</small>
-        <p>₹${Number(x.amount).toFixed(2)} · ${esc(x.method.toUpperCase())} · ${esc(x.destination)}</p>
+        <p>Requested ₹${Number(x.amount).toFixed(2)} · fee ₹${Number(x.fee || 0).toFixed(2)} · GST ₹${Number(x.gst || 0).toFixed(2)} · transfer ₹${Number(x.net ?? x.amount).toFixed(2)}</p><small>${esc(x.method.toUpperCase())} · ${esc(x.destination)}</small>
         <small>Status: <b>${esc(x.status)}</b>${x.reference ? ` · Ref: ${esc(x.reference)}` : ''}${x.note ? ` · ${esc(x.note)}` : ''}</small>
         <div class="po-detail" data-po-box="${esc(x.id)}"></div></div>
         <div class="actions">
           <button class="btn btn-sm btn-outline" data-po-show="${esc(x.id)}">Show details</button>
           ${x.status === 'requested' ? `<button class="btn btn-sm btn-outline" data-po-act="approve" data-id="${esc(x.id)}">Approve</button>` : ''}
-          ${['requested', 'approved'].includes(x.status) ? `<button class="btn btn-sm btn-primary" data-po-act="paid" data-id="${esc(x.id)}" data-amount="${esc(x.amount)}">Mark paid</button>
+          ${['requested', 'approved'].includes(x.status) ? `<button class="btn btn-sm btn-primary" data-po-act="paid" data-id="${esc(x.id)}" data-amount="${esc(x.net ?? x.amount)}">Mark paid</button>
           <button class="btn btn-sm btn-danger" data-po-act="reject" data-id="${esc(x.id)}">Reject</button>` : ''}
         </div>
       </article>`).join('') || '<p class="admin-note">Nothing here.</p>';
@@ -147,8 +147,8 @@
     if (!box) return;
     const d = await api(`/payouts/${id}/details`);
     box.innerHTML = d.method === 'upi'
-      ? `<div class="v32-kv"><div><b>UPI</b><span>${esc(d.upi)}</span></div><div><b>Holder</b><span>${esc(d.holder)}</span></div></div>`
-      : `<div class="v32-kv"><div><b>Account</b><span>${esc(d.account)}</span></div><div><b>IFSC</b><span>${esc(d.ifsc)}</span></div><div><b>Holder</b><span>${esc(d.holder)}</span></div></div>`;
+      ? `<div class="v32-kv"><div><b>Requested / transfer</b><span>₹${Number(d.amount).toFixed(2)} / ₹${Number(d.net).toFixed(2)} (fee ₹${Number(d.fee).toFixed(2)} + GST ₹${Number(d.gst).toFixed(2)})</span></div><div><b>UPI</b><span>${esc(d.upi)}</span></div><div><b>Holder</b><span>${esc(d.holder)}</span></div></div>`
+      : `<div class="v32-kv"><div><b>Requested / transfer</b><span>₹${Number(d.amount).toFixed(2)} / ₹${Number(d.net).toFixed(2)} (fee ₹${Number(d.fee).toFixed(2)} + GST ₹${Number(d.gst).toFixed(2)})</span></div><div><b>Account</b><span>${esc(d.account)}</span></div><div><b>IFSC</b><span>${esc(d.ifsc)}</span></div><div><b>Holder</b><span>${esc(d.holder)}</span></div></div>`;
   }
   async function payoutAction(action, id, amount) {
     if (action === 'paid') {

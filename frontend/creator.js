@@ -51,7 +51,7 @@
         <div class="cd-muted">📋 ${x.copies} copies · ❤️ ${x.likes} · ↗️ ${x.shares} · 💬 ${x.comments} · 👁 ${x.views}</div>
         <a href="/shayari/${esc(x.id)}/">Open →</a></li>`).join('');
     const presets = d.presets.map(x => `<tr><td><a href="/preset/${esc(x.id)}/">${esc(x.name)}</a>${x.viral ? ' 🔥' : ''}</td><td>${esc(x.category)}</td><td>${x.price > 0 ? inr(x.price) : 'Free'}</td><td>${x.downloads}</td><td>${x.views}</td><td>${x.likes}</td><td>${x.status === 'approved' ? '<span class="cd-badge ok">live</span>' : `<span class="cd-badge warn">${esc(x.status)}</span>`}</td></tr>`).join('');
-    const payouts = d.payouts.map(x => `<tr><td>${when(x.createdAt)}</td><td>${inr(x.amount)}</td><td>${esc(x.method.toUpperCase())}</td><td>${esc(x.destination)}</td><td><span class="cd-badge ${x.status === 'paid' ? 'ok' : x.status === 'rejected' ? 'bad' : 'warn'}">${esc(x.status)}</span>${x.reference ? `<div class="cd-muted">Ref: ${esc(x.reference)}</div>` : ''}${x.note ? `<div class="cd-muted">${esc(x.note)}</div>` : ''}</td></tr>`).join('');
+    const payouts = d.payouts.map(x => `<tr><td>${when(x.createdAt)}</td><td>${inr(x.amount)}<div class="cd-muted">Fee ${inr(x.fee || 0)} · GST ${inr(x.gst || 0)} · Net ${inr(x.net ?? x.amount)}</div></td><td>${esc(x.method.toUpperCase())}</td><td>${esc(x.destination)}</td><td><span class="cd-badge ${x.status === 'paid' ? 'ok' : x.status === 'rejected' ? 'bad' : 'warn'}">${esc(x.status)}</span>${x.reference ? `<div class="cd-muted">Ref: ${esc(x.reference)}</div>` : ''}${x.note ? `<div class="cd-muted">${esc(x.note)}</div>` : ''}</td></tr>`).join('');
     const pd = d.payoutDetails;
     const hasOpen = d.payouts.some(x => x.status === 'requested' || x.status === 'approved');
     const canRequest = pd.configured && pd.method && m.available >= m.minPayout && !hasOpen;
@@ -100,7 +100,7 @@
         <h2><i class="fas fa-wallet"></i> Earnings</h2>
         <div class="cd-kpis">
           <div class="cd-kpi hi"><b>${inr(m.available)}</b><span>Available to withdraw</span></div>
-          <div class="cd-kpi"><b>${inr(m.earned)}</b><span>Total earned (${m.sharePercent}% share)</span></div>
+          <div class="cd-kpi"><b>${inr(m.earned)}</b><span>Total earned (${m.sharePercent}% creator share)</span></div>
           <div class="cd-kpi"><b>${inr(m.pending)}</b><span>Pending payout</span></div>
           <div class="cd-kpi"><b>${inr(m.paid)}</b><span>Paid out</span></div>
           <div class="cd-kpi"><b>${m.sales.count}</b><span>Preset sales · gross ${inr(m.sales.gross)}</span></div>
@@ -119,7 +119,7 @@
           ${hasOpen ? '<p class="cd-badge warn">You have a payout in progress.</p>' : ''}
           <form class="cd-form" id="cdPayoutForm">
             <label>Amount (₹) <input type="number" name="amount" min="${m.minPayout}" step="1" max="${m.available}" value="${Math.floor(m.available)}" ${canRequest ? '' : 'disabled'}></label>
-            <p class="cd-muted">Minimum ₹${m.minPayout}. Available: ${inr(m.available)}.</p>
+            <p class="cd-muted">Minimum ₹${m.minPayout}. Available: ${inr(m.available)}. Manual review; transfer fee ${inr(m.payoutFee || 0)} + GST ${Number(m.payoutFeeGstPercent || 18)}% on that fee (if configured). Default fee is ₹0.</p>
             <button class="cd-btn" type="submit" ${canRequest ? '' : 'disabled'}>Request payout</button>
           </form>
         </section>

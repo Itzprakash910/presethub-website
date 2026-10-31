@@ -645,7 +645,7 @@
       }
       const r = await api(`/presets/${encodeURIComponent(id)}/download`, { method: 'POST' });
       if (!r.downloadUrl) throw new Error('Download file unavailable');
-      const a = document.createElement('a'); a.href = r.downloadUrl; a.download = r.originalName || `${slug(p.name)}.xmp`; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
+      const a = document.createElement('a'); a.href = r.downloadUrl; a.download = r.originalName || `${slug(p.name)}.xmp`; a.target='_self'; document.body.appendChild(a); a.click(); a.remove();
       await notifyDownload(p.name, r.downloadUrl);
     } catch (e) { toast(e.message, 'error'); }
     finally { setTimeout(()=>progress?.remove(), 650); }

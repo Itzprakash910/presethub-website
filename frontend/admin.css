@@ -69,3 +69,12 @@
 .v32-grant input { width: 74px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border, #ddd); }
 .v32-text { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border, #eee); border-radius: 12px; margin-bottom: 10px; }
 .v32-text p { margin: 6px 0; white-space: pre-wrap; word-break: break-word; }
+
+/* Compact operations UI: alerts and admin records remain scannable on phones. */
+.v32-alert { padding: 8px 10px; gap: 8px; margin-bottom: 7px; border-radius: 9px; }
+.v32-alert-main { gap: 2px; }
+.v32-alert details summary { cursor: pointer; font-size: .78rem; }
+.v32-alert details pre { max-height: 140px; margin: 5px 0 0; }
+.v32-text { padding: 9px 10px; gap: 8px; margin-bottom: 7px; border-radius: 9px; }
+.v32-text p { margin: 3px 0; }
+@media (max-width: 640px) { .v32-alert, .v32-text { flex-direction: column; } .v32-alert .actions, .v32-text .actions { display:flex; flex-wrap:wrap; } }
