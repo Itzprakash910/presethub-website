@@ -398,7 +398,7 @@ app.use('/api/reviews', writeLimiter);
 app.use('/api/chat', writeLimiter);
 
 // ============ BODY PARSERS ============
-app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { if (['/api/payments/youpi/webhook', '/api/payments/cashfree/webhook'].includes(String(req.originalUrl || '').split('?')[0])) req.rawBody = Buffer.from(buf); } }));
+app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { if (['/api/payments/youpi/webhook', '/api/payments/cashfree/webhook', '/api/payments/phonepe/webhook'].includes(String(req.originalUrl || '').split('?')[0])) req.rawBody = Buffer.from(buf); } }));
 app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 1000 }));
 app.use(securityGuard); // blocks NoSQL/prototype injection + probes and alerts the admin
 
@@ -499,6 +499,7 @@ app.use('/api/presets', presetRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments/cashfree', require('./routes/cashfree'));
+app.use('/api/payments/phonepe', require('./routes/phonepe'));
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ads', adsRoutes);
