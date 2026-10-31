@@ -157,7 +157,7 @@ const OrderSchema = new Schema({
   amount: { type: Number, required: true },
   currency: { type: String, default: 'INR' },
   status: { type: String, enum: ['created', 'paid', 'refunded', 'cancelled', 'failed', 'expired', 'suspicious'], default: 'created', index: true },
-  provider: { type: String, enum: ['youpi', 'cashfree', 'legacy'], default: 'youpi', index: true },
+  provider: { type: String, enum: ['youpi', 'cashfree', 'phonepe', 'legacy'], default: 'youpi', index: true },
   paymentSessionId: { type: String, default: '' },
   listAmount: { type: Number, default: null },
   refundReference: { type: String, default: '', maxlength: 60 },
