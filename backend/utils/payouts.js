@@ -2,8 +2,8 @@
  * Pure payout rules. Money is handled in integer paise to avoid float errors.
  */
 const CREATOR_SHARE = () => {
-  const v = Number(process.env.CREATOR_SHARE || 0.8);
-  return Number.isFinite(v) && v > 0 && v <= 1 ? v : 0.8;
+  const v = Number(process.env.CREATOR_SHARE || 0.9);
+  return Number.isFinite(v) && v > 0 && v <= 1 ? v : 0.9;
 };
 const MIN_PAYOUT_PAISE = () => Math.round(Number(process.env.PAYOUT_MIN_RUPEES || 100) * 100);
 
@@ -33,8 +33,16 @@ function maskAccount(acc) { const s = String(acc || ''); return s.length > 4 ? '
 function maskUpi(upi) { const [a, b] = String(upi || '').split('@'); if (!a || !b) return '••••'; return `${a.slice(0, 2)}${'•'.repeat(Math.max(2, a.length - 2))}@${b}`; }
 
 // balance = earned - (requested + approved + paid). All values in paise.
+function payoutCharges(grossPaise) {
+  const fee = Math.max(0, Math.round(Number(process.env.PAYOUT_FEE_PAISE || 0)));
+  const gstRate = Math.max(0, Math.min(100, Number(process.env.PAYOUT_FEE_GST_PERCENT || 18)));
+  const feePaise = Math.min(Math.max(0, Math.round(Number(grossPaise || 0))), fee);
+  const gstPaise = Math.round(feePaise * gstRate / 100);
+  return { feePaise, gstPaise, netPaise: Math.max(0, Math.round(Number(grossPaise || 0)) - feePaise - gstPaise), gstRate };
+}
+
 function balance({ earnedPaise, committedPaise }) {
   return Math.max(0, Number(earnedPaise || 0) - Number(committedPaise || 0));
 }
 
-module.exports = { CREATOR_SHARE, MIN_PAYOUT_PAISE, toPaise, creatorShare, validateUpi, validateIfsc, validateAccount, validateName, maskAccount, maskUpi, balance };
+module.exports = { CREATOR_SHARE, MIN_PAYOUT_PAISE, toPaise, creatorShare, validateUpi, validateIfsc, validateAccount, validateName, maskAccount, maskUpi, balance, payoutCharges };
