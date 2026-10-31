@@ -722,9 +722,10 @@
     paymentStartInFlight = true;
     try {
       const config = await api('/payments/provider');
-      if (!config.enabled || !['cashfree', 'youpi'].includes(config.provider)) throw new Error('Payments are not configured yet. Please contact PresetHub support.');
+      if (!config.enabled || !['cashfree', 'phonepe', 'youpi'].includes(config.provider)) throw new Error('Payments are not configured yet. Please contact PresetHub support.');
       const cashfree = config.provider === 'cashfree';
-      const url = cashfree ? endpoint.replace('/payments/youpi/', '/payments/cashfree/') : endpoint;
+      const phonepe = config.provider === 'phonepe';
+      const url = cashfree ? endpoint.replace('/payments/youpi/', '/payments/cashfree/') : phonepe ? endpoint.replace('/payments/youpi/', '/payments/phonepe/') : endpoint;
       const payload = { ...body };
       if (cashfree) {
         const couponKind = endpoint.includes('create-order') ? 'preset' : endpoint.includes('subscribe') ? 'subscription' : '';
@@ -761,7 +762,7 @@
         return;
       }
       if (!order.checkoutUrl || !/^https?:\/\//i.test(order.checkoutUrl)) throw new Error('Payment gateway returned an invalid checkout URL.');
-      toast('Opening secure YOUPI PG checkout…', 'info');
+      toast(`Opening secure ${phonepe ? 'PhonePe' : 'YOUPI PG'} checkout…`, 'info');
       window.location.assign(order.checkoutUrl);
     } catch (e) {
       closeModal();
@@ -788,7 +789,7 @@
         <ul class="pro-features">${(cfg.features || []).map(f => `<li><i class="fas fa-check"></i> ${esc(f)}</li>`).join('')}</ul>
         <div class="pro-plans" role="radiogroup" aria-label="Choose a plan">${plans.map((pl, i) => `<label class="pro-plan ${pl.id === 'yearly' ? 'selected' : ''}"><input type="radio" name="proPlan" value="${esc(pl.id)}" ${pl.id === 'yearly' ? 'checked' : ''}><span class="pro-plan-name">${esc(pl.label)}</span><span class="pro-plan-price">₹${Number(pl.price).toFixed(0)}</span><small>${pl.days} days${pl.badge ? ` · <b>${esc(pl.badge)}</b>` : ''}</small></label>`).join('')}</div>
         <button class="btn btn-primary pro-buy" data-action="buy-pro" ${cfg.enabled ? '' : 'disabled'}><i class="fas fa-lock"></i> ${cfg.enabled ? 'Continue to secure payment' : 'Payments unavailable right now'}</button>
-        <p class="pro-note">Secure checkout by YOUPI PG · UPI supported · Pro activates automatically after payment is verified.</p>
+        <p class="pro-note">Secure checkout by PresetHub payment partners · UPI supported · Pro activates automatically after payment is verified.</p>
       </div>`);
       $$('input[name="proPlan"]').forEach(r => r.addEventListener('change', () => $$('.pro-plan').forEach(l => l.classList.toggle('selected', l.querySelector('input').checked))));
     } catch (e) { toast(e.message || 'Could not load Pro plans.', 'error'); }
@@ -836,7 +837,11 @@
         }
         // Try the gateway's authenticated server API if the webhook is delayed. Browser events are never used to unlock purchases.
         if (attempt === 3 || attempt === 7) {
-          try { lastOrder = await api(`/payments/youpi/refresh/${encodeURIComponent(orderId)}`, { method: 'POST', body: '{}' }); }
+          try {
+            const refreshProvider = lastOrder?.provider === 'phonepe' ? 'phonepe' : lastOrder?.provider === 'cashfree' ? 'cashfree' : 'youpi';
+            const refreshPath = refreshProvider === 'cashfree' ? `/payments/cashfree/refresh/${encodeURIComponent(orderId)}` : `/payments/${refreshProvider}/refresh/${encodeURIComponent(orderId)}`;
+            lastOrder = await api(refreshPath, { method: 'POST', body: '{}' });
+          }
           catch (_) {}
           if (lastOrder?.status === 'paid' && lastOrder.kind === 'subscription') return onProActivated();
           if (lastOrder?.status === 'paid') {
