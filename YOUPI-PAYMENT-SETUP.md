@@ -1,6 +1,6 @@
 # YOUPI PG setup (PresetHub v3.2.0)
 
-YOUPI PG is the only payment provider. Razorpay has been removed.
+YOUPI PG is retained as one of the supported payment providers alongside Cashfree and PhonePe.
 
 ## Environment variables
 - `YOUPI_API_URL` — YOUPI PG API base URL
@@ -25,3 +25,6 @@ Pro prices (optional, INR): `PRO_PRICE_MONTHLY` (49), `PRO_PRICE_QUARTERLY` (129
 - Make a ₹1 test preset and a test subscription on a staging merchant.
 - Confirm the order moves to `paid` only once, even if the webhook is retried.
 - Confirm an invalid signature produces a critical alert in the admin panel.
+
+
+Provider selection and fallback: set `PAYMENT_PROVIDER=youpi` to prefer YouPI. If it is not configured, another configured gateway can be selected. See `PHONEPE-SETUP.md`.

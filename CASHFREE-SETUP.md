@@ -1,6 +1,6 @@
 # Cashfree setup (PresetHub v3.5.0)
 
-Cashfree is now the active payment gateway. It is used automatically when `CASHFREE_APP_ID` and `CASHFREE_SECRET_KEY` are set. YOUPI PG stays as a fallback if Cashfree is not configured.
+Cashfree remains supported alongside PhonePe and YouPI. `PAYMENT_PROVIDER` selects the preferred configured gateway; if that gateway is not configured, the backend falls back to another configured provider. See `PHONEPE-SETUP.md` for PhonePe setup.
 
 ## 1. Get keys
 1. Sign up at cashfree.com and complete KYC (PAN, bank account, business details).
