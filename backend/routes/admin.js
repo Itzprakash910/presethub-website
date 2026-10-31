@@ -704,7 +704,8 @@ router.get('/users/:id/details', async (req, res) => {
     const [
       presets,
       orders,
-      downloads
+      downloads,
+      payouts
     ] = await Promise.all([
 
       Preset.find({
@@ -738,7 +739,8 @@ router.get('/users/:id/details', async (req, res) => {
           downloadedAt: -1
         })
         .limit(100)
-        .lean()
+        .lean(),
+      Payout.find({ userId: user._id }).sort({ createdAt: -1 }).limit(50).select('amountPaise feePaise gstPaise netPaise method destinationMasked status reference adminNote createdAt processedAt').lean()
     ]);
 
 
@@ -825,6 +827,8 @@ router.get('/users/:id/details', async (req, res) => {
             : null
         }))
       },
+
+      payouts: payouts.map(p => ({ id: String(p._id), amount: p.amountPaise / 100, fee: (p.feePaise || 0) / 100, gst: (p.gstPaise || 0) / 100, net: (Number(p.netPaise) > 0 ? p.netPaise : (p.amountPaise - (p.feePaise || 0) - (p.gstPaise || 0))) / 100, method: p.method, destination: p.destinationMasked, status: p.status, reference: p.reference || '', note: p.adminNote || '', createdAt: p.createdAt, processedAt: p.processedAt })),
 
       downloads: downloads.map(d => ({
         id: d._id.toString(),
@@ -1990,7 +1994,7 @@ router.get('/payouts', async (req, res) => {
     res.json({
       items: rows.map(x => ({
         id: String(x._id), creator: x.userId?.name || x.userId?.username || '—', creatorEmail: x.userId?.email || '', creatorId: String(x.userId?._id || ''),
-        amount: Math.round(x.amountPaise) / 100, method: x.method, destination: x.destinationMasked, status: x.status,
+        amount: Math.round(x.amountPaise) / 100, fee: Math.round(x.feePaise || 0) / 100, gst: Math.round(x.gstPaise || 0) / 100, net: Math.round((Number(x.netPaise) > 0 ? x.netPaise : (x.amountPaise - (x.feePaise || 0) - (x.gstPaise || 0))) / 100 * 100) / 100, method: x.method, destination: x.destinationMasked, status: x.status,
         reference: x.reference || '', note: x.adminNote || '', createdAt: x.createdAt, processedAt: x.processedAt
       })),
       total, page, pages: Math.max(1, Math.ceil(total / limit))
@@ -2002,13 +2006,13 @@ router.get('/payouts', async (req, res) => {
 router.get('/payouts/:id/details', async (req, res) => {
   if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
   if (!isKeyConfigured()) return res.status(503).json({ error: 'PAYOUT_ENC_KEY is not configured' });
-  const payout = await Payout.findById(req.params.id).select('destinationEnc amountPaise userId').lean();
+  const payout = await Payout.findById(req.params.id).select('destinationEnc amountPaise feePaise gstPaise netPaise userId').lean();
   if (!payout) return res.status(404).json({ error: 'Payout not found' });
   let detail;
   try { detail = JSON.parse(decrypt(payout.destinationEnc)); } catch (_) { return res.status(500).json({ error: 'Stored details could not be decrypted' }); }
   adminAlert({ type: 'payment', severity: 'info', title: 'Payout bank details viewed by admin', fingerprint: `payout-view-${req.params.id}`, throttleMs: 1000, email: false, details: { payoutId: String(req.params.id), byAdmin: req.user.email, amountRupees: Math.round(payout.amountPaise) / 100 } });
   res.set('Cache-Control', 'no-store');
-  res.json({ method: detail.upi ? 'upi' : 'bank', holder: detail.holder, upi: detail.upi || '', account: detail.account || '', ifsc: detail.ifsc || '' });
+  res.json({ method: detail.upi ? 'upi' : 'bank', holder: detail.holder, upi: detail.upi || '', account: detail.account || '', ifsc: detail.ifsc || '', amount: Math.round(payout.amountPaise) / 100, fee: Math.round(payout.feePaise || 0) / 100, gst: Math.round(payout.gstPaise || 0) / 100, net: Math.round((Number(payout.netPaise) > 0 ? payout.netPaise : (payout.amountPaise - (payout.feePaise || 0) - (payout.gstPaise || 0))) / 100 * 100) / 100 });
 });
 
 // approve -> paid (needs reference), or reject (needs a note). Each step is an atomic status change.
@@ -2033,7 +2037,8 @@ router.put('/payouts/:id', async (req, res) => {
   const payout = await Payout.findOneAndUpdate({ _id: id, status: { $in: from } }, { $set: update }, { new: true }).lean();
   if (!payout) return res.status(409).json({ error: 'This payout was already processed or does not exist.' });
   const amount = Math.round(payout.amountPaise) / 100;
-  const msg = action === 'paid' ? `✅ ₹${amount} has been sent to your ${payout.method === 'upi' ? 'UPI' : 'bank'} account. Reference: ${reference}`
+  const netAmount = Math.round((Number(payout.netPaise) > 0 ? payout.netPaise : (payout.amountPaise - (payout.feePaise || 0) - (payout.gstPaise || 0)))) / 100;
+  const msg = action === 'paid' ? `✅ ₹${netAmount} (net) has been sent to your ${payout.method === 'upi' ? 'UPI' : 'bank'} account. Requested ₹${amount}; fee ₹${Math.round(payout.feePaise || 0) / 100} + GST ₹${Math.round(payout.gstPaise || 0) / 100}. Reference: ${reference}`
     : action === 'approve' ? `⏳ Your payout of ₹${amount} is approved and will be sent shortly.`
     : `❌ Your payout of ₹${amount} was not approved. ${note}`;
   await notifyUser(payout.userId, 'payout', msg, '/creator.html', 'Payout update');

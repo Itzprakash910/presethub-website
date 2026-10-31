@@ -86,7 +86,7 @@ router.get('/dashboard', auth, async (req, res) => {
   const viralTexts = texts.filter(t => t.viralNotifiedAt).map(t => ({ id: String(t._id), title: t.title || t.text.slice(0, 60), copies: t.copies, viralAt: t.viralNotifiedAt }));
   const pt = presetTotals[0] || {}, tt = textTotals[0] || {};
   const level = creatorLevel(presets.reduce((s, p) => s + Number(p.downloads || 0), 0));
-  const payouts = await Payout.find({ userId: uid }).sort({ createdAt: -1 }).limit(20).select('amountPaise method destinationMasked status reference createdAt processedAt adminNote').lean();
+  const payouts = await Payout.find({ userId: uid }).sort({ createdAt: -1 }).limit(20).select('amountPaise feePaise gstPaise netPaise method destinationMasked status reference createdAt processedAt adminNote').lean();
 
   res.set('Cache-Control', 'no-store');
   res.json({
@@ -100,7 +100,7 @@ router.get('/dashboard', auth, async (req, res) => {
       earned: rupees(money.earnedPaise), available: rupees(money.availablePaise), pending: rupees(money.pendingPaise), paid: rupees(money.paidPaise),
       sales: { count: money.salesCount, gross: rupees(money.salesGrossPaise) },
       tips: { count: money.tipsCount, gross: rupees(money.tipsGrossPaise) },
-      sharePercent: Math.round(P.CREATOR_SHARE() * 100), minPayout: P.MIN_PAYOUT_PAISE() / 100
+      sharePercent: Math.round(P.CREATOR_SHARE() * 100), minPayout: P.MIN_PAYOUT_PAISE() / 100, payoutFee: P.payoutCharges(10000).feePaise / 100, payoutFeeGstPercent: P.payoutCharges(10000).gstRate
     },
     totals: {
       presets: pt.n || 0, downloads: pt.downloads || 0, presetViews: pt.views || 0, presetLikes: pt.likes || 0,
@@ -111,8 +111,60 @@ router.get('/dashboard', auth, async (req, res) => {
     texts: texts.map(t => ({ id: String(t._id), title: t.title || '', text: t.text.slice(0, 160), category: t.category, copies: t.copies, likes: (t.likes || []).length, shares: t.shares, views: t.views, comments: t.commentsCount, status: t.status, viral: !!t.viralNotifiedAt, createdAt: t.createdAt })),
     series,
     payoutDetails: { configured: isKeyConfigured(), method: user.payoutMethod || '', masked: user.payoutMasked || '', updatedAt: user.payoutUpdatedAt || null },
-    payouts: payouts.map(x => ({ id: String(x._id), amount: rupees(x.amountPaise), method: x.method, destination: x.destinationMasked, status: x.status, reference: x.reference || '', note: x.adminNote || '', createdAt: x.createdAt, processedAt: x.processedAt }))
+    payouts: payouts.map(x => ({ id: String(x._id), amount: rupees(x.amountPaise), fee: rupees(x.feePaise), gst: rupees(x.gstPaise), net: rupees(Number(x.netPaise) > 0 ? x.netPaise : (x.amountPaise - (x.feePaise || 0) - (x.gstPaise || 0))), method: x.method, destination: x.destinationMasked, status: x.status, reference: x.reference || '', note: x.adminNote || '', createdAt: x.createdAt, processedAt: x.processedAt }))
   });
+});
+
+// ---------- creator earnings ledger (calculated from authoritative paid/refunded orders) ----------
+router.get('/earnings/ledger', auth, async (req, res) => {
+  const page = Math.max(1, Math.min(100000, Number.parseInt(req.query.page, 10) || 1));
+  const limit = Math.max(10, Math.min(100, Number.parseInt(req.query.limit, 10) || 50));
+  const uid = new mongoose.Types.ObjectId(req.user.id);
+  const presetRows = await Preset.find({ authorId: uid }).select('_id name').lean();
+  const presetMap = new Map(presetRows.map(p => [String(p._id), p.name]));
+  const presetIds = presetRows.map(p => p._id);
+  const filter = { status: { $in: ['paid', 'refunded'] }, $or: [
+    ...(presetIds.length ? [{ kind: 'preset', presetId: { $in: presetIds } }] : []),
+    { kind: 'tip', recipientId: uid }
+  ] };
+  const [total, rows] = await Promise.all([
+    Order.countDocuments(filter),
+    Order.find(filter).sort({ paidAt: -1, createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit)
+      .select('kind presetId amount status provider paymentId gatewayPaymentId paidAt createdAt refundedAt refundReference').lean()
+  ]);
+  const items = rows.map(o => {
+    const grossPaise = P.toPaise(o.amount);
+    const isPaid = o.status === 'paid';
+    const creatorPaise = isPaid ? P.creatorShare(grossPaise) : 0;
+    return {
+      orderId: String(o._id), type: o.kind, title: o.kind === 'tip' ? 'Creator tip' : (presetMap.get(String(o.presetId)) || 'Preset sale'),
+      date: o.paidAt || o.createdAt, status: o.status, provider: o.provider,
+      gross: rupees(grossPaise), creatorShare: rupees(creatorPaise), platformShare: rupees(isPaid ? grossPaise - creatorPaise : 0),
+      refundReference: o.refundReference || ''
+    };
+  });
+  res.set('Cache-Control', 'no-store');
+  res.json({ items, page, limit, total, pages: Math.ceil(total / limit), sharePercent: Math.round(P.CREATOR_SHARE() * 100) });
+});
+
+router.get('/earnings/ledger.csv', auth, async (req, res) => {
+  const uid = new mongoose.Types.ObjectId(req.user.id);
+  const presetRows = await Preset.find({ authorId: uid }).select('_id name').lean();
+  const presetMap = new Map(presetRows.map(p => [String(p._id), p.name]));
+  const presetIds = presetRows.map(p => p._id);
+  const filter = { status: { $in: ['paid', 'refunded'] }, $or: [
+    ...(presetIds.length ? [{ kind: 'preset', presetId: { $in: presetIds } }] : []),
+    { kind: 'tip', recipientId: uid }
+  ] };
+  const rows = await Order.find(filter).sort({ paidAt: -1, createdAt: -1 }).limit(5000).select('kind presetId amount status provider paidAt createdAt refundReference').lean();
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = [['Order ID','Type','Title','Date','Status','Provider','Gross INR','Creator Share INR','Platform Share INR','Refund Reference']];
+  for (const o of rows) {
+    const gross = P.toPaise(o.amount), creator = o.status === 'paid' ? P.creatorShare(gross) : 0;
+    lines.push([String(o._id),o.kind,o.kind === 'tip' ? 'Creator tip' : (presetMap.get(String(o.presetId)) || 'Preset sale'),o.paidAt || o.createdAt,o.status,o.provider,(gross/100).toFixed(2),(creator/100).toFixed(2),((o.status === 'paid' ? gross-creator : 0)/100).toFixed(2),o.refundReference || '']);
+  }
+  res.set('Cache-Control','no-store');
+  res.type('text/csv').set('Content-Disposition','attachment; filename="presethub-creator-earnings.csv"').send(lines.map(row => row.map(esc).join(',')).join('\r\n'));
 });
 
 // ---------- payout details ----------
@@ -149,7 +201,7 @@ router.put('/payout-details', auth, detailLimiter, textPostLimiter, async (req, 
 router.get('/payouts', auth, async (req, res) => {
   const rows = await Payout.find({ userId: req.user.id }).sort({ createdAt: -1 }).limit(100).select('amountPaise method destinationMasked status reference adminNote createdAt processedAt').lean();
   res.set('Cache-Control', 'no-store');
-  res.json({ items: rows.map(x => ({ id: String(x._id), amount: rupees(x.amountPaise), method: x.method, destination: x.destinationMasked, status: x.status, reference: x.reference || '', note: x.adminNote || '', createdAt: x.createdAt, processedAt: x.processedAt })) });
+  res.json({ items: rows.map(x => ({ id: String(x._id), amount: rupees(x.amountPaise), fee: rupees(x.feePaise), gst: rupees(x.gstPaise), net: rupees(Number(x.netPaise) > 0 ? x.netPaise : (x.amountPaise - (x.feePaise || 0) - (x.gstPaise || 0))), method: x.method, destination: x.destinationMasked, status: x.status, reference: x.reference || '', note: x.adminNote || '', createdAt: x.createdAt, processedAt: x.processedAt })) });
 });
 
 router.post('/payouts', auth, payoutLimiter, async (req, res) => {
@@ -164,7 +216,8 @@ router.post('/payouts', auth, payoutLimiter, async (req, res) => {
   if (amountPaise > before.availablePaise) return res.status(400).json({ error: `Available balance is ₹${before.availablePaise / 100}.` });
 
   // Snapshot the destination now, so later detail changes do not affect this request.
-  const payout = await Payout.create({ userId: req.user.id, amountPaise, method: user.payoutMethod, destinationMasked: user.payoutMasked || '', destinationEnc: user.payoutEnc, status: 'requested' });
+  const charges = P.payoutCharges(amountPaise);
+  const payout = await Payout.create({ userId: req.user.id, amountPaise, ...charges, method: user.payoutMethod, destinationMasked: user.payoutMasked || '', destinationEnc: user.payoutEnc, status: 'requested' });
 
   // Guard against two requests racing past the checks above: re-count and roll back if the limits were exceeded.
   const after = await earningsFor(req.user.id);
@@ -173,16 +226,9 @@ router.post('/payouts', auth, payoutLimiter, async (req, res) => {
     await Payout.deleteOne({ _id: payout._id });
     return res.status(409).json({ error: 'Another payout request was made at the same time. Please check your balance and try again.' });
   }
-  // Small payouts are approved automatically (limit from PAYOUT_AUTO_APPROVE_RUPEES). Money is still sent by the admin.
-  const autoLimit = Math.round(Number(process.env.PAYOUT_AUTO_APPROVE_RUPEES || 500) * 100);
-  let status = 'requested';
-  if (amountPaise <= autoLimit) {
-    await Payout.updateOne({ _id: payout._id, status: 'requested' }, { $set: { status: 'approved', adminNote: 'Auto-approved (small amount)', processedAt: new Date() } });
-    status = 'approved';
-  }
-  await createNotification(req.user.id, 'payout', status === 'approved'
-    ? `💸 Payout of ₹${amountPaise / 100} is approved and will be sent shortly.`
-    : `💸 Payout request of ₹${amountPaise / 100} received. It will be paid within a few working days.`, '/creator.html', 'Payout update');
+  // Manual payout workflow: every request remains pending until an admin reviews it.
+  const status = 'requested';
+  await createNotification(req.user.id, 'payout', `💸 Payout request of ₹${amountPaise / 100} received. It will be reviewed and paid manually by the PresetHub team.`, '/creator.html', 'Payout update');
   adminAlert({ type: 'payment', severity: 'info', title: `Payout requested: ₹${amountPaise / 100}`, details: { payoutId: String(payout._id), creator: user.username, method: user.payoutMethod, amountRupees: amountPaise / 100 }, email: false });
   res.status(201).json({ success: true, id: String(payout._id), amount: amountPaise / 100, status });
 });
