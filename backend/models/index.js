@@ -171,6 +171,8 @@ const OrderSchema = new Schema({
   paidAt: { type: Date },
 }, { timestamps: true, _id: false });
 OrderSchema.index({ userId: 1, presetId: 1, status: 1, createdAt: -1 });
+OrderSchema.index({ presetId: 1, kind: 1, status: 1, paidAt: -1 });
+OrderSchema.index({ recipientId: 1, kind: 1, status: 1, paidAt: -1 });
 
 // ========== DOWNLOAD ==========
 const DownloadSchema = new Schema({
@@ -329,6 +331,9 @@ ReportSchema.index({ reporterId: 1, targetType: 1, targetId: 1 }, { unique: true
 const PayoutSchema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   amountPaise: { type: Number, required: true, min: 1 },
+  feePaise: { type: Number, default: 0, min: 0 },
+  gstPaise: { type: Number, default: 0, min: 0 },
+  netPaise: { type: Number, default: 0, min: 0 },
   method: { type: String, enum: ['upi', 'bank'], required: true },
   destinationMasked: { type: String, default: '', maxlength: 120 },
   destinationEnc: { type: String, default: '', select: false },
