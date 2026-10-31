@@ -29,7 +29,7 @@ services:
       - key: PAYOUT_ENC_KEY
         sync: false
       - key: CREATOR_SHARE
-        value: "0.8"
+        value: "0.9"
       - key: PAYOUT_MIN_RUPEES
         value: "100"
       - key: GA_MEASUREMENT_ID
@@ -42,7 +42,6 @@ services:
         sync: false
       - key: ADMIN_ALERT_EMAIL
         sync: false
-      - key: PAYOUT_AUTO_APPROVE_RUPEES
         value: "500"
       - key: PRO_PRICE_MONTHLY
         value: "49"
