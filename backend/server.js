@@ -509,8 +509,13 @@ app.use((req, res, next) => {
     html = html.replace('<!--GSC_VERIFY-->', name === 'index.html' && GSC_TOKEN ? `<meta name="google-site-verification" content="${GSC_TOKEN}">` : '');
     html = html.replace('<!--TRACKING-->', PRIVATE_PAGES.has(name) ? '' : TRACKING_TAG);
     html = html.replace('<!--AUTH-->', AUTH_TAG);
-    if (PRIVATE_PAGES.has(name)) { res.set('X-Robots-Tag', 'noindex, nofollow, noarchive'); res.set('Cache-Control', 'no-store'); }
-    res.set('Cache-Control', 'public, max-age=300');
+    if (PRIVATE_PAGES.has(name)) {
+      res.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+      res.set('Cache-Control', 'no-store, private, max-age=0');
+      res.set('Pragma', 'no-cache');
+    } else {
+      res.set('Cache-Control', 'public, max-age=300');
+    }
     res.type('html').send(html);
   } catch (e) { next(e); }
 });
@@ -561,6 +566,9 @@ for (const page of staticPages) {
 
 app.get('/admin', (req, res) => {
   const adminPage = path.join(frontendRoot, 'admin.html');
+  res.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  res.set('Cache-Control', 'no-store, private, max-age=0');
+  res.set('Pragma', 'no-cache');
   if (fs.existsSync(adminPage)) return res.sendFile(adminPage);
   res.status(404).send('Admin page not found');
 });
