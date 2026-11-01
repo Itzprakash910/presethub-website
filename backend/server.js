@@ -120,12 +120,6 @@ const SITE_SOCIAL = 'https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0a
 const ICONS_CSS = '/icons.css?v=3.2.0';
 
 // ============ ENV CHECKS ============
-// Clerk: sign-in is unavailable without these keys (the site still loads).
-if (!process.env.CLERK_SECRET_KEY || !process.env.CLERK_PUBLISHABLE_KEY) {
-  console.warn('⚠️  CLERK_SECRET_KEY / CLERK_PUBLISHABLE_KEY not set: login will not work until they are added.');
-} else if (/^pk_test_/.test(process.env.CLERK_PUBLISHABLE_KEY) && process.env.NODE_ENV === 'production') {
-  console.warn('⚠️  Production site is using a Clerk TEST key (pk_test_). Use the Production instance keys (pk_live_ / sk_live_).');
-}
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   if (process.env.NODE_ENV === 'production') {
     console.error('❌ JWT_SECRET required (32+ chars)');
@@ -144,7 +138,7 @@ async function ensureAdminUser() {
     let username = usernameBase;
     let n = 1;
     while (await User.exists({ username })) username = `${usernameBase}${n++}`;
-    // No password is stored: sign-in is handled by Clerk (the admin verifies this email there).
+    // Admin account is managed by the PresetHub email/password authentication system.
     await User.create({ email, name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
     console.log('✅ Admin account initialized.');
   } else if (existing.role !== 'admin') {
@@ -287,10 +281,6 @@ app.use(helmet({
       ],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       connectSrc: [
-        "https://*.clerk.accounts.dev",
-        "https://clerk.presethub.site",
-        "https://api.clerk.com",
-        "https://*.clerk.com",
         "https://www.google-analytics.com",
         "https://*.google-analytics.com",
         "https://analytics.google.com",
@@ -307,7 +297,6 @@ app.use(helmet({
       ].filter(Boolean),
       frameSrc: [
         "https://challenges.cloudflare.com",
-        "https://*.clerk.accounts.dev",
         "'self'",
         "https://googleads.g.doubleclick.net",
         "https://*.google.com",
@@ -394,7 +383,7 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests. Please try again later.' },
   handler: (req, res, next, options) => { securityAlert(req, 'API rate limit exceeded (possible scraping / DoS)', { limit: 300, window: '15 min' }, 'warning', 20 * 60 * 1000); res.status(429).json(options.message); }
 });
-// Sign-in now happens in Clerk; this limit only guards write calls under /api/auth (page loads call GET /me).
+// Authentication endpoints are rate-limited; public profile reads remain available.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -492,9 +481,7 @@ const GA_ID = /^G-[A-Z0-9]{6,12}$/.test(String(process.env.GA_MEASUREMENT_ID || 
 const PIXEL_ID = /^\d{8,20}$/.test(String(process.env.META_PIXEL_ID || '').trim()) ? String(process.env.META_PIXEL_ID).trim() : '';
 const TRACKING_TAG = (GA_ID || PIXEL_ID) ? `<script src="/tracking.js" data-ga="${GA_ID}" data-pixel="${PIXEL_ID}" defer></script>` : '';
 const PRIVATE_PAGES = new Set(['admin.html', 'creator.html']);
-// Clerk publishable key is public by design; only a well-formed value is sent to the browser.
-const CLERK_PK = /^pk_(test|live)_[A-Za-z0-9+/=_-]{20,}$/.test(String(process.env.CLERK_PUBLISHABLE_KEY || '').trim()) ? String(process.env.CLERK_PUBLISHABLE_KEY).trim() : '';
-const AUTH_TAG = CLERK_PK ? `<script src="/clerk-bridge.js" data-pk="${CLERK_PK}"></script>` : '<script>window.PH_AUTH_DISABLED=true</script>';
+const AUTH_TAG = '';
 app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   let reqPath;
