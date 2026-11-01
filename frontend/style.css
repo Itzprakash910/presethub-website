@@ -1590,28 +1590,3 @@ p { line-height: 1.7; }
 .legal-page p, .legal-page li { font-size: 1rem; line-height: 1.8; max-width: 70ch; }
 .text-body { line-height: 1.75; }
 .text-body.full { line-height: 1.9; }
-
-/* v3.22 contrast: small tags use a darker accent on light backgrounds (WCAG AA 4.5:1) */
-.feat-tag { color: #7a4f1d; }
-body.dark .feat-tag, [data-theme="dark"] .feat-tag { color: #f0c987; }
-
-
-/* PresetHub v3.26 — hero headline highlight with a subtle animated sheen */
-.hero h1 .hero-title-glow {
-  display: inline-block;
-  color: var(--accent-text, #9a6537);
-  background: linear-gradient(105deg, #8d5b31 0%, #d4a373 35%, #f1d4ad 50%, #b47a43 68%, #8d5b31 100%);
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: ph-title-shine 5.5s ease-in-out infinite;
-  filter: drop-shadow(0 2px 8px rgba(180,122,67,.12));
-}
-@keyframes ph-title-shine {
-  0%, 15% { background-position: 100% 50%; }
-  65%, 100% { background-position: 0% 50%; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hero h1 .hero-title-glow { animation: none; background-position: 50% 50%; }
-}
