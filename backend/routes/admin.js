@@ -1062,7 +1062,7 @@ router.put('/support-requests/:id', async (req, res) => {
   } catch (err) { console.error('Support update error:', err); res.status(500).json({ error: 'Failed to update support request' }); }
 });
 
-router.post('/users/:id/reset-password', (req, res) => res.status(410).json({ error: 'Passwords are managed by Clerk. Reset the password in the Clerk Dashboard (Users).' }));
+// Password reset is handled by the PresetHub account recovery flow.
 
 // ============================================================
 // HOME AD MANAGEMENT
