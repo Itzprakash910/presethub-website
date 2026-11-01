@@ -1594,14 +1594,3 @@ p { line-height: 1.7; }
 /* v3.22 contrast: small tags use a darker accent on light backgrounds (WCAG AA 4.5:1) */
 .feat-tag { color: #7a4f1d; }
 body.dark .feat-tag, [data-theme="dark"] .feat-tag { color: #f0c987; }
-
-
-/* ===== v3.24 — ONE footer for every page (matches the home page exactly) =====
-   Home page is the reference: do not override these rules in content.css, creator.css or admin.css. */
-.site-footer{margin-top:48px}
-.site-footer .footer-grid{grid-template-columns:1.7fr repeat(3,1fr);gap:28px}
-.site-footer .footer-col h3,.site-footer .footer-col h4{font-size:1.17rem;font-weight:700;line-height:1.3;margin:0 0 10px;color:#eee}
-.site-footer a{text-decoration:none}
-.site-footer .footer-col a,.site-footer .footer-logo,.site-footer .footer-social a,.site-footer .footer-bottom a{text-decoration:none}
-@media(max-width:760px){.site-footer .footer-grid{grid-template-columns:1fr 1fr}.site-footer .footer-brand{grid-column:1/-1}}
-@media(max-width:420px){.site-footer .footer-grid{grid-template-columns:1fr 1fr}}
