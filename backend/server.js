@@ -129,42 +129,42 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 }
 
 async function ensureAdminUser() {
-  if (!process.env.ADMIN_EMAIL) return;
+  // Never create a passwordless administrator. Set ADMIN_EMAIL and a strong
+  // ADMIN_PASSWORD (12+ chars) in the deployment environment, or run
+  // `npm run create-admin` as a one-off command.
+  const email = String(process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+  const password = String(process.env.ADMIN_PASSWORD || '');
+  if (!email) return;
+  if (!password) {
+    console.warn('⚠️ ADMIN_PASSWORD is not set; automatic admin bootstrap skipped.');
+    return;
+  }
+  if (password.length < 12) {
+    console.warn('⚠️ ADMIN_PASSWORD must be at least 12 characters; automatic admin bootstrap skipped.');
+    return;
+  }
+  const bcrypt = require('bcryptjs');
   const { User } = require('./models');
-  const email = process.env.ADMIN_EMAIL.toLowerCase().trim();
   const existing = await User.findOne({ email });
+  const passwordHash = await bcrypt.hash(password, 12);
   if (!existing) {
     const usernameBase = email.split('@')[0].replace(/[^a-z0-9_]/g, '').slice(0, 24) || 'admin';
     let username = usernameBase;
     let n = 1;
     while (await User.exists({ username })) username = `${usernameBase}${n++}`;
-    // Admin account is managed by the PresetHub email/password authentication system.
-    await User.create({ email, name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
-    console.log('✅ Admin account initialized.');
-  } else if (existing.role !== 'admin' || !existing.adminRole) {
+    await User.create({ email, password: passwordHash, name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
+    console.log('✅ Admin account initialized with a password hash.');
+  } else if (existing.role !== 'admin' || !existing.adminRole || !existing.password) {
+    existing.password = passwordHash;
     existing.role = 'admin';
-    existing.adminRole = existing.adminRole || 'super';
+    existing.adminRole = 'super';
     existing.verified = true;
+    existing.status = 'active';
+    existing.sessionVersion = Number(existing.sessionVersion || 0) + 1;
     await existing.save();
-    console.log('✅ Existing admin email promoted / repaired as Super Admin.');
+    console.log('✅ Existing admin account repaired.');
   }
 }
-
-async function autoPublishPendingPresets() {
-  try {
-    const { Preset, User } = require('./models');
-    // Remove obsolete plaintext Telegram/API tokens left by pre-v2.9 builds.
-    await User.collection.updateMany({ token: { $exists: true } }, { $unset: { token: '' } }).catch(() => {});
-    const result = await Preset.updateMany(
-      { status: 'pending' },
-      { $set: { status: 'approved' } }
-    );
-    if (result.modifiedCount) console.log(`✅ Auto-published ${result.modifiedCount} legacy preset(s).`);
-  } catch (err) {
-    console.warn('⚠️ Legacy preset auto-publish skipped:', err.message);
-  }
-}
-
 
 // ============ ENSURE FOLDERS ============
 function ensureStructure() {
@@ -749,7 +749,7 @@ app.use(errorHandler);
   try {
     await connectDB();
     await ensureAdminUser();
-    await autoPublishPendingPresets();
+    // Pending presets remain pending until an authorized admin approves them.
     // Daily database backup (JSON per collection, last 7 kept). BACKUP_DAILY=off disables it.
 // Note: backups are written to the server disk. Copy them off-site (e.g. Drive/S3) for real disaster recovery.
 async function runDailyBackup() {
