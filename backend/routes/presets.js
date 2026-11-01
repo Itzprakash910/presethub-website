@@ -373,6 +373,8 @@ router.post('/', auth, uploadLimiter, uploadFields, validate(presetValidation), 
 // ===== SECURE DOWNLOAD =====
 // The API never returns the storage URL. It issues a short-lived signed ticket,
 // then streams the file after re-checking ownership/purchase permissions.
+const anonDl = new Map(); // ip:preset -> time; stops anonymous counter inflation
+setInterval(() => { const c = Date.now() - 864e5; for (const [k, v] of anonDl) if (v < c) anonDl.delete(k); }, 36e5).unref();
 router.post('/:id/download', optionalAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
   const preset = await Preset.findOne({ _id: req.params.id, status: 'approved' });
@@ -404,6 +406,10 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
       await createNotification(preset.authorId, 'download', `⬇️ ${user?.name || user?.username || 'Someone'} downloaded your preset “${preset.name}”.`, `/preset/${preset._id}`, 'Preset download');
       evaluateAchievements(preset.authorId).catch(() => {});
     }
+  }
+  if (counted && !req.user) {
+    const k = `${req.ip}:${preset._id}`;
+    if (anonDl.has(k)) counted = false; else anonDl.set(k, Date.now());
   }
   if (counted) {
     const fresh = await Preset.findByIdAndUpdate(preset._id, { $inc: { downloads: 1 } }, { new: true, projection: { downloads: 1 } }).lean();
