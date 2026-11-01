@@ -24,6 +24,7 @@ function permissionFor(method, path) {
   if (p.startsWith('/coupons') || p.startsWith('/subscriptions/grant-all') || p.startsWith('/boosts')) return m === 'GET' ? 'view' : 'marketing';
   if (p.startsWith('/subscriptions')) return 'view';
   if (p.startsWith('/reports') || p.startsWith('/texts') || /^\/presets\/[^/]+\/status$/.test(p)) return m === 'GET' ? 'view' : 'moderation';
+  if (/^\/users\/[^/]+\/reset-password$/.test(p)) return 'support';
   if (p.startsWith('/users')) {
     if (m === 'GET') return 'view';
     return /\/pro$/.test(p) ? 'marketing' : 'users';
