@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <!--AUTH-->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin Panel – PresetHub</title>
+  <meta name="author" content="PresetHub">
+  <meta name="application-name" content="PresetHub">
+  <meta name="theme-color" content="#d4a373">
+  <link rel="stylesheet" href="/icons.css?v=3.2.0">
+  <link rel="stylesheet" href="/style.css?v=3.2.0">
+  <link rel="stylesheet" href="/admin.css?v=3.2.0">
+  <link rel="stylesheet" href="/cookie-consent.css?v=3.2.0">
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="icon" type="image/png" sizes="48x48" href="/assets/icons/icon-48.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="/assets/icons/icon-96.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/assets/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<main id="main" class="admin-container">
+  <div class="admin-head">
+    <div><span class="eyebrow">SECURE CONSOLE</span><h1><i class="fas fa-crown" aria-hidden="true"></i> Admin Dashboard <span id="alertBadge" class="v32-badge hidden" title="Unread alerts">0</span></h1><p>Alerts, system health, Pro subscriptions, users, presets, shayari, promotions और announcements.</p></div>
+    <div class="admin-head-actions"><button id="adminHome" class="btn btn-outline"><i class="fas fa-house"></i> Website</button><button id="themeAdmin" class="btn btn-outline" title="Toggle theme" aria-label="Toggle theme"><i class="fas fa-moon"></i></button><button id="refreshAdmin" class="btn btn-primary"><i class="fas fa-rotate"></i> Refresh</button></div>
+  </div>
+  <div id="message" role="status" aria-live="polite"></div>
+
+  <nav class="adm-nav" aria-label="Admin sections"><div class="adm-nav-in"><a href="#platform-analytics">Platform Analytics</a><a href="#overview-system-health">Overview &amp; system health</a><a href="#alerts">Alerts</a><a href="#subscriptions">Subscriptions</a><a href="#shayari-text-prompts">Shayari &amp; text prompts</a><a href="#reports">Reports</a><a href="#payouts">Payouts</a><a href="#refunds">Refunds</a><a href="#audit-log">Audit log</a><a href="#admin-roles">Roles</a><a href="#coupons-discounts">Coupons &amp; discounts</a><a href="#gift-pro-to-all-users">Gift Pro to all users</a><a href="#active-boosts">Active boosts</a><a href="#home-ads">Home ads</a><a href="#user-requests">User requests</a><a href="#presets">Presets</a><a href="#users">Users</a></div></nav>
+<section class="admin-card" id="platform-analytics">
+    <div class="admin-section-head"><div><span class="eyebrow">MONITORING</span><h2><i class="fas fa-chart-simple"></i> Platform Analytics</h2></div></div>
+    <div class="stats-grid" id="analytics"><div class="skeleton" style="height:80px"></div></div>
+  </section>
+
+  <section class="admin-card" id="overview-system-health">
+    <div class="admin-section-head"><div><span class="eyebrow">LIVE</span><h2><i class="fas fa-gauge"></i> Overview &amp; system health</h2></div><button id="v32Refresh" class="btn btn-outline btn-sm"><i class="fas fa-rotate"></i> Reload</button></div>
+    <div class="stats-grid" id="v32Overview"><div class="skeleton" style="height:80px"></div></div>
+    <div class="v32-two">
+      <div><h3 class="v32-h">Server &amp; database</h3><div id="v32System"><div class="skeleton" style="height:120px"></div></div></div>
+      <div><h3 class="v32-h">New users (14 days)</h3><div id="v32Signups"></div><h3 class="v32-h">Latest signups</h3><ul class="v32-list" id="v32Recent"></ul></div>
+    </div>
+  </section>
+
+  <section class="admin-card" id="alerts">
+    <div class="admin-section-head"><div><span class="eyebrow">SECURITY &amp; ERRORS</span><h2><i class="fas fa-bell"></i> Alerts</h2></div>
+      <div class="v32-toolbar">
+        <select id="alertType" aria-label="Alert type"><option value="">All types</option><option value="security">Security</option><option value="error">Errors</option><option value="database">Database</option><option value="payment">Payments</option><option value="subscription">Subscriptions</option><option value="new_user">New users</option><option value="viral">Viral</option><option value="system">System</option></select>
+        <select id="alertSeverity" aria-label="Severity"><option value="">All severity</option><option value="critical">Critical</option><option value="warning">Warning</option><option value="info">Info</option></select>
+        <label class="check-row"><input type="checkbox" id="alertUnread"> Unread only</label>
+        <button id="alertReadAll" class="btn btn-outline btn-sm">Mark all read</button>
+        <button id="alertTest" class="btn btn-outline btn-sm">Send test</button>
+      </div>
+    </div>
+    <p class="admin-note" id="alertCount"></p>
+    <div id="alertList"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+
+  <section class="admin-card" id="subscriptions">
+    <div class="admin-section-head"><div><span class="eyebrow">PRO</span><h2><i class="fas fa-crown"></i> Subscriptions</h2></div></div>
+    <div class="v32-plans" id="subPlans"></div>
+    <h3 class="v32-h">Pro members</h3>
+    <div class="table-wrap"><table class="user-table"><thead><tr><th>User</th><th>Plan</th><th>Expiry</th><th>Status</th><th>Manage</th></tr></thead><tbody id="subUsers"></tbody></table></div>
+    <h3 class="v32-h">Subscription orders</h3>
+    <div class="table-wrap"><table class="user-table"><thead><tr><th>User</th><th>Plan</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead><tbody id="subOrders"></tbody></table></div>
+  </section>
+
+  <section class="admin-card" id="shayari-text-prompts">
+    <div class="admin-section-head"><div><span class="eyebrow">CONTENT</span><h2><i class="fas fa-pen-nib"></i> Shayari &amp; text prompts</h2></div>
+      <div class="v32-toolbar"><input id="txtSearch" class="admin-search" placeholder="Search text or author…" autocomplete="off"><select id="txtStatus" aria-label="Status"><option value="">All</option><option value="approved">Visible</option><option value="rejected">Hidden</option></select></div>
+    </div>
+    <div id="txtList"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+
+  <section class="admin-card" id="reports">
+    <div class="admin-section-head"><div><span class="eyebrow">TRUST &amp; SAFETY</span><h2><i class="fas fa-flag"></i> Reports</h2></div>
+      <div class="v32-toolbar"><select id="repStatus" aria-label="Status"><option value="open">Open</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option></select><select id="repType" aria-label="Type"><option value="">All types</option><option value="text">Shayari</option><option value="preset">Preset</option><option value="comment">Comment</option><option value="user">User</option></select></div>
+    </div>
+    <p class="admin-note" id="repCount"></p>
+    <div id="repList"><div class="skeleton" style="height:100px"></div></div>
+  </section>
+
+  <section class="admin-card" id="payouts">
+    <div class="admin-section-head"><div><span class="eyebrow">CREATORS</span><h2><i class="fas fa-money-bill-transfer"></i> Payouts</h2></div>
+      <div class="v32-toolbar"><select id="poStatus" aria-label="Status"><option value="requested">Requested</option><option value="approved">Approved</option><option value="paid">Paid</option><option value="rejected">Rejected</option></select><input type="date" id="poFrom" aria-label="From date"><input type="date" id="poTo" aria-label="To date"><button class="btn btn-outline btn-sm" id="poExport" type="button"><i class="fas fa-file-csv"></i> Export CSV</button></div>
+    </div>
+    <p class="admin-note">Creator ke bank/UPI details sirf "Show details" par dikhte hain. Har view admin log mein record hota hai. Paise bhejne ke baad UTR/reference zaroor daalein.</p>
+    <p class="admin-note" id="poCount"></p>
+    <div id="poList"><div class="skeleton" style="height:100px"></div></div>
+  </section>
+
+  <section class="admin-card" id="coupons-discounts">
+    <div class="admin-section-head"><div><span class="eyebrow">OFFERS</span><h2><i class="fas fa-tags"></i> Coupons &amp; discounts</h2></div></div>
+    <form class="v32-form" id="cpForm" autocomplete="off">
+      <input name="code" placeholder="Code (e.g. DIWALI20)" maxlength="32" required>
+      <select name="type"><option value="percent">% off</option><option value="fixed">₹ off</option></select>
+      <input name="value" type="number" min="1" step="1" placeholder="Value" required>
+      <select name="appliesTo"><option value="all">All purchases</option><option value="preset">Presets</option><option value="subscription">Pro plans</option><option value="tip">Tips</option></select>
+      <input name="presetId" placeholder="Preset ID (optional, for one preset)" maxlength="24">
+      <input name="maxUses" type="number" min="0" step="1" value="0" placeholder="Max uses (0 = unlimited)">
+      <input name="validUntil" type="date" aria-label="Valid until">
+      <input name="note" placeholder="Note (internal)" maxlength="200">
+      <button class="btn btn-primary btn-sm" type="submit">Create coupon</button>
+    </form>
+    <div id="cpList"><div class="skeleton" style="height:90px"></div></div>
+  </section>
+
+  <section class="admin-card" id="gift-pro-to-all-users">
+    <div class="admin-section-head"><div><span class="eyebrow">GIFTS</span><h2><i class="fas fa-gift"></i> Gift Pro to all users</h2></div></div>
+    <p class="admin-note">Har active user ko din add honge (unke baki Pro time ke upar). Sabko notification jayega. Ye undo nahi hota, is liye confirm karna zaroori hai.</p>
+    <form class="v32-form" id="giftForm" autocomplete="off">
+      <input name="days" type="number" min="1" max="365" step="1" value="7" required aria-label="Days">
+      <input name="confirm" placeholder='Type GRANT ALL to confirm' required aria-label="Confirmation">
+      <button class="btn btn-danger btn-sm" type="submit">Gift Pro</button>
+    </form>
+  </section>
+
+  <section class="admin-card" id="active-boosts">
+    <div class="admin-section-head"><div><span class="eyebrow">PROMOTIONS</span><h2><i class="fas fa-bolt"></i> Active boosts</h2></div><button class="btn btn-outline btn-sm" id="boostRefresh" type="button">Refresh</button></div>
+    <p class="admin-note">Boosts jo abhi chal rahe hain. Revoke karne par item turant normal order mein wapas aa jata hai.</p>
+    <div id="boostList"><div class="skeleton" style="height:90px"></div></div>
+  </section>
+
+  <section class="admin-card" id="refunds">
+    <div class="admin-section-head"><div><span class="eyebrow">MONEY</span><h2><i class="fas fa-rotate-left"></i> Refunds</h2></div></div>
+    <p class="admin-note">Pehle refund Cashfree dashboard mein karein, phir yahan Order ID aur refund reference daalein. Ye preset access, creator earnings, Pro time, tip total aur boost sab reverse karta hai. Paisa is form se wapas nahi bhejta.</p>
+    <form class="v32-form" id="refundForm" autocomplete="off">
+      <input name="orderId" placeholder="Order ID (PH-…)" maxlength="60" required>
+      <input name="reference" placeholder="Cashfree refund reference" maxlength="60" required>
+      <input name="reason" placeholder="Reason (shown to the buyer)" maxlength="300" required>
+      <button class="btn btn-danger btn-sm" type="submit">Mark refunded</button>
+    </form>
+  </section>
+
+  <section class="admin-card" id="audit-log">
+    <div class="admin-section-head"><div><span class="eyebrow">SECURITY</span><h2><i class="fas fa-list-check"></i> Audit log</h2></div>
+      <div class="v32-toolbar"><input id="auditActor" placeholder="Filter by admin email" aria-label="Admin email"><button class="btn btn-outline btn-sm" id="auditRefresh" type="button">Refresh</button></div>
+    </div>
+    <p class="admin-note">Har admin change yahan dikhta hai: kisne, kab, kaunsa route, kaunse fields. Values (passwords, secrets) kabhi store nahi hoti.</p>
+    <div id="auditList"><div class="skeleton" style="height:90px"></div></div>
+  </section>
+
+  <section class="admin-card" id="admin-roles">
+    <div class="admin-section-head"><div><span class="eyebrow">ACCESS</span><h2><i class="fas fa-user-shield"></i> Admin roles</h2></div></div>
+    <p class="admin-note">Roles: <b>super</b> (sab kuch), <b>operations</b> (users, moderation), <b>finance</b> (payouts, refunds), <b>marketing</b> (coupons, gifts, boosts), <b>support</b> (sirf dekhna). Sirf Super Admin role badal sakta hai. User ID Users table se copy karein.</p>
+    <form class="v32-form" id="roleForm" autocomplete="off">
+      <input name="userId" placeholder="User ID (24 characters)" maxlength="24" required>
+      <select name="adminRole" aria-label="Admin role">
+        <option value="super">super</option><option value="operations">operations</option><option value="finance">finance</option>
+        <option value="marketing">marketing</option><option value="support">support</option><option value="none">none (remove admin)</option>
+      </select>
+      <button class="btn btn-primary btn-sm" type="submit">Set role</button>
+    </form>
+  </section>
+
+  <section class="admin-card admin-tools-grid">
+    <div>
+      <span class="eyebrow">ANNOUNCEMENTS</span><h2><i class="fas fa-bell"></i> Send notification</h2>
+      <form id="broadcastForm" class="admin-form">
+        <label>Message<input name="message" maxlength="500" required placeholder="नई feature की जानकारी…"></label>
+        <label>Internal link<input name="link" maxlength="500" value="/"></label>
+        <label>Type<select name="type"><option value="announcement">Announcement</option><option value="feature">New feature</option><option value="admin">Admin</option></select></label>
+        <button class="btn btn-primary" type="submit"><i class="fas fa-bell"></i> सभी users को भेजें</button>
+      </form>
+    </div>
+    <div>
+      <span class="eyebrow">PROMOTION</span><h2><i class="fas fa-image"></i> Personal ad / product</h2>
+      <form id="adForm" class="admin-form">
+        <input type="hidden" name="id">
+        <label>Title<input name="title" maxlength="120" required placeholder="PresetHub Summer Sale"></label>
+        <label>Description<textarea name="description" maxlength="500" rows="3" placeholder="छोटी description…"></textarea></label>
+        <label>Photo URL<input name="imageUrl" maxlength="1000" placeholder="https://… या /media/…"></label><label>Or upload photo<input name="image" type="file" accept="image/jpeg,image/png,image/webp"></label>
+        <label>Ad type<select name="adType"><option value="personal">Personal / My app</option><option value="sponsor">Sponsored ad</option></select></label><label>Product name<input name="productName" maxlength="120" placeholder="Premium Preset Pack"></label>
+        <div class="admin-form-row"><label>Original price<input name="originalPrice" type="number" min="0" step="0.01"></label><label>Sale price<input name="salePrice" type="number" min="0" step="0.01"></label></div>
+        <div class="admin-form-row"><label>Discount %<input name="discountPercent" type="number" min="0" max="100" step="1"></label><label>Badge<input name="badge" maxlength="40" value="Featured"></label></div>
+        <label>Link<input name="linkUrl" maxlength="500" value="/"></label>
+        <label class="check-row"><input name="active" type="checkbox" checked> Home पर दिखाएँ</label>
+        <div class="admin-form-actions"><button class="btn btn-primary" type="submit"><i class="fas fa-check"></i> Save ad</button><button class="btn btn-outline" id="clearAd" type="button">Clear</button></div>
+      </form>
+    </div>
+  </section>
+
+  <section class="admin-card" id="home-ads">
+    <div class="admin-section-head"><div><span class="eyebrow">LIVE PROMOTIONS</span><h2><i class="fas fa-bolt"></i> Home ads</h2></div></div>
+    <div id="adsList" class="admin-ad-list"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+
+  <section class="admin-card" id="user-requests">
+    <div class="admin-section-head"><div><span class="eyebrow">ACCOUNT SUPPORT</span><h2><i class="fas fa-life-ring"></i> User requests</h2></div><select id="supportStatus"><option value="open">Open</option><option value="in_progress">In progress</option><option value="all">All</option></select></div>
+    <div id="supportList"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+
+  <section class="admin-card" id="presets">
+    <div class="admin-section-head"><div><span class="eyebrow">CONTENT</span><h2><i class="fas fa-cubes"></i> Presets</h2></div><span class="admin-note">Uploads are live immediately; status controls are for admin moderation only.</span></div>
+    <div id="presetsList"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+
+  <section class="admin-card" id="users">
+    <div class="admin-section-head"><div><span class="eyebrow">ACCOUNT CONTROL</span><h2><i class="fas fa-users"></i> Users</h2></div><input id="userSearch" class="admin-search" placeholder="Search name, username, email…" autocomplete="off"></div>
+    <div class="table-wrap" id="usersList"><div class="skeleton" style="height:120px"></div></div>
+  </section>
+</main>
+<footer class="site-footer">
+  <div class="container footer-grid">
+    <div class="footer-brand"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><p>Admin console for the PresetHub Lightroom presets marketplace.</p></div>
+    <div class="footer-col"><h4>PresetHub</h4><ul><li><a href="/">Home</a></li><li><a href="/about.html">About</a></li><li><a href="/faq.html">FAQ</a></li><li><a href="/creator-program.html">Creators</a></li></ul></div>
+    <div class="footer-col"><h4>Guides</h4><ul><li><a href="/download-guide.html">Download Guide</a></li><li><a href="/lightroom-guide.html">Lightroom Guide</a></li><li><a href="/blog.html">Blog</a></li><li><a href="/download-app.html"><i class="fas fa-download"></i> Install App</a></li></ul></div>
+    <div class="footer-col"><h4>Contact</h4><ul><li><a href="/contact.html">Contact PresetHub</a></li><li><a href="https://t.me/presethub_bot" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram"></i> Telegram Bot</a></li><li><a href="/security.txt">Security</a></li></ul></div>
+  </div>
+  <div class="container footer-bottom"><span>© PresetHub</span><span>Secure Admin Console</span></div>
+</footer>
+<script src="/admin.js?v=3.20.0"></script>
+<script src="/admin-v32.js?v=3.20.0"></script>
+<script src="/cookie-consent.js?v=3.2.0" defer></script>
+</body>
+</html>

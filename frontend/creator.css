@@ -1,0 +1,52 @@
+/* Creator dashboard (v3.8.0). Uses the site theme variables, so light and dark mode both work. */
+.cd-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px clamp(14px, 4vw, 40px); border-bottom: 1px solid var(--border); background: var(--card-bg); position: sticky; top: 0; z-index: 20; }
+.cd-top .logo { display: inline-flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; font-weight: 800; }
+.cd-nav { display: flex; gap: 14px; flex-wrap: wrap; }
+.cd-nav a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: .9rem; }
+.cd-nav a:hover { color: var(--text); }
+.cd-wrap { max-width: 1120px; margin: 0 auto; padding: 22px clamp(14px, 4vw, 40px) 70px; color: var(--text); display: grid; gap: 22px; }
+.cd-skel { padding: 40px; text-align: center; color: var(--muted); }
+.cd-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 18px; padding: clamp(16px, 2.5vw, 24px); }
+.cd-card h2 { margin: 0 0 14px; font-size: 1.15rem; display: flex; align-items: center; gap: 8px; }
+.cd-muted { color: var(--muted); font-size: .88rem; }
+.cd-head { display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; }
+@media (max-width: 640px) { .cd-head { grid-template-columns: 1fr; text-align: center; justify-items: center; } }
+.cd-avatar { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; background: var(--accent, #d4a373); display: grid; place-items: center; font-size: 2rem; font-weight: 800; color: #1c1c1c; overflow: hidden; }
+.cd-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.cd-name { font-size: clamp(1.3rem, 3vw, 1.7rem); font-weight: 800; margin: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: inherit; }
+.cd-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.cd-badge { padding: 3px 10px; border-radius: 999px; font-size: .74rem; font-weight: 700; background: var(--input-bg); border: 1px solid var(--border); }
+.cd-badge.gold { background: rgba(224,161,0,.15); border-color: #e0a100; }
+.cd-badge.pro { background: linear-gradient(135deg,#d4a373,#b98248); color: #fff; border-color: transparent; }
+.cd-badge.ok { background: rgba(34,160,107,.12); border-color: #22a06b; color: #22a06b; }
+.cd-badge.warn { background: rgba(224,161,0,.12); border-color: #e0a100; }
+.cd-badge.bad { background: rgba(179,38,30,.1); border-color: #b3261e; color: #b3261e; }
+.cd-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.cd-kpi { padding: 14px; border-radius: 14px; background: var(--input-bg); border: 1px solid var(--border); display: grid; gap: 4px; }
+.cd-kpi b { font-size: 1.35rem; }
+.cd-kpi span { font-size: .78rem; color: var(--muted); }
+.cd-kpi.hi { border-color: var(--accent, #d4a373); }
+.cd-two { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+@media (max-width: 860px) { .cd-two { grid-template-columns: 1fr; } }
+.cd-bars { display: flex; align-items: flex-end; gap: 3px; height: 140px; padding: 6px 0; }
+.cd-bars > div { flex: 1; height: 100%; display: flex; align-items: flex-end; }
+.cd-bars span { width: 100%; min-height: 2px; background: linear-gradient(#f0c987,#d4a373); border-radius: 4px 4px 1px 1px; }
+.cd-table { width: 100%; border-collapse: collapse; font-size: .9rem; display: block; overflow-x: auto; }
+.cd-table th, .cd-table td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.cd-table th { color: var(--muted); font-weight: 700; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+.cd-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.cd-list li { padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--input-bg); display: grid; gap: 4px; }
+.cd-list li p { margin: 0; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.cd-form { display: grid; gap: 10px; }
+.cd-form label { display: grid; gap: 4px; font-size: .82rem; font-weight: 700; color: var(--text); }
+.cd-form input, .cd-form select, .cd-form textarea { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font: inherit; }
+.cd-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; width: fit-content; }
+.cd-seg button { padding: 8px 16px; border: 0; background: transparent; color: var(--text); font-weight: 700; cursor: pointer; }
+.cd-seg button[aria-pressed="true"] { background: var(--accent, #d4a373); color: #1c1c1c; }
+.cd-btn { padding: 11px 18px; border: 0; border-radius: 12px; background: var(--accent, #d4a373); color: #1c1c1c; font-weight: 800; cursor: pointer; }
+.cd-btn:disabled { opacity: .55; cursor: not-allowed; }
+.cd-btn.ghost { background: var(--input-bg); color: var(--text); border: 1px solid var(--border); }
+.cd-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); display: grid; gap: 8px; z-index: 50; }
+.cd-toast div { padding: 10px 16px; border-radius: 999px; background: var(--text); color: var(--card-bg); font-size: .86rem; box-shadow: 0 8px 22px rgba(0,0,0,.25); }
+.cd-toast div.err { background: #b3261e; color: #fff; }
+.cd-empty { color: var(--muted); padding: 14px; border: 1px dashed var(--border); border-radius: 12px; text-align: center; }
