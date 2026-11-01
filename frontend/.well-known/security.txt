@@ -1,3 +1,0 @@
-Contact: mailto:security@presethub.site
-Preferred-Languages: en, hi
-Canonical: https://presethub.site/.well-known/security.txt
