@@ -1618,6 +1618,7 @@
   let exitGuardArmed = false;
   function isHomePage(){ return location.pathname==='/' || location.pathname==='/index.html'; }
   function installExitGuard(){
+    return; // disabled v3.25: back-button trap hurts UX/SEO
     if (!isHomePage() || exitGuardArmed) return;
     // Arm only when this Home page is the first page of the visit (nothing from PresetHub to go back to).
     const cameFromSite = document.referrer && (() => { try { return new URL(document.referrer).origin === location.origin; } catch (_) { return false; } })();

@@ -16,7 +16,7 @@
   <link rel="me" href="https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0aGZn">
   <link rel="stylesheet" href="/icons.css?v=3.21.0" media="print" data-async-css>
   <noscript><link rel="stylesheet" href="/icons.css?v=3.21.0"></noscript>
-  <link rel="stylesheet" href="/style.css?v=3.2.0">
+  <link rel="stylesheet" href="/style.css?v=3.24.0">
   <link rel="stylesheet" href="/cookie-consent.css?v=3.2.0">
 
   <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
@@ -120,7 +120,15 @@
   </section>
 
   <div class="container">
-    <!-- AdSense Display Ad (Homepage) -->
+    
+    <h2 class="section-title"><span>Explore Presets</span><a href="/blog.html">Guides &amp; SEO Resources</a></h2>
+    <h2 class="section-title">Categories</h2>
+    <div class="categories" id="categories"></div>
+
+    <h2 class="section-title featured-title"><span>Featured Presets</span><span class="section-subtitle">Rating · Views · Likes · Comments · Shares</span></h2>
+    <div class="featured-grid" id="featuredGrid" aria-live="polite"></div>
+
+        <!-- AdSense Display Ad (Homepage) -->
     <div class="adsense-slot" style="margin: 20px 0; text-align: center;">
       <ins class="adsbygoogle"
            style="display:block"
@@ -130,14 +138,6 @@
            data-full-width-responsive="true"></ins>
       <script src="/ads-init.js?v=3.21.0" defer></script>
     </div>
-    
-    <h2 class="section-title"><span>Explore Presets</span><a href="/blog.html">Guides &amp; SEO Resources</a></h2>
-    <nav class="quick-links" aria-label="PresetHub sections"><a href="/about.html">About</a><a href="/faq.html">FAQ</a><a href="/creator-program.html">Creators</a><a href="/download-guide.html">Download Guide</a><a href="/lightroom-guide.html">Lightroom Guide</a></nav>
-    <h2 class="section-title">Categories</h2>
-    <div class="categories" id="categories"></div>
-
-    <h2 class="section-title featured-title"><span>Featured Presets</span><span class="section-subtitle">Rating · Views · Likes · Comments · Shares</span></h2>
-    <div class="featured-grid" id="featuredGrid" aria-live="polite"></div>
 
     <div class="search-entity-results" id="searchEntityResults" hidden></div>
 
@@ -156,7 +156,16 @@
     <div id="homeAdSlot" class="home-ad-slot" hidden aria-label="PresetHub promotion"></div>
     <div class="preset-grid" id="presetGrid" aria-live="polite"></div>
 
-    <section class="feat-section container" aria-label="Today on PresetHub">
+    <section class="text-section" id="textSection" aria-labelledby="textSectionTitle">
+      <div class="creator-section-head">
+        <div><h2 class="section-title" id="textSectionTitle">Shayari &amp; Text Prompts</h2><p class="section-subtitle">Sad shayari · True lines · Love · Attitude · Captions — copy, like, comment &amp; share</p></div>
+        <div class="text-head-actions"><button class="btn btn-primary btn-sm" data-t-action="new-post"><i class="fas fa-pen-nib" aria-hidden="true"></i> Post shayari</button><a class="btn btn-outline btn-sm" href="/shayari/">View all</a></div>
+      </div>
+      <nav class="text-chips" id="textChips" aria-label="Shayari categories"></nav>
+      <div class="text-grid" id="textGrid" aria-live="polite"><div class="empty-state"><p>Loading…</p></div></div>
+    </section>
+
+    <section class="feat-section" aria-label="Today on PresetHub">
       <div class="feat-head">
         <div><h2 class="section-title">Today on PresetHub</h2><p class="section-subtitle">Ek nayi preset aur shayari roz · streak banaiye · top creators dekhiye</p></div>
         <div class="feat-head-actions"><span id="streakChip" class="streak-chip" hidden></span><a id="featEarnings" class="btn btn-outline btn-sm" href="/creator.html" hidden><i class="fas fa-chart-line" aria-hidden="true"></i> My dashboard</a><a class="btn btn-outline btn-sm" href="/tools.html"><i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i> Tools</a></div>
@@ -168,15 +177,6 @@
           <div id="leaderBox"></div>
         </div>
       </div>
-    </section>
-
-    <section class="text-section" id="textSection" aria-labelledby="textSectionTitle">
-      <div class="creator-section-head">
-        <div><h2 class="section-title" id="textSectionTitle">Shayari &amp; Text Prompts</h2><p class="section-subtitle">Sad shayari · True lines · Love · Attitude · Captions — copy, like, comment &amp; share</p></div>
-        <div class="text-head-actions"><button class="btn btn-primary btn-sm" data-t-action="new-post"><i class="fas fa-pen-nib" aria-hidden="true"></i> Post shayari</button><a class="btn btn-outline btn-sm" href="/shayari/">View all</a></div>
-      </div>
-      <nav class="text-chips" id="textChips" aria-label="Shayari categories"></nav>
-      <div class="text-grid" id="textGrid" aria-live="polite"><div class="empty-state"><p>Loading…</p></div></div>
     </section>
 
     <div class="creator-section-head"><div><h2 class="section-title">Creators near you</h2><p class="section-subtitle" id="creatorLocationHint">Nearby first · then highest reach</p></div><div class="creator-carousel-controls"><button class="icon-action" data-action="creator-prev" aria-label="Previous creators"><i class="fas fa-chevron-left"></i></button><button class="icon-action" data-action="nearby-creators" aria-label="Use my location" title="Use my location"><i class="fas fa-location-crosshairs"></i></button><button class="icon-action" data-action="creator-next" aria-label="Next creators"><i class="fas fa-chevron-right"></i></button></div></div>
@@ -196,7 +196,7 @@
         <a href="/contact.html" aria-label="Message PresetHub" title="Message PresetHub"><i class="fas fa-message"></i></a>
       </div>
     </div>
-    <div class="footer-col"><h3>Explore</h3><ul><li><a href="/#presets">All Presets</a></li><li><a href="/#categories">Categories</a></li><li><a href="/#creators">Top Creators</a></li><li><a href="/shayari/">Shayari &amp; Text Prompts</a></li><li><a href="/presets/">All Presets</a></li><li><a href="/tools.html">Tools</a></li><li><a href="/tags/">Trending #Tags</a></li><li><a href="/creator-program.html">Creator Program</a></li></ul></div>
+    <div class="footer-col"><h3>Explore</h3><ul><li><a href="/#presets">All Presets</a></li><li><a href="/#categories">Categories</a></li><li><a href="/#creators">Top Creators</a></li><li><a href="/shayari/">Shayari &amp; Text Prompts</a></li><li><a href="/presets/">Preset Library</a></li><li><a href="/tools.html">Tools</a></li><li><a href="/tags/">Trending #Tags</a></li><li><a href="/creator-program.html">Creator Program</a></li></ul></div>
     <div class="footer-col"><h3>Help</h3><ul><li><a href="/faq.html">FAQ</a></li><li><a href="/download-guide.html">Download Guide</a></li><li><a href="/lightroom-guide.html">Lightroom Guide</a></li><li><a href="/contact.html">Contact</a></li><li><a href="/download-app.html"><i class="fas fa-download" aria-hidden="true"></i> Install App</a></li><li><a href="https://t.me/presethub_bot" target="_blank" rel="noopener noreferrer"><i class="fab fa-telegram" aria-hidden="true"></i> Telegram Bot</a></li></ul></div>
     <div class="footer-col"><h3>Legal</h3><ul><li><a href="/privacy.html">Privacy Policy</a></li><li><a href="/terms.html">Terms</a></li><li><a href="/refund-policy.html">Refund &amp; Shipping</a></li><li><a href="/security.txt">Security</a></li><li><a href="/about.html">About PresetHub</a></li></ul></div>
   </div>
@@ -220,7 +220,7 @@
   <div class="modal"><button class="close" data-action="close" aria-label="Close">×</button><div id="modalBody"></div></div>
 </div>
 <div id="toastBox" aria-live="polite"></div>
-<script src="/app.js?v=3.21.0" defer></script>
+<script src="/app.js?v=3.25.0" defer></script>
 <script src="/async-css.js?v=3.21.0" defer></script>
 <script src="/texts.js?v=3.4.0" defer></script>
 <script src="/features.js?v=3.4.0" defer></script>
