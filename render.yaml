@@ -27,7 +27,7 @@ services:
       - key: PAYOUT_ENC_KEY
         sync: false
       - key: CREATOR_SHARE
-        value: "0.8"
+        value: "0.9"
       - key: PAYOUT_MIN_RUPEES
         value: "100"
       - key: GA_MEASUREMENT_ID
@@ -62,10 +62,6 @@ services:
         value: "10"
       - key: UPLOAD_PER_HOUR
         value: "30"
-      - key: CLERK_SECRET_KEY
-        sync: false
-      - key: CLERK_PUBLISHABLE_KEY
-        sync: false
       - key: CASHFREE_ENV
         value: sandbox
       - key: CASHFREE_APP_ID
