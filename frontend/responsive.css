@@ -1,0 +1,46 @@
+/* PresetHub responsive safety layer — loaded after page-specific styles. */
+html { width: 100%; max-width: 100%; overflow-x: clip; -webkit-text-size-adjust: 100%; }
+body { width: 100%; max-width: 100%; min-width: 0; overflow-x: clip; }
+img, video, canvas, svg { max-width: 100%; }
+iframe { max-width: 100%; }
+button, input, select, textarea { max-width: 100%; font: inherit; }
+input, select, textarea { min-width: 0; }
+pre, code { max-width: 100%; overflow-wrap: anywhere; }
+table { max-width: 100%; }
+.container, .page-container, .content-container, .main-container { width: min(100% - 32px, 1280px); margin-inline: auto; }
+.grid, .presets-grid, .preset-grid, .products-grid, .creator-grid { min-width: 0; }
+.card, .preset-card, .creator-card, .modal, .panel, .dashboard-card { min-width: 0; }
+button, .btn, a.btn { touch-action: manipulation; }
+:focus-visible { outline: 3px solid var(--accent, #c9955e); outline-offset: 2px; }
+@media (max-width: 1024px) {
+  .container, .page-container, .content-container, .main-container { width: min(100% - 28px, 100%); }
+  .dashboard-layout, .admin-layout, .creator-layout { grid-template-columns: minmax(0, 1fr) !important; }
+  .sidebar { position: static; width: 100%; max-width: 100%; }
+}
+@media (max-width: 768px) {
+  .container, .page-container, .content-container, .main-container { width: calc(100% - 24px); padding-inline: 0; }
+  .presets-grid, .preset-grid, .products-grid, .creator-grid, .top-creators-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .hero, .hero-section { padding-inline: 16px; }
+  .hero h1, h1 { overflow-wrap: anywhere; }
+  .modal, .modal-content, .dialog, .popup { width: min( calc(100% - 24px), 560px); max-width: calc(100% - 24px); max-height: calc(100dvh - 24px); overflow: auto; }
+  .table-wrap, .table-responsive, .admin-table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 560px; }
+  .form-row, .filter-row, .toolbar { flex-wrap: wrap; }
+  .form-row > *, .filter-row > *, .toolbar > * { min-width: 0; }
+}
+@media (max-width: 480px) {
+  .container, .page-container, .content-container, .main-container { width: calc(100% - 20px); }
+  .presets-grid, .preset-grid, .products-grid, .creator-grid, .top-creators-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .card, .preset-card, .creator-card { border-radius: 12px; }
+  .btn, button, input, select, textarea { min-height: 40px; }
+  .modal, .modal-content, .dialog, .popup { width: calc(100% - 16px); max-width: calc(100% - 16px); padding: 16px; }
+  .nav-links, .desktop-nav { max-width: 100%; }
+  .cookie-banner, .cookie-consent, .cookie-consent-banner { left: 10px; right: 10px; bottom: 10px; width: auto; max-width: none; }
+}
+@media (max-width: 360px) {
+  .presets-grid, .preset-grid, .products-grid, .creator-grid, .top-creators-grid { grid-template-columns: minmax(0, 1fr); }
+  .container, .page-container, .content-container, .main-container { width: calc(100% - 16px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
