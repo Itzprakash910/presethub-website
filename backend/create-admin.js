@@ -19,6 +19,7 @@ const { User } = require('./models');
     }
     user.password = await bcrypt.hash(password, 12);
     user.role = 'admin';
+    user.adminRole = 'super';
     user.verified = true;
     user.status = 'active';
     user.sessionVersion = Number(user.sessionVersion || 0) + 1;

@@ -141,12 +141,12 @@ async function ensureAdminUser() {
     // Admin account is managed by the PresetHub email/password authentication system.
     await User.create({ email, name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
     console.log('✅ Admin account initialized.');
-  } else if (existing.role !== 'admin') {
+  } else if (existing.role !== 'admin' || !existing.adminRole) {
     existing.role = 'admin';
     existing.adminRole = existing.adminRole || 'super';
     existing.verified = true;
     await existing.save();
-    console.log('✅ Existing admin email promoted to admin role.');
+    console.log('✅ Existing admin email promoted / repaired as Super Admin.');
   }
 }
 
