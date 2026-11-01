@@ -1100,8 +1100,8 @@
           ${mode === 'signup' ? '<div class="form-group"><label>Name</label><input name="name" maxlength="50" required></div><div class="form-group"><label>Username</label><input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" required></div>' : ''}
           <div class="form-group"><label>Email</label><input type="email" name="email" required autocomplete="${mode === 'login' ? 'username' : 'email'}" value="${mode === 'login' ? esc(rememberedEmail()) : ''}"></div>
           ${mode === 'login' ? `<label class="check-row remember-row"><input type="checkbox" name="remember" ${rememberedEmail() ? 'checked' : ''}> Email yaad rakhein (password kabhi save nahi hoga)</label>` : ''}
-          ${passwordField('password', 'Password', mode === 'login' ? 'current-password' : 'new-password', 'minlength="8" required')}
-          ${mode === 'signup' ? '<small>At least 8 characters with upper/lowercase and a number.</small>' : ''}
+          ${passwordField('password', 'Password', mode === 'login' ? 'current-password' : 'new-password', 'minlength="10" required')}
+          ${mode === 'signup' ? '<small>At least 10 characters with uppercase, lowercase and a number.</small>' : ''}
           <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
         </form>
         ${mode === 'login' ? '<button class="text-button" data-action="forgot-password">Forgot password?</button>' : ''}
@@ -1113,7 +1113,7 @@
     openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Reset password</h2><p class="muted">Enter your account email. If it exists, PresetHub will send a reset link.</p><form id="forgotForm"><div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div><button class="btn btn-primary" type="submit"><i class="fas fa-envelope"></i> Send reset link</button></form></div>`);
   }
   function openResetPassword(token){
-    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}">${passwordField('password', 'New password', 'new-password', 'minlength="8" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
+    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}">${passwordField('password', 'New password', 'new-password', 'minlength="10" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
   }
 
   // Only the email is remembered on this device. Passwords are never stored in the browser.
@@ -1444,7 +1444,7 @@
 
   function changePasswordModal() {
     if (!requireAuth()) return;
-    openModal(`<div class="security-panel"><span class="eyebrow">ACCOUNT SECURITY</span><h2>Change password</h2><form id="changePasswordForm">${passwordField('currentPassword', 'Current password', 'current-password', 'required')}${passwordField('newPassword', 'New password', 'new-password', 'minlength="8" required')}${passwordField('confirmPassword', 'Confirm new password', 'new-password', 'minlength="8" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Change password</button></form></div>`);
+    openModal(`<div class="security-panel"><span class="eyebrow">ACCOUNT SECURITY</span><h2>Change password</h2><form id="changePasswordForm">${passwordField('currentPassword', 'Current password', 'current-password', 'required')}${passwordField('newPassword', 'New password', 'new-password', 'minlength="10" required')}${passwordField('confirmPassword', 'Confirm new password', 'new-password', 'minlength="10" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Change password</button></form></div>`);
   }
   async function deleteAccountModal() {
     if (!requireAuth()) return;
