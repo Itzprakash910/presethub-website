@@ -247,7 +247,7 @@ router.post('/request-reset', resetLimiter, async (req, res) => {
   } catch(e) { console.error('Password reset request:',e); res.json({success:true,message:'If that email exists, a password reset link has been sent.'}); }
 });
 
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', resetLimiter, async (req, res) => {
   try {
     const token = String(req.body.token || '').trim();
     const password = String(req.body.password || '');

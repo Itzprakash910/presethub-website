@@ -29,7 +29,12 @@ const YOUPI_CONFIGURED = Boolean(
 );
 
 function activeProvider() {
-  if (require('../utils/cashfree').isConfigured()) return 'cashfree';
+  const requested = String(process.env.PAYMENT_PROVIDER || 'auto').trim().toLowerCase();
+  const cashfreeReady = require('../utils/cashfree').isConfigured();
+  if (requested === 'cashfree') return cashfreeReady ? 'cashfree' : 'disabled';
+  if (requested === 'youpi') return YOUPI_CONFIGURED ? 'youpi' : 'disabled';
+  if (requested !== 'auto' && requested !== '') return 'disabled';
+  if (cashfreeReady) return 'cashfree';
   return YOUPI_CONFIGURED ? 'youpi' : 'disabled';
 }
 
