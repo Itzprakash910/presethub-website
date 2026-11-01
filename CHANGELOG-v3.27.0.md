@@ -7,3 +7,10 @@
 - Preserved the homepage AdSense slot and the existing consent-gated loader.
 
 AdSense approval, ad-slot ownership, live ad serving, and regional CMP configuration still require verification in the publisher's Google AdSense account.
+
+## Authentication restoration
+- Reverted website authentication from Clerk to PresetHub's original MongoDB email/password flow with bcrypt password hashing and JWT sessions.
+- Restored sign-up, sign-in, forgot-password/reset-password endpoints and matching frontend modal controls from the pre-Clerk v3.22 implementation.
+- Restored the matching admin frontend for password management.
+- Removed Clerk SDK/browser bridge/server helper and Clerk-specific runtime configuration.
+- Kept the `clerkId` database field/index inert for backwards compatibility; no existing user records or identifiers were deleted.
