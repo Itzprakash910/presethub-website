@@ -258,7 +258,12 @@
     const box = $('#toastBox') || (() => {
       const x = document.createElement('div'); x.id = 'toastBox'; document.body.appendChild(x); return x;
     })();
+    // Avoid stacking identical notifications when users tap repeatedly or an API retries.
+    const normalizedMessage = String(message || '').trim();
+    const duplicate = [...box.children].find(node => node.dataset.toastMessage === normalizedMessage);
+    if (duplicate) { duplicate.querySelector('span')?.replaceChildren(document.createTextNode(normalizedMessage)); return; }
     const el = document.createElement('div');
+    el.dataset.toastMessage = normalizedMessage;
     el.className = `toast toast-${esc(type)}`;
     el.setAttribute('role', type === 'error' ? 'alert' : 'status');
     const icons = { success:'fa-circle-check', error:'fa-circle-exclamation', info:'fa-circle-info', warning:'fa-triangle-exclamation' };
@@ -557,8 +562,15 @@
       
       const image = `<div class="preview-frame">${imgTag(p.previewImage, `${p.name} preset preview`, 'preset-detail-image')}<div class="preview-badge"><i class="fas fa-image"></i> Preview</div></div>`;
       
-      // नया AdSense कोड मोडल के अंदर (डाउनलोड बटन के नीचे)
-      const adCode = `
+      // Ads are rendered only after the visitor has explicitly accepted optional cookies.
+      // The AdSense loader itself is consent-gated by cookie-consent.js.
+      const adConsent = (() => {
+        try {
+          return localStorage.getItem('presethub_cookie_consent_v1') === 'accepted'
+            && !(Number(localStorage.getItem('ph_pro_until') || 0) > Date.now());
+        } catch (_) { return false; }
+      })();
+      const adCode = adConsent ? `
         <div class="modal-ad-container" style="margin: 15px 0; text-align: center; min-height: 100px;">
           <ins class="adsbygoogle"
                style="display:block"
@@ -566,11 +578,8 @@
                data-ad-layout-key="-gw-3+1f-3d+2z"
                data-ad-client="ca-pub-3554311294133493"
                data-ad-slot="2217571977"></ins>
-          <script>
-               (adsbygoogle = window.adsbygoogle || []).push({});
-          </script>
         </div>
-      `;
+      ` : '';
 
       openModal(`
         <div class="modal-grid">
@@ -611,12 +620,15 @@
           </div>
         </div>`);
         
-      // मोडल खुलने के बाद विज्ञापन को रीफ्रेश/लोड करें
-      setTimeout(() => {
-        if (window.adsbygoogle) {
-          try { (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) {}
-        }
-      }, 500);
+      // Request a modal ad only when consent was granted and AdSense is available.
+      if (adConsent) {
+        setTimeout(() => {
+          const slot = document.querySelector('.modal-ad-container ins.adsbygoogle');
+          if (slot && window.adsbygoogle) {
+            try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (_) {}
+          }
+        }, 500);
+      }
 
       try { await api(`/presets/${encodeURIComponent(id)}/view`, { method: 'POST' }); } catch (_) {}
     } catch (e) { toast(e.message, 'error'); }
@@ -1092,10 +1104,31 @@
   const fetchMe = () => (window.phAuth && window.phAuth.user && window.phAuth.user()) ? api('/auth/me') : Promise.resolve({ user: null });
   // Sign-in, sign-up and password recovery are handled by Clerk (window.phAuth from clerk-bridge.js).
   let pendingAfterAuth = null;
+  let authLaunchPending = false;
+  let lastAuthNoticeAt = 0;
   function openAuth(mode = 'login', after = null) {
-    if (!window.phAuth || !window.phAuth.isReady()) { toast('Login is loading. Please try again in a moment.', 'info'); return; }
+    const now = Date.now();
+    if (authLaunchPending) return;
+    if (!window.phAuth || !window.phAuth.isReady()) {
+      // Distinguish a missing server configuration from the short SDK startup window.
+      const message = window.PH_AUTH_DISABLED || !window.phAuth
+        ? 'Login service is not configured yet. Please contact PresetHub support.'
+        : 'Login is still starting. Please wait a few seconds and try again.';
+      if (now - lastAuthNoticeAt > 3500) { toast(message, 'warning'); lastAuthNoticeAt = now; }
+      return;
+    }
     if (after) pendingAfterAuth = after;
-    if (mode === 'signup') window.phAuth.openSignUp(); else window.phAuth.openSignIn();
+    authLaunchPending = true;
+    try {
+      const result = mode === 'signup' ? window.phAuth.openSignUp() : window.phAuth.openSignIn();
+      Promise.resolve(result).catch(() => toast('Could not open the login window. Check your connection and try again.', 'error'))
+        .finally(() => { authLaunchPending = false; });
+      // Clerk opens a modal asynchronously; release the guard even if its SDK returns no promise.
+      setTimeout(() => { authLaunchPending = false; }, 2500);
+    } catch (_) {
+      authLaunchPending = false;
+      toast('Could not open the login window. Please try again.', 'error');
+    }
   }
   function openForgotPassword() { openAuth('login'); }
   function openResetPassword() { openAuth('login'); }
