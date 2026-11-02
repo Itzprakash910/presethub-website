@@ -59,6 +59,8 @@ function createOrder({ orderId, amount, currency = 'INR', customerId, phone, ema
       customer_name: name ? String(name).slice(0, 100) : undefined
     },
     order_meta: { return_url: returnUrl, notify_url: notifyUrl },
+    // Abandoned checkouts expire after 60 minutes (Cashfree's default is 30 days), so stale orders can be closed and coupons released.
+    order_expiry_time: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     order_note: note ? String(note).slice(0, 180) : undefined
   });
 }

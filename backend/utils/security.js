@@ -12,30 +12,51 @@ const { securityAlert } = require('./alerts');
 const LOCK_AFTER = Number(process.env.LOGIN_LOCK_AFTER || 8);     // wrong passwords
 const LOCK_WINDOW_MS = 15 * 60 * 1000;                              // counting window
 const LOCK_FOR_MS = 20 * 60 * 1000;                                 // lock duration
-const lockState = new Map(); // email -> { n, first, lockedUntil }
+const lockState = new Map(); // key -> { n, first, lockedUntil } (in memory; resets on restart)
 
-function lockKey(email) { return String(email || '').toLowerCase().trim(); }
-function isLockedOut(email) {
-  const s = lockState.get(lockKey(email));
+// Lock key = account + client IP, so a stranger cannot lock a real user out from another network.
+// A much higher per-account ceiling still stops slow, distributed guessing.
+const GLOBAL_LOCK_MULTIPLIER = 5;
+function lockKeys(email, req) {
+  const e = String(email || '').toLowerCase().trim();
+  const ip = String((req && req.ip) || 'unknown');
+  return { e, perIp: `${e}|${ip}`, perAccount: `${e}|*` };
+}
+function lockedMinutes(key) {
+  const s = lockState.get(key);
   if (!s) return 0;
   if (s.lockedUntil && s.lockedUntil > Date.now()) return Math.ceil((s.lockedUntil - Date.now()) / 60000);
-  if (s.lockedUntil && s.lockedUntil <= Date.now()) lockState.delete(lockKey(email));
+  if (s.lockedUntil && s.lockedUntil <= Date.now()) lockState.delete(key);
   return 0;
 }
-function noteLoginFailure(email, req) {
-  const k = lockKey(email); if (!k) return;
-  const now = Date.now();
-  let s = lockState.get(k);
+function isLockedOut(email, req) {
+  const k = lockKeys(email, req);
+  if (!k.e) return 0;
+  return Math.max(lockedMinutes(k.perIp), lockedMinutes(k.perAccount));
+}
+function bump(key, limit, now) {
+  let s = lockState.get(key);
   if (!s || now - s.first > LOCK_WINDOW_MS) s = { n: 0, first: now, lockedUntil: 0 };
   s.n++;
-  if (s.n >= LOCK_AFTER) {
-    s.lockedUntil = now + LOCK_FOR_MS;
-    securityAlert(req, 'Account temporarily locked after repeated wrong passwords', { email: k, failures: s.n, lockMinutes: LOCK_FOR_MS / 60000 }, 'critical', 10 * 60 * 1000);
+  const justLocked = s.n >= limit && !(s.lockedUntil > now);
+  if (s.n >= limit) s.lockedUntil = now + LOCK_FOR_MS;
+  lockState.set(key, s);
+  return { n: s.n, justLocked };
+}
+function noteLoginFailure(email, req) {
+  const k = lockKeys(email, req); if (!k.e) return;
+  const now = Date.now();
+  const ip = bump(k.perIp, LOCK_AFTER, now);
+  bump(k.perAccount, LOCK_AFTER * GLOBAL_LOCK_MULTIPLIER, now);
+  if (ip.justLocked) {
+    securityAlert(req, 'Account temporarily locked after repeated wrong passwords', { email: k.e, failures: ip.n, lockMinutes: LOCK_FOR_MS / 60000 }, 'critical', 10 * 60 * 1000);
   }
-  lockState.set(k, s);
   if (lockState.size > 5000) for (const [key, v] of lockState) if (now - v.first > LOCK_WINDOW_MS && (!v.lockedUntil || v.lockedUntil < now)) lockState.delete(key);
 }
-function clearLoginFailures(email) { lockState.delete(lockKey(email)); }
+function clearLoginFailures(email, req) {
+  const k = lockKeys(email, req);
+  lockState.delete(k.perIp); // the per-account counter is left to expire on its own
+}
 
 // ---------- rate limiters ----------
 const json429 = (msg) => (req, res, next, options) => res.status(429).json({ error: msg, retryAfterSeconds: Math.ceil(options.windowMs / 1000) });
