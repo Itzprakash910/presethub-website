@@ -14,6 +14,10 @@ const { checkPresetViral } = require('../utils/viral');
 const { isProUser } = require('../utils/plans');
 const { uploadLimiter, bulkLimiter } = require('../utils/security');
 
+const { seenRecently } = require('../utils/dedupe');
+const SHARE_PLATFORMS = new Set(['whatsapp', 'telegram', 'facebook', 'twitter', 'x', 'instagram', 'linkedin', 'pinterest', 'reddit', 'email', 'sms', 'copy', 'native', 'link', 'menu', 'unknown', 'other']);
+const cleanPlatform = v => { const p = String(v || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40); return SHARE_PLATFORMS.has(p) ? p : 'other'; };
+
 const router = express.Router();
 const SITE_URL = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
 
@@ -231,9 +235,12 @@ router.post('/bulk', auth, uploadLimiter, bulkUploadFields, async (req, res) => 
 });
 
 // ===== FEATURED / TRENDING =====
+const featuredCache = new Map(); // limit -> { at, rows }
 router.get('/featured', async (req, res) => {
   try {
     const limit = Math.min(24, Math.max(1, parseInt(req.query.limit) || 8));
+    const hit = featuredCache.get(limit);
+    if (hit && Date.now() - hit.at < 60 * 1000) { res.set('Cache-Control', 'public, max-age=60'); return res.json(hit.rows); }
     const rows = await Preset.aggregate([
       { $match: { status: 'approved' } },
       { $lookup: { from: 'comments', localField: '_id', foreignField: 'presetId', as: 'commentDocs' } },
@@ -253,7 +260,10 @@ router.get('/featured', async (req, res) => {
       { $limit: limit },
       { $project: { commentDocs: 0 } }
     ]);
-    res.json(rows.map(toPublicPreset));
+    const out = rows.map(toPublicPreset);
+    featuredCache.set(limit, { at: Date.now(), rows: out });
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json(out);
   } catch (err) {
     console.error('Featured presets error:', err);
     res.status(500).json({ error: 'Could not load featured presets' });
@@ -340,8 +350,8 @@ router.post('/', auth, uploadLimiter, uploadFields, validate(presetValidation), 
       name,
       description: description || '',
       category: category || 'General',
-      tags: tags ? (typeof tags === 'string' ? tags.split(',').map(t => t.trim().toLowerCase()) : tags) : [],
-      price: parseFloat(price) || 0,
+      tags: tags ? (typeof tags === 'string' ? tags.split(',') : (Array.isArray(tags) ? tags : [])).map(t => String(t).trim().toLowerCase().slice(0, 30)).filter(Boolean).slice(0, 10) : [],
+      price: Math.max(0, Math.min(999999.99, parseFloat(price) || 0)),
       author: user.name,
       authorId: user._id,
       fileUrl, fileStorageKey, previewImage, previewStorageKey,
@@ -380,10 +390,8 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
 
   if (preset.price > 0) {
     if (!req.user) return res.status(401).json({ error: 'Please log in to purchase or download paid presets' });
-    // Pro members download premium presets for free (checked on the server, not in the browser).
-    const dlUser = await User.findById(req.user.id).select('subscription').lean();
-    const proFree = isProUser(dlUser);
-    if (preset.authorId.toString() !== req.user.id && !proFree) {
+    // Paid presets always require a purchase (Pro does not bypass it; /:id/file enforces the same rule).
+    if (preset.authorId.toString() !== req.user.id) {
       const paid = await Order.findOne({ presetId: preset._id, userId: req.user.id, status: 'paid' });
       if (!paid) return res.status(403).json({ error: 'Please purchase this preset first' });
     }
@@ -414,7 +422,7 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
   const token = jwt.sign(
     { purpose: 'preset-download', presetId: preset._id.toString(), userId: req.user?.id || null, ver: req.user ? Number((await User.findById(req.user.id).select('sessionVersion').lean())?.sessionVersion || 0) : 0 },
     process.env.JWT_SECRET,
-    { expiresIn: '2m' }
+    { expiresIn: '2m', algorithm: 'HS256' }
   );
   res.json({
     downloadUrl: `${SITE_URL}/api/presets/${preset._id}/file?token=${encodeURIComponent(token)}`,
@@ -425,7 +433,7 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
 router.get('/:id/file', async (req, res, next) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).end();
-    const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET);
+    const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET, { algorithms: ['HS256'] });
     if (payload.purpose !== 'preset-download' || payload.presetId !== req.params.id) return res.status(403).end();
 
     const preset = await Preset.findOne({ _id: req.params.id, status: 'approved' }).lean();
@@ -468,8 +476,7 @@ router.post('/bulk-download', auth, bulkLimiter, async (req, res) => {
   const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id));
   if (!validIds.length) return res.status(400).json({ error: 'No valid preset IDs' });
   const presets = await Preset.find({ _id: { $in: validIds }, status: 'approved' }).lean();
-  const bulkIsPro = isProUser(bulkUser);
-  const paidIds = presets.filter(p => Number(p.price || 0) > 0 && p.authorId.toString() !== req.user.id && !bulkIsPro).map(p => p._id);
+  const paidIds = presets.filter(p => Number(p.price || 0) > 0 && p.authorId.toString() !== req.user.id).map(p => p._id);
   let paid = [];
   if (paidIds.length) paid = await Order.find({ userId: req.user.id, presetId: { $in: paidIds }, status: 'paid' }).select('presetId').lean();
   const owned = new Set(paid.map(o => o.presetId.toString()));
@@ -478,7 +485,7 @@ router.post('/bulk-download', auth, bulkLimiter, async (req, res) => {
   const downloadUser = await User.findById(req.user.id).select('sessionVersion').lean();
   const sessionVersion = Number(downloadUser?.sessionVersion || 0);
   for (const p of presets) {
-    const requiresPayment = Number(p.price || 0) > 0 && p.authorId.toString() !== req.user.id && !bulkIsPro;
+    const requiresPayment = Number(p.price || 0) > 0 && p.authorId.toString() !== req.user.id;
     if (requiresPayment && !owned.has(p._id.toString())) {
       skipped.push({ id: p._id.toString(), name: p.name, reason: 'Purchase required' });
       continue;
@@ -489,7 +496,7 @@ router.post('/bulk-download', auth, bulkLimiter, async (req, res) => {
     }
     const token = jwt.sign(
       { purpose: 'preset-download', presetId: p._id.toString(), userId: req.user.id, ver: sessionVersion },
-      process.env.JWT_SECRET, { expiresIn: '2m' }
+      process.env.JWT_SECRET, { expiresIn: '2m', algorithm: 'HS256' }
     );
     downloads.push({ id: p._id.toString(), name: p.name, url: `${SITE_URL}/api/presets/${p._id}/file?token=${encodeURIComponent(token)}`, filename: safeFilename(p.originalName || `${slugify(p.name)}.xmp`) });
   }
@@ -556,7 +563,11 @@ router.put('/:id', auth, uploadLimiter, uploadFields, async (req, res) => {
     if (preset.authorId.toString() !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Unauthorized' });
 
     const { name, description, category, tags, price } = req.body;
-    if (name !== undefined) preset.name = String(name).trim().slice(0, 100);
+    if (name !== undefined) {
+      const cleanName = String(name).trim().slice(0, 100);
+      if (!cleanName) return res.status(400).json({ error: 'Name cannot be empty.' });
+      preset.name = cleanName;
+    }
     if (description !== undefined) preset.description = String(description).trim().slice(0, 500);
     if (category !== undefined) preset.category = String(category).trim().slice(0, 50) || 'General';
     if (tags !== undefined) preset.tags = (typeof tags === 'string' ? tags.split(',') : tags).map(t => String(t).trim().toLowerCase()).filter(Boolean).slice(0, 10);
@@ -601,6 +612,7 @@ router.post('/:id/ad-impression', optionalAuth, async (req, res) => {
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
   if (req.user && preset.authorId.toString() === req.user.id)
     return res.json({ success: true, message: 'Author view not counted' });
+  if (seenRecently(`i:${req.user?.id || req.ip}:${req.params.id}`, 5 * 60 * 1000)) return res.json({ success: true, impressions: Number(preset.adImpressions || 0) });
   const fresh = await Preset.findByIdAndUpdate(req.params.id, { $inc: { adImpressions: 1 } }, { new: true, projection: { adImpressions: 1 } }).lean();
   res.json({ success: true, impressions: fresh?.adImpressions || 0 });
 });
@@ -608,8 +620,10 @@ router.post('/:id/ad-impression', optionalAuth, async (req, res) => {
 router.post('/:id/view', optionalAuth, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id))
     return res.status(400).json({ error: 'Invalid ID' });
-  const preset = await Preset.findById(req.params.id).select('name authorId views').lean();
+  const preset = await Preset.findOne({ _id: req.params.id, status: 'approved' }).select('name authorId views').lean();
   if (!preset) return res.status(404).json({ error: 'Preset not found' });
+  // One counted view per visitor per preset per 30 minutes (stops counter inflation by looping the endpoint).
+  if (seenRecently(`v:${req.user?.id || req.ip}:${req.params.id}`)) return res.json({ views: Number(preset.views || 0), milestone: null });
   const fresh = await Preset.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } }, { new: true, projection: { name: 1, authorId: 1, views: 1 } }).lean();
   const milestones = [50,100,150,200,250,500,1000,2000,5000,10000];
   const views = Number(fresh?.views || 0);
@@ -650,8 +664,7 @@ router.post('/:id/share', optionalAuth, async (req, res, next) => {
     const preset = await Preset.findById(req.params.id).select('name authorId shares').lean();
     if (!preset) return res.status(404).json({ error: 'Preset not found' });
 
-    const { platform = 'unknown' } = req.body || {};
-    const safePlatform = String(platform).toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40) || 'unknown';
+    const safePlatform = cleanPlatform((req.body || {}).platform);
     const inc = { shares: 1 };
     inc[`shareStats.${safePlatform}`] = 1;
     const fresh = await Preset.findByIdAndUpdate(preset._id, { $inc: inc }, { new: true, projection: { shares: 1 } }).lean();

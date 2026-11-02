@@ -150,6 +150,7 @@ router.delete('/:id', auth, async (req, res) => {
 // ----- engagement -----
 router.post('/:id/view', async (req, res) => {
   if (!isId(req.params.id)) return res.status(400).json({ error: 'Invalid ID' });
+  if (require('../utils/dedupe').seenRecently(`tv:${req.ip}:${req.params.id}`)) { const cur = await TextPost.findOne({ _id: req.params.id, status: 'approved' }).select('views').lean(); return cur ? res.json({ views: cur.views || 0 }) : res.status(404).json({ error: 'Post not found' }); }
   const t = await TextPost.findOneAndUpdate({ _id: req.params.id, status: 'approved' }, { $inc: { views: 1 } }, { new: true, projection: { views: 1 } }).lean();
   if (!t) return res.status(404).json({ error: 'Post not found' });
   checkTextViral(t._id);

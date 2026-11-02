@@ -16,7 +16,7 @@ function strongPassword(value) {
 }
 
 function signUserToken(user) {
-  return jwt.sign({ id: user._id.toString(), email: user.email, role: user.role, ver: Number(user.sessionVersion || 0) }, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign({ id: user._id.toString(), email: user.email, role: user.role, ver: Number(user.sessionVersion || 0) }, JWT_SECRET, { expiresIn: '7d', algorithm: 'HS256' });
 }
 const auth = require('../middleware/auth');
 const { validate, signupValidation, loginValidation, changePasswordValidation } = require('../utils/validators');
@@ -126,20 +126,27 @@ router.post('/signup', signupLimiter, validate(signupValidation), async (req, re
   }
 });
 
+const DUMMY_HASH = bcrypt.hashSync('presethub-dummy-password', 12);
+
 router.post('/login', validate(loginValidation), async (req, res) => {
   try {
     const email = req.body.email.toLowerCase().trim();
-    const locked = isLockedOut(email);
+    const locked = isLockedOut(email, req);
     if (locked) return res.status(429).json({ error: `Too many wrong attempts. Try again in about ${locked} minute(s), or use "Forgot password".` });
     const user = await User.findOne({ email });
-    if (!user) { recordFailedLogin(req, email); noteLoginFailure(email, req); return res.status(401).json({ error: 'Invalid credentials' }); }
+    if (!user) {
+      // Same bcrypt work as a real login so response time does not reveal which emails exist.
+      await bcrypt.compare(String(req.body.password || ''), DUMMY_HASH).catch(() => {});
+      recordFailedLogin(req, email); noteLoginFailure(email, req);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
     if (user.status === 'blocked' || user.status === 'deactivated' || !await bcrypt.compare(req.body.password, user.password)) {
       recordFailedLogin(req, email); noteLoginFailure(email, req);
       if (user.role === 'admin') adminAlert({ type: 'security', severity: 'critical', title: 'Failed login on ADMIN account', fingerprint: `admin-fail-${req.ip}`, details: { ...requestInfo(req), email } });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    clearFailedLogins(req, email); clearLoginFailures(email);
+    clearFailedLogins(req, email); clearLoginFailures(email, req);
     if (user.role === 'admin') adminAlert({ type: 'security', severity: 'warning', title: 'Admin logged in', fingerprint: `admin-login-${req.ip}`, throttleMs: 30 * 60 * 1000, details: { ...requestInfo(req), email } });
 
     user.lastLogin = new Date();

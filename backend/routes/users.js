@@ -227,27 +227,9 @@ router.get('/me/subscription', auth, async (req, res) => {
   });
 });
 
-router.post('/ads/watched', auth, async (req, res) => {
-  const user = await User.findById(req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const sub = user.subscription || {};
-  if (sub.lastAdWatch && (Date.now() - new Date(sub.lastAdWatch).getTime()) < 5000) {
-    return res.status(429).json({ error: 'Please wait before next ad' });
-  }
-  sub.adWatchCount = (sub.adWatchCount || 0) + 1;
-  sub.lastAdWatch = new Date();
-  if (sub.adWatchCount % 10 === 0) {
-    const now = new Date();
-    let expiry = sub.expiry ? new Date(sub.expiry) : now;
-    if (expiry < now) expiry = now;
-    expiry.setDate(expiry.getDate() + 10);
-    sub.expiry = expiry;
-    sub.adRewardDays = (sub.adRewardDays || 0) + 10;
-  }
-  user.subscription = sub;
-  await user.save();
-  res.json({ adWatchCount: sub.adWatchCount, expiry: sub.expiry, daysEarned: sub.adRewardDays || 0 });
-});
+// Disabled: this endpoint granted 10 free Pro days per 10 calls with no proof that any ad was watched
+// (and the website never calls it), so anyone could script unlimited free Pro. Re-enable only with server-side ad verification.
+router.post('/ads/watched', auth, (req, res) => res.status(410).json({ error: 'This feature is no longer available.' }));
 
 router.post('/referrals/generate', auth, async (req, res) => {
   const user = await User.findById(req.user.id);

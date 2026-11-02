@@ -17,11 +17,19 @@ function slugify(v) {
 
 router.post('/create', auth, async (req, res) => {
   try {
-    const { presetId, platform = 'link' } = req.body;
+    const { presetId } = req.body;
+    const platform = String(req.body.platform || 'link').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40) || 'link';
     if (!mongoose.Types.ObjectId.isValid(presetId))
       return res.status(400).json({ error: 'Invalid preset ID' });
     const preset = await Preset.findOne({ _id: presetId, status: 'approved' });
     if (!preset) return res.status(404).json({ error: 'Preset not found' });
+
+    const SITE = (process.env.CLIENT_URL || 'https://presethub.site').replace(/\/+$/, '');
+    const fullUrl0 = `${SITE}/preset/${preset._id}/${slugify(preset.name)}/`;
+    // Reuse the user's existing link for this preset and platform instead of creating a new one every time.
+    const already = await ShortLink.findOne({ presetId, userId: req.user.id, platform }).lean();
+    if (already) return res.json({ success: true, code: already.code, shortUrl: `${SITE}/s/${already.code}`, fullUrl: fullUrl0 });
+    if (await ShortLink.countDocuments({ userId: req.user.id }) >= 1000) return res.status(429).json({ error: 'Short link limit reached.' });
 
     let code, exists = true;
     while (exists) {

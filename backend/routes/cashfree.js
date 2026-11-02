@@ -51,14 +51,18 @@ async function resolvePhone(user, bodyPhone) {
 }
 
 // Resolves an optional coupon to a server-side discount. Returns { final, list, code, couponId } or throws a 400.
-async function resolveCoupon({ couponCode, kind, presetId, listRupees }) {
+async function resolveCoupon({ couponCode, kind, presetId, listRupees, userId }) {
   const list = Math.round(Number(listRupees) * 100);
   const code = couponCode ? C.normaliseCode(couponCode) : null;
   if (couponCode && !code) throw Object.assign(new Error('Enter a valid coupon code.'), { status: 400 });
   if (!code) return { finalPaise: list, listPaise: list, code: '', couponId: null };
+  // Coupons only apply to presets and Pro plans (never tips or boosts, even for "all" coupons).
+  if (kind !== 'preset' && kind !== 'subscription') throw Object.assign(new Error('Coupons apply to presets and Pro plans only.'), { status: 400 });
   const c = await Coupon.findOne({ code }).lean();
   const check = C.isUsable(c, { kind, presetId });
   if (!check.ok) throw Object.assign(new Error(check.reason), { status: 400 });
+  // One paid use per account.
+  if (userId && await Order.exists({ userId, couponCode: code, status: 'paid' })) throw Object.assign(new Error('You have already used this coupon.'), { status: 400 });
   const { finalPaise } = C.applyDiscount(list, c);
   return { finalPaise, listPaise: list, code, couponId: c._id };
 }
@@ -74,7 +78,7 @@ async function startCheckout(req, res, { userId, presetId = null, kind, plan = '
 
     const list = Math.round(Number(amountRupees) * 100) / 100;
     if (!Number.isFinite(list) || list < 1 || list > 100000) return res.status(400).json({ error: 'Amount is outside the supported range.' });
-    const priced = await resolveCoupon({ couponCode, kind, presetId, listRupees: list });
+    const priced = await resolveCoupon({ couponCode, kind, presetId, listRupees: list, userId });
     const amount = priced.finalPaise / 100;
 
     orderId = newOrderId();
@@ -106,6 +110,12 @@ async function startCheckout(req, res, { userId, presetId = null, kind, plan = '
   }
 }
 
+// Gives back the coupon use that was reserved at checkout when the order never got paid.
+async function releaseCoupon(order) {
+  if (!order?.couponCode) return;
+  await Coupon.updateOne({ code: order.couponCode, usedCount: { $gt: 0 } }, { $inc: { usedCount: -1 } }).catch(() => {});
+}
+
 // Authoritative sync: asks Cashfree for the order, then fulfils or marks it. Used by webhook and refresh.
 async function syncOrder(order) {
   const fetched = await cf.fetchOrder(order._id);
@@ -120,7 +130,8 @@ async function syncOrder(order) {
     return 'paid';
   }
   if (st === 'EXPIRED' || st === 'TERMINATED' || st === 'CANCELLED') {
-    await Order.updateOne({ _id: order._id, status: 'created' }, { $set: { status: st === 'EXPIRED' ? 'expired' : 'failed', failureReason: `Cashfree status: ${st}` } });
+    const closed = await Order.updateOne({ _id: order._id, status: 'created' }, { $set: { status: st === 'EXPIRED' ? 'expired' : 'failed', failureReason: `Cashfree status: ${st}` } });
+    if (closed.modifiedCount) await releaseCoupon(order);
     return st.toLowerCase();
   }
   return 'created';
@@ -192,7 +203,7 @@ router.post('/coupon/check', auth, async (req, res) => {
       if (!pl) return res.status(400).json({ error: 'Invalid plan' });
       list = pl.price;
     } else return res.status(400).json({ error: 'Coupons apply to presets and Pro plans.' });
-    const priced = await resolveCoupon({ couponCode, kind, presetId, listRupees: list });
+    const priced = await resolveCoupon({ couponCode, kind, presetId, listRupees: list, userId: req.user.id });
     res.json({ valid: true, code: priced.code, listRupees: priced.listPaise / 100, finalRupees: priced.finalPaise / 100, discountRupees: (priced.listPaise - priced.finalPaise) / 100 });
   } catch (e) {
     res.status(e.status || 400).json({ valid: false, error: e.message || 'Invalid coupon' });
@@ -238,5 +249,16 @@ async function refreshHandler(req, res) {
 }
 router.post('/refresh/:orderId', auth, refreshHandler);
 
+// Closes abandoned checkouts: asks Cashfree about orders still "created" after 75 minutes.
+// Expired ones are marked and their coupon use is released; a late PAID one is fulfilled as usual.
+async function sweepStaleOrders(limit = 25) {
+  if (!cf.isConfigured()) return 0;
+  const stale = await Order.find({ provider: 'cashfree', status: 'created', createdAt: { $lt: new Date(Date.now() - 75 * 60 * 1000) } }).sort({ createdAt: 1 }).limit(limit).lean();
+  let n = 0;
+  for (const o of stale) { try { await syncOrder(o); n++; } catch (e) { console.warn('Stale order sweep failed:', o._id, e.message); } }
+  return n;
+}
+
 module.exports = router;
 module.exports.refreshHandler = refreshHandler;
+module.exports.sweepStaleOrders = sweepStaleOrders;
