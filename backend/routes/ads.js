@@ -14,6 +14,25 @@ function serialize(ad) {
   };
 }
 
+router.get('/feed', async (req, res) => {
+  try {
+    const now = new Date();
+    const ads = await HomeAd.find({
+      active: true,
+      $and: [
+        { $or: [{ startsAt: null }, { startsAt: { $lte: now } }] },
+        { $or: [{ endsAt: null }, { endsAt: { $gte: now } }] },
+      ]
+    }).sort({ createdAt: -1 }).limit(12).lean();
+    if (ads.length) HomeAd.updateMany({ _id: { $in: ads.map(a => a._id) } }, { $inc: { impressions: 1 } }).catch(() => {});
+    res.set('Cache-Control', 'private, max-age=60');
+    res.json({ ads: ads.map(serialize) });
+  } catch (err) {
+    console.error('Ads feed error:', err);
+    res.status(500).json({ error: 'Failed to load promotions' });
+  }
+});
+
 router.get('/home', async (req, res) => {
   try {
     const now = new Date();
