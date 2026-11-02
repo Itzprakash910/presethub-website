@@ -51,7 +51,7 @@ function money(v) { return Number(v || 0) <= 0 ? 'Free' : `₹${Number(v).toFixe
 function isLinkedAccount(user) { return !!(user && user.email && !/@users\.presethub\.local$/i.test(user.email) && user.status !== 'blocked' && user.status !== 'deactivated'); }
 function apiHeaders(user) {
   if (!isLinkedAccount(user) || !process.env.JWT_SECRET) return {};
-  const token = jwt.sign({ purpose: 'bot', id: String(user._id), email: user.email, role: user.role, ver: Number(user.sessionVersion || 0) }, process.env.JWT_SECRET, { expiresIn: '10m' });
+  const token = jwt.sign({ purpose: 'bot', id: String(user._id), email: user.email, role: user.role, ver: Number(user.sessionVersion || 0) }, process.env.JWT_SECRET, { expiresIn: '10m', algorithm: 'HS256' });
   return { Authorization: `Bearer ${token}` };
 }
 function loggedIn(ctx) { return isLinkedAccount(ctx.dbUser); }
@@ -358,6 +358,7 @@ function registerHandlers() {
     await ctx.reply(`🔐 Telegram को account से जोड़ने के लिए:\n1. ${SITE_URL}/?action=login पर login करें\n2. Profile → "Telegram link code" लें\n3. यहाँ भेजें: /link CODE (जैसे /link 123456)`, mainMenu(ctx.dbUser));
   });
   const linkAttempts = new Map();
+  const globalLink = { n: 0, first: Date.now() };
   bot.command('link', async ctx => {
     const code = (ctx.message.text.split(/\s+/)[1] || '').replace(/\D/g, '');
     if (!/^\d{6}$/.test(code)) return ctx.reply('Usage: /link 123456 (website से code लें)');
@@ -368,6 +369,10 @@ function registerHandlers() {
     if (now - rec.first > 10 * 60 * 1000) { rec.n = 0; rec.first = now; }
     rec.n++; linkAttempts.set(String(ctx.from.id), rec);
     if (rec.n > 5) return ctx.reply('⛔ Bahut zyada koshish. 10 minute baad phir try karein.');
+    // Global ceiling across all Telegram users: stops guessing the 6-digit code from many throw-away Telegram accounts.
+    if (now - globalLink.first > 10 * 60 * 1000) { globalLink.n = 0; globalLink.first = now; }
+    if (++globalLink.n > 40) return ctx.reply('⛔ Linking abhi busy hai. Kuch minute baad phir try karein.');
+    if (linkAttempts.size > 5000) linkAttempts.clear();
     const hash = require('crypto').createHash('sha256').update(code).digest('hex');
     const u = await User.findOne({ botLinkHash: hash, botLinkExpires: { $gt: new Date() }, status: 'active' });
     if (u) linkAttempts.delete(String(ctx.from.id));

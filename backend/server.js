@@ -235,11 +235,15 @@ try { ensureStructure(); } catch (err) { console.error('ensureStructure error:',
 
 // ============ APP CONFIG ============
 app.disable('x-powered-by');
+const SITE_HOST = (() => { try { return new URL(SITE_URL).host.toLowerCase(); } catch (_) { return 'presethub.site'; } })();
 app.set('trust proxy', 1);
 // Force HTTPS in production (Render terminates TLS and sets x-forwarded-proto).
 app.use((req, res, next) => {
   if (process.env.NODE_ENV === 'production' && req.headers['x-forwarded-proto'] === 'http') {
-    return res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
+    // Only redirect to hosts we own: a forged Host header must never decide where the visitor lands.
+    const reqHost = String(req.headers.host || '').toLowerCase();
+    const okHosts = new Set([SITE_HOST, `www.${SITE_HOST}`, String(process.env.RENDER_EXTERNAL_HOSTNAME || '').toLowerCase()].filter(Boolean));
+    return res.redirect(301, `https://${okHosts.has(reqHost) ? reqHost : SITE_HOST}${req.originalUrl}`);
   }
   next();
 });
@@ -381,7 +385,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please try again later.' },
-  handler: (req, res, next, options) => { securityAlert(req, 'API rate limit exceeded (possible scraping / DoS)', { limit: 300, window: '15 min' }, 'warning', 20 * 60 * 1000); res.status(429).json(options.message); }
+  handler: (req, res, next, options) => { securityAlert(req, 'API rate limit exceeded (possible scraping / DoS)', { limit: options.max, window: '15 min' }, 'warning', 20 * 60 * 1000); res.status(429).json(options.message); }
 });
 // Login and signup attempts are limited on /api/auth writes (GET requests such as /me are not counted).
 const authLimiter = rateLimit({
@@ -495,9 +499,14 @@ app.use((req, res, next) => {
     html = html.replace('<!--GSC_VERIFY-->', name === 'index.html' && GSC_TOKEN ? `<meta name="google-site-verification" content="${GSC_TOKEN}">` : '');
     html = html.replace('<!--TRACKING-->', PRIVATE_PAGES.has(name) ? '' : TRACKING_TAG);
     if (PRIVATE_PAGES.has(name)) { res.set('X-Robots-Tag', 'noindex, nofollow, noarchive'); res.set('Cache-Control', 'no-store'); }
-    res.set('Cache-Control', 'public, max-age=300');
+    else res.set('Cache-Control', 'public, max-age=300');
     res.type('html').send(html);
   } catch (e) { next(e); }
+});
+
+// RFC 9116 security contact (dotfile folders are denied by the static handler, so it is served explicitly).
+app.get(['/.well-known/security.txt', '/security.txt'], (req, res) => {
+  res.type('text/plain; charset=utf-8').set('Cache-Control', 'public, max-age=86400').sendFile(path.join(frontendRoot, 'security.txt'));
 });
 
 // Frontend static files
@@ -776,6 +785,8 @@ async function postDailyToChannel() {
   } catch (e) { console.warn('Daily channel post failed:', e.message); }
 }
 setInterval(postDailyToChannel, 60 * 60 * 1000).unref?.();
+// Close abandoned Cashfree checkouts and release their coupon uses.
+setInterval(() => { require('./routes/cashfree').sweepStaleOrders().catch(e => console.warn('Order sweep failed:', e.message)); }, 15 * 60 * 1000).unref?.();
 
 app.listen(PORT, '0.0.0.0', async () => {
       console.log('');
