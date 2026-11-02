@@ -1,3 +1,4 @@
 Contact: mailto:security@presethub.site
+Expires: 2027-10-31T23:59:59.000Z
 Preferred-Languages: en, hi
-Canonical: https://presethub.site/security.txt
+Canonical: https://presethub.site/.well-known/security.txt

@@ -1,8 +1,8 @@
 const STATIC_CACHE = 'presethub-static-v15';
-const API_CACHE = 'presethub-api-v7';
+const API_CACHE = 'presethub-api-v8';
 const IMAGE_CACHE = 'presethub-images-v6';
 const CORE = [
-  '/', '/index.html', '/manifest.json', '/icons.css?v=3.25.0', '/style.css?v=3.25.0', '/app.js?v=3.25.0', '/texts.js?v=3.2.0', '/shayari/',
+  '/', '/index.html', '/manifest.json', '/icons.css?v=3.25.1', '/style.css?v=3.25.1', '/app.js?v=3.25.1', '/texts.js?v=3.2.0', '/shayari/',
   '/privacy.html', '/terms.html', '/about.html', '/blog.html',
   '/creator-program.html', '/faq.html', '/contact.html',
   '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=3.2.0', '/cookie-consent.js?v=3.2.0', '/download-app.js?v=2.9.6'
@@ -36,15 +36,22 @@ async function networkFirst(request, cacheName) {
   }
 }
 
+const PUBLIC_API_PREFIXES = ['/api/presets', '/api/texts', '/api/ads/', '/api/features/daily', '/api/features/leaderboard', '/api/users/top', '/api/collections/public/', '/api/comments/', '/api/reviews/'];
+const PUBLIC_PROFILE = /^\/api\/users\/[a-f0-9]{24}(\/presets)?\/?$/i;
+const PRIVATE_SUFFIX = /\/(file|download|bulk-download|share-stats)(\/|$)/;
+function isPublicApi(p) {
+  if (PRIVATE_SUFFIX.test(p)) return false;
+  return PUBLIC_API_PREFIXES.some(x => p.startsWith(x)) || PUBLIC_PROFILE.test(p);
+}
+
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   if (u.pathname.startsWith('/admin')) return;
 
-  // Public API responses are cached after the first successful online load.
-  if (u.origin === self.location.origin && u.pathname.startsWith('/api/') &&
-      !u.pathname.startsWith('/api/auth/') && !u.pathname.startsWith('/api/admin/') &&
-      !u.pathname.startsWith('/api/payments/') && !u.pathname.startsWith('/api/users/me') && !u.pathname.startsWith('/api/chat/') && !u.pathname.startsWith('/api/share/me')) {
+  // Only PUBLIC API responses are cached (allowlist). Private data (creator earnings, payout details, notifications,
+  // feed, paid preset files) must never be stored on the device, where another user of the same browser could read it offline.
+  if (u.origin === self.location.origin && isPublicApi(u.pathname)) {
     e.respondWith(networkFirst(e.request, API_CACHE).catch(() => new Response(JSON.stringify({ error: 'Offline. Try again when you are connected.' }), { status: 503, headers: { 'Content-Type': 'application/json' } })));
     return;
   }
