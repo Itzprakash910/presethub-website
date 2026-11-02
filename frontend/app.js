@@ -59,9 +59,9 @@
   const avatarTag = (src, name, cls='') => {
     const initial = esc(String(name || 'U').trim().charAt(0).toUpperCase() || 'U');
     if (!src) return `<span class="avatar-fallback ${cls}" aria-hidden="true">${initial}</span>`;
-    return `<span class="avatar-shell ${cls}"><img src="${esc(assetUrl(src))}" alt="${esc(name || 'User')} profile photo" loading="lazy" decoding="async" onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.hidden=false"><span class="avatar-fallback" hidden aria-hidden="true">${initial}</span></span>`;
+    return `<span class="avatar-shell ${cls}"><img src="${esc(assetUrl(src))}" alt="${esc(name || 'User')} profile photo" loading="lazy" decoding="async" data-ph-img="avatar"><span class="avatar-fallback" hidden aria-hidden="true">${initial}</span></span>`;
   };
-  const imgTag = (src, alt, cls='') => `<img class="${cls}" src="${esc(assetUrl(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer-when-downgrade" onerror="this.onerror=null;this.classList.add('img-failed');var w=this.parentElement;if(w){w.classList.add('img-failed-wrap');w.setAttribute('data-initial',(this.alt||'P').trim().charAt(0).toUpperCase());}">`;
+  const imgTag = (src, alt, cls='') => `<img class="${cls}" src="${esc(assetUrl(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer-when-downgrade" data-ph-img="placeholder">`;
 
   // ============ PERSISTENT CLIENT QUEUE / CACHE ============
   const UPLOAD_DB = 'presethub-client-v2';
@@ -209,7 +209,8 @@
       const payload = JSON.parse(raw);
       await api('/auth/profile', { method: 'PUT', body: JSON.stringify(payload) });
       localStorage.removeItem('presethub_pending_profile');
-      const r = await api('/auth/me'); state.user = r.user; updateAuthUI();
+      const r = (window.phAuth && window.phAuth.user && window.phAuth.user()) ? await api('/auth/me') : { user: null };
+      state.user = r.user; updateAuthUI();
       toast('Pending profile update completed');
     } catch (_) {}
   }
@@ -381,7 +382,7 @@
   }
 
   function featuredCard(p) {
-    return `<article class="featured-card"><a class="featured-image" href="${presetUrl(p)}"><img src="${esc(assetUrl(p.previewImage))}" alt="${esc(p.name)} preview" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackPreview}'"></a><div class="featured-body"><div class="featured-top"><span class="tag">${esc(p.category || 'General')}</span><span class="price ${Number(p.price||0)===0?'free':''}">${money(p.price)}</span></div><h3>${esc(p.name)}</h3><button class="author-link" data-action="profile" data-id="${esc(p.authorId||'')}">By ${esc(p.author||'Creator')}</button><p>${esc(p.description || 'Lightroom preset')}</p><div class="featured-stats"><span>★ ${Number(p.avgRating||0).toFixed(1)}</span><span>👁 ${p.views||0}</span><span>♥ ${p.likesCount||0}</span><span>💬 ${p.commentsCount||0}</span><span>↗ ${p.shares||0}</span><span>↓ ${p.downloads||0}</span></div><div class="card-actions"><button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}">View details</button><button class="icon-action" data-action="share" data-id="${esc(p.id)}" title="Share"><i class="fas fa-share-nodes"></i></button></div></div></article>`;
+    return `<article class="featured-card"><a class="featured-image" href="${presetUrl(p)}"><img src="${esc(assetUrl(p.previewImage))}" alt="${esc(p.name)} preview" loading="lazy" decoding="async" data-ph-img="fallback" data-fallback="${fallbackPreview}"></a><div class="featured-body"><div class="featured-top"><span class="tag">${esc(p.category || 'General')}</span><span class="price ${Number(p.price||0)===0?'free':''}">${money(p.price)}</span></div><h3>${esc(p.name)}</h3><button class="author-link" data-action="profile" data-id="${esc(p.authorId||'')}">By ${esc(p.author||'Creator')}</button><p>${esc(p.description || 'Lightroom preset')}</p><div class="featured-stats"><span>★ ${Number(p.avgRating||0).toFixed(1)}</span><span>👁 ${p.views||0}</span><span>♥ ${p.likesCount||0}</span><span>💬 ${p.commentsCount||0}</span><span>↗ ${p.shares||0}</span><span>↓ ${p.downloads||0}</span></div><div class="card-actions"><button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}">View details</button><button class="icon-action" data-action="share" data-id="${esc(p.id)}" title="Share"><i class="fas fa-share-nodes"></i></button></div></div></article>`;
   }
   function updateHeroFeatured(p) {
     const img=$('#heroFeaturedImage'), link=$('#heroFeaturedLink'), badge=$('#heroFeaturedBadge');
@@ -420,7 +421,7 @@
       const discount = Number(a.discountPercent || 0);
       const priceHtml = (price > 0 || original > 0)
         ? `<div class="home-ad-price">${price > 0 ? `<strong>${money(price)}</strong>` : ''}${original > 0 && original > price ? `<del>${money(original)}</del>` : ''}${discount > 0 ? `<span class="home-ad-discount">${discount}% OFF</span>` : ''}</div>` : '';
-      const image = a.imageUrl ? `<img src="${esc(assetUrl(a.imageUrl))}" alt="${esc(a.title)}" loading="lazy" decoding="async" onerror="this.closest('.home-ad-media')?.remove()">` : '';
+      const image = a.imageUrl ? `<img src="${esc(assetUrl(a.imageUrl))}" alt="${esc(a.title)}" loading="lazy" decoding="async" data-ph-img="hide-media">` : '';
       slot.innerHTML = `<article class="home-ad-card"><div class="home-ad-media" ${image ? '' : 'hidden'}>${image}</div><div class="home-ad-copy"><span class="home-ad-badge">${esc(a.adType === 'sponsor' ? 'Sponsored' : (a.badge || 'Featured'))}</span><h3>${esc(a.title)}</h3>${a.productName ? `<strong>${esc(a.productName)}</strong>` : ''}${a.description ? `<p>${esc(a.description)}</p>` : ''}${priceHtml}<div class="home-ad-actions"><a class="btn btn-primary btn-sm" href="${esc(a.linkUrl || '/') }" data-ad-click="${esc(a.id)}">देखें</a></div></div></article>`;
       slot.hidden = false;
     } catch (_) { slot.hidden = true; }
@@ -485,14 +486,14 @@
   async function prefetchOfflineCatalog() {
     if (!navigator.onLine) return;
     try {
-      const first = await fetch(`${API}/presets?page=1&limit=50&sort=newest`).then(r => { if (!r.ok) throw new Error('catalog'); return r.json(); });
-      cacheSet('api:GET:/presets?page=1&limit=50&sort=newest', first);
+      const first = await fetch(`${API}/presets?page=1&limit=24&sort=newest`).then(r => { if (!r.ok) throw new Error('catalog'); return r.json(); });
+      cacheSet('api:GET:/presets?page=1&limit=24&sort=newest', first);
       const totalPages = Math.min(Number(first.totalPages || 1), 10);
       const all = [...(first.presets || [])];
       for (let page = 2; page <= totalPages; page++) {
-        const data = await fetch(`${API}/presets?page=${page}&limit=50&sort=newest`).then(r => r.ok ? r.json() : null).catch(() => null);
+        const data = await fetch(`${API}/presets?page=${page}&limit=24&sort=newest`).then(r => r.ok ? r.json() : null).catch(() => null);
         if (!data) break;
-        cacheSet(`api:GET:/presets?page=${page}&limit=50&sort=newest`, data);
+        cacheSet(`api:GET:/presets?page=${page}&limit=24&sort=newest`, data);
         cacheSet(`presets:${page}:newest:::`, data);
         all.push(...(data.presets || []));
       }
@@ -645,7 +646,7 @@
       }
       const r = await api(`/presets/${encodeURIComponent(id)}/download`, { method: 'POST' });
       if (!r.downloadUrl) throw new Error('Download file unavailable');
-      const a = document.createElement('a'); a.href = r.downloadUrl; a.download = r.originalName || `${slug(p.name)}.xmp`; a.target='_self'; document.body.appendChild(a); a.click(); a.remove();
+      const a = document.createElement('a'); a.href = r.downloadUrl; a.download = r.originalName || `${slug(p.name)}.xmp`; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
       await notifyDownload(p.name, r.downloadUrl);
     } catch (e) { toast(e.message, 'error'); }
     finally { setTimeout(()=>progress?.remove(), 650); }
@@ -722,10 +723,9 @@
     paymentStartInFlight = true;
     try {
       const config = await api('/payments/provider');
-      if (!config.enabled || !['cashfree', 'phonepe', 'youpi'].includes(config.provider)) throw new Error('Payments are not configured yet. Please contact PresetHub support.');
+      if (!config.enabled || !['cashfree', 'youpi'].includes(config.provider)) throw new Error('Payments are not configured yet. Please contact PresetHub support.');
       const cashfree = config.provider === 'cashfree';
-      const phonepe = config.provider === 'phonepe';
-      const url = cashfree ? endpoint.replace('/payments/youpi/', '/payments/cashfree/') : phonepe ? endpoint.replace('/payments/youpi/', '/payments/phonepe/') : endpoint;
+      const url = cashfree ? endpoint.replace('/payments/youpi/', '/payments/cashfree/') : endpoint;
       const payload = { ...body };
       if (cashfree) {
         const couponKind = endpoint.includes('create-order') ? 'preset' : endpoint.includes('subscribe') ? 'subscription' : '';
@@ -762,7 +762,7 @@
         return;
       }
       if (!order.checkoutUrl || !/^https?:\/\//i.test(order.checkoutUrl)) throw new Error('Payment gateway returned an invalid checkout URL.');
-      toast(`Opening secure ${phonepe ? 'PhonePe' : 'YOUPI PG'} checkout…`, 'info');
+      toast('Opening secure YOUPI PG checkout…', 'info');
       window.location.assign(order.checkoutUrl);
     } catch (e) {
       closeModal();
@@ -789,7 +789,7 @@
         <ul class="pro-features">${(cfg.features || []).map(f => `<li><i class="fas fa-check"></i> ${esc(f)}</li>`).join('')}</ul>
         <div class="pro-plans" role="radiogroup" aria-label="Choose a plan">${plans.map((pl, i) => `<label class="pro-plan ${pl.id === 'yearly' ? 'selected' : ''}"><input type="radio" name="proPlan" value="${esc(pl.id)}" ${pl.id === 'yearly' ? 'checked' : ''}><span class="pro-plan-name">${esc(pl.label)}</span><span class="pro-plan-price">₹${Number(pl.price).toFixed(0)}</span><small>${pl.days} days${pl.badge ? ` · <b>${esc(pl.badge)}</b>` : ''}</small></label>`).join('')}</div>
         <button class="btn btn-primary pro-buy" data-action="buy-pro" ${cfg.enabled ? '' : 'disabled'}><i class="fas fa-lock"></i> ${cfg.enabled ? 'Continue to secure payment' : 'Payments unavailable right now'}</button>
-        <p class="pro-note">Secure checkout by PresetHub payment partners · UPI supported · Pro activates automatically after payment is verified.</p>
+        <p class="pro-note">Secure checkout by YOUPI PG · UPI supported · Pro activates automatically after payment is verified.</p>
       </div>`);
       $$('input[name="proPlan"]').forEach(r => r.addEventListener('change', () => $$('.pro-plan').forEach(l => l.classList.toggle('selected', l.querySelector('input').checked))));
     } catch (e) { toast(e.message || 'Could not load Pro plans.', 'error'); }
@@ -803,7 +803,7 @@
   // The YOUPI return query is only a navigation hint. The order is unlocked only after
   // the authenticated backend reports a verified paid state from a signed webhook/status lookup.
   async function onProActivated() {
-    try { const r = await api('/auth/me'); state.user = r.user; updateAuthUI(); } catch (_) {}
+    try { const r = await fetchMe(); state.user = r.user; updateAuthUI(); } catch (_) {}
     toast('👑 Welcome to PresetHub Pro! Ads are now removed.', 'success', 6000);
   }
   async function handleYoupiPaymentReturn(orderId) {
@@ -837,11 +837,7 @@
         }
         // Try the gateway's authenticated server API if the webhook is delayed. Browser events are never used to unlock purchases.
         if (attempt === 3 || attempt === 7) {
-          try {
-            const refreshProvider = lastOrder?.provider === 'phonepe' ? 'phonepe' : lastOrder?.provider === 'cashfree' ? 'cashfree' : 'youpi';
-            const refreshPath = refreshProvider === 'cashfree' ? `/payments/cashfree/refresh/${encodeURIComponent(orderId)}` : `/payments/${refreshProvider}/refresh/${encodeURIComponent(orderId)}`;
-            lastOrder = await api(refreshPath, { method: 'POST', body: '{}' });
-          }
+          try { lastOrder = await api(`/payments/youpi/refresh/${encodeURIComponent(orderId)}`, { method: 'POST', body: '{}' }); }
           catch (_) {}
           if (lastOrder?.status === 'paid' && lastOrder.kind === 'subscription') return onProActivated();
           if (lastOrder?.status === 'paid') {
@@ -1092,52 +1088,38 @@
     return `<div class="form-group password-field"><label>${label}</label><div class="password-input-wrap"><input type="password" name="${name}" ${extra} autocomplete="${autocomplete}"><button type="button" class="password-toggle" data-action="toggle-password" aria-label="Show password" title="Show password"><i class="fas fa-eye"></i></button></div></div>`;
   }
   function togglePassword(button) { const input=button.closest('.password-input-wrap')?.querySelector('input'); if(!input)return; const show=input.type==='password'; input.type=show?'text':'password'; button.setAttribute('aria-label',show?'Hide password':'Show password'); button.title=show?'Hide password':'Show password'; const icon=button.querySelector('i'); if(icon) icon.className=`fas ${show?'fa-eye-slash':'fa-eye'}`; }
+  // Only signed-in users call /auth/me (a guest request would log a 401 in the console).
+  const fetchMe = () => (window.phAuth && window.phAuth.user && window.phAuth.user()) ? api('/auth/me') : Promise.resolve({ user: null });
+  // Sign-in, sign-up and password recovery are handled by Clerk (window.phAuth from clerk-bridge.js).
+  let pendingAfterAuth = null;
   function openAuth(mode = 'login', after = null) {
-    openModal(`
-      <div class="auth-box">
-        <h2>${mode === 'login' ? 'Welcome back' : 'Create your PresetHub account'}</h2>
-        <form id="authForm" data-mode="${mode}">
-          ${mode === 'signup' ? '<div class="form-group"><label>Name</label><input name="name" maxlength="50" required></div><div class="form-group"><label>Username</label><input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" required></div>' : ''}
-          <div class="form-group"><label>Email</label><input type="email" name="email" required autocomplete="${mode === 'login' ? 'username' : 'email'}" value="${mode === 'login' ? esc(rememberedEmail()) : ''}"></div>
-          ${mode === 'login' ? `<label class="check-row remember-row"><input type="checkbox" name="remember" ${rememberedEmail() ? 'checked' : ''}> Email yaad rakhein (password kabhi save nahi hoga)</label>` : ''}
-          ${passwordField('password', 'Password', mode === 'login' ? 'current-password' : 'new-password', 'minlength="10" required')}
-          ${mode === 'signup' ? '<small>At least 10 characters with uppercase, lowercase and a number.</small>' : ''}
-          <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
-        </form>
-        ${mode === 'login' ? '<button class="text-button" data-action="forgot-password">Forgot password?</button>' : ''}
-        <button class="text-button" data-action="switch-auth" data-mode="${mode === 'login' ? 'signup' : 'login'}">${mode === 'login' ? 'Create account' : 'Already have an account? Log in'}</button>
-      </div>`);
+    if (!window.phAuth || !window.phAuth.isReady()) { toast('Login is loading. Please try again in a moment.', 'info'); return; }
+    if (after) pendingAfterAuth = after;
+    if (mode === 'signup') window.phAuth.openSignUp(); else window.phAuth.openSignIn();
   }
-
-  function openForgotPassword(){
-    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Reset password</h2><p class="muted">Enter your account email. If it exists, PresetHub will send a reset link.</p><form id="forgotForm"><div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div><button class="btn btn-primary" type="submit"><i class="fas fa-envelope"></i> Send reset link</button></form></div>`);
-  }
-  function openResetPassword(token){
-    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}">${passwordField('password', 'New password', 'new-password', 'minlength="10" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
-  }
-
-  // Only the email is remembered on this device. Passwords are never stored in the browser.
-  const REMEMBER_KEY = 'ph_remember_email';
-  function rememberedEmail() { try { return localStorage.getItem(REMEMBER_KEY) || ''; } catch (_) { return ''; } }
-  function saveRememberedEmail(on, email) {
-    try { if (on && email) localStorage.setItem(REMEMBER_KEY, email); else localStorage.removeItem(REMEMBER_KEY); } catch (_) {}
-  }
-  async function submitAuth(form) {
-    const mode = form.dataset.mode;
-    const data = Object.fromEntries(new FormData(form).entries());
-    const remember = data.remember === 'on';
-    delete data.remember;
-    if (mode === 'login') saveRememberedEmail(remember, String(data.email || '').trim().toLowerCase());
+  function openForgotPassword() { openAuth('login'); }
+  function openResetPassword() { openAuth('login'); }
+  // Keeps state.user and the API token in step with Clerk's sign-in state.
+  async function refreshAuthState() {
+    if (!window.phAuth || !window.phAuth.isReady()) return;
+    const wasIn = Boolean(state.user);
+    try { state.token = await window.phAuth.getToken(); } catch (_) { state.token = ''; }
+    if (!state.token) { state.user = null; updateAuthUI(); return; }
     try {
-      const r = await api(`/auth/${mode}`, { method: 'POST', body: JSON.stringify(data) });
-      state.token = '';
-      localStorage.removeItem('presethub_token');
+      const r = await fetchMe();
       state.user = r.user;
-      updateAuthUI(); closeModal();
-      toast(mode === 'login' ? 'Logged in' : 'Account created');
-      await loadPresets();
-    } catch (e) { toast(e.message, 'error'); }
+      updateAuthUI();
+      if (!wasIn) toast('Welcome to PresetHub 👋');
+      if (pendingAfterAuth) { const f = pendingAfterAuth; pendingAfterAuth = null; try { f(); } catch (_) {} }
+    } catch (e) {
+      if (e.code === 'EMAIL_NOT_VERIFIED') toast('Please verify your email address first.', 'error', 6000);
+      state.user = null; updateAuthUI();
+    }
   }
+  window.addEventListener('presethub:auth', () => { refreshAuthState(); });
+  setInterval(() => {
+    if (state.user && window.phAuth && window.phAuth.isReady()) window.phAuth.getToken().then(t => { state.token = t || ''; }).catch(() => {});
+  }, 45000);
 
   async function openAccount() {
     if (!requireAuth()) return;
@@ -1442,13 +1424,33 @@
     openModal(`<div class="security-panel"><span class="eyebrow">ACCOUNT SUPPORT</span><h2>Ask Admin for help</h2><p class="muted">Use this if you forgot your password, need account access help, want to request deletion, or need a blocked-account review.</p><form id="supportRequestForm"><div class="form-group"><label>Request type</label><select name="type"><option value="password_reset">Forgot password</option><option value="account_access">Account access</option><option value="delete_account">Delete my account</option><option value="block_review">Review blocked account</option><option value="other">Other</option></select></div><div class="form-group"><label>Message</label><textarea name="message" maxlength="1000" required placeholder="Tell the admin what you need…"></textarea></div><button class="btn btn-primary" type="submit"><i class="fas fa-paper-plane"></i> Send request</button></form></div>`);
   }
 
+  // DPDP access right: downloads a JSON copy of the signed-in user's own data.
+  async function downloadMyData() {
+    if (!requireAuth()) return;
+    try {
+      const r = await fetch(`${API}/auth/my-data`, { credentials: 'same-origin', headers: state.token ? { Authorization: `Bearer ${state.token}` } : {} });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'Could not prepare your data.'); }
+      const blob = await r.blob();
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = (r.headers.get('content-disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'presethub-my-data.json';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast('Your data copy is downloaded.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+  async function telegramLinkModal() {
+    if (!requireAuth()) return;
+    try {
+      const r = await api('/auth/bot-link-code', { method: 'POST', body: '{}' });
+      openModal(`<div class="security-panel"><span class="eyebrow">TELEGRAM</span><h2>Telegram link code</h2><p>Telegram bot par yeh command bhejein (10 minute tak valid):</p><p class="tx-h" style="font-size:1.6rem;letter-spacing:.2em">${esc(r.code)}</p><code>/link ${esc(r.code)}</code></div>`);
+    } catch (e) { toast(e.message, 'error'); }
+  }
   function changePasswordModal() {
     if (!requireAuth()) return;
-    openModal(`<div class="security-panel"><span class="eyebrow">ACCOUNT SECURITY</span><h2>Change password</h2><form id="changePasswordForm">${passwordField('currentPassword', 'Current password', 'current-password', 'required')}${passwordField('newPassword', 'New password', 'new-password', 'minlength="10" required')}${passwordField('confirmPassword', 'Confirm new password', 'new-password', 'minlength="10" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Change password</button></form></div>`);
+    window.phAuth && window.phAuth.openUserProfile();
   }
   async function deleteAccountModal() {
     if (!requireAuth()) return;
-    openModal(`<div class="danger-panel"><span class="eyebrow">PERMANENT ACTION</span><h2>Delete your account</h2><p>This permanently removes your profile, published presets, messages, comments, downloads, shares and account data. This cannot be undone.</p><form id="deleteAccountForm">${passwordField('password', 'Enter your password to confirm', 'current-password', 'required')}<label class="danger-confirm"><input name="confirm" type="checkbox" required> I understand that this deletion is permanent.</label><button class="btn btn-danger" type="submit"><i class="fas fa-user-xmark"></i> Permanently delete account</button></form></div>`);
+    openModal(`<div class="danger-panel"><span class="eyebrow">PERMANENT ACTION</span><h2>Delete your account</h2><p>This removes your PresetHub profile and your login. Orders and payouts are kept for accounting. This cannot be undone.</p><form id="deleteAccountForm"><label class="tx-label">Type DELETE to confirm<input name="confirm" autocomplete="off" required></label><button class="btn btn-danger" type="submit">Delete my account</button></form></div>`);
   }
   async function showMessageProfile(userId) {
     try { closeModal(); await showProfile(userId); } catch (e) { toast(e.message, 'error'); }
@@ -1457,7 +1459,7 @@
     const u = state.user;
     const items = u ? [
       ...(u.role === 'admin' ? [['fa-crown','Admin Panel','admin-panel']] : []),
-      ['fa-crown', state.user?.isPro ? 'Pro Active' : 'Go Pro','pro'], ['fa-pen-nib','Shayari / Text Prompts','texts-page'], ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-pen','Edit Profile','edit-profile'],
+      ['fa-crown', state.user?.isPro ? 'Pro Active' : 'Go Pro','pro'], ['fa-pen-nib','Shayari / Text Prompts','texts-page'], ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-paper-plane','Telegram link code','telegram-link'], ['fa-download','Download my data','my-data'], ['fa-pen','Edit Profile','edit-profile'],
       ['fa-heart','Wishlist','wishlist-page'], ['fa-download','Downloads','downloads'], ['fa-bell','Notifications','notifications'],
       ['fa-message','Messages','messages'], ['fa-link','Share Links','my-shares'], ['fa-key','Change Password','change-password'],
       ['fa-shield-halved','Enable Notifications','enable-notifications'], ['fa-life-ring','Account Help','account-help'], ['fa-moon','Theme','theme'],
@@ -1541,7 +1543,7 @@
 
     try { localStorage.removeItem('presethub_token'); } catch (_) {}
     const authPromise = (async () => {
-      try { const r = await api('/auth/me'); state.user = r.user; } catch (_) {}
+      try { const r = await fetchMe(); state.user = r.user; } catch (_) {}
     })();
 
 
@@ -1598,7 +1600,7 @@
     }
     if (shortcutAction === 'logout') {
       if (state.user) {
-        try { await api('/auth/logout', { method: 'POST' }); } catch (_) {}
+        try { await api('/auth/logout', { method: 'POST' }); await window.phAuth?.signOut(); } catch (_) {}
         state.token = '';
         state.user = null;
         try { localStorage.removeItem('presethub_token'); } catch (_) {}
@@ -1670,7 +1672,7 @@
     if (action === 'signup') { openAuth('signup'); return; }
     if (action === 'account') { openAccount(); return; }
     if (action === 'logout') {
-      try { await api('/auth/logout', { method: 'POST' }); } catch (_) {}
+      try { await api('/auth/logout', { method: 'POST' }); await window.phAuth?.signOut(); } catch (_) {}
       state.token = ''; state.user = null;
       localStorage.removeItem('presethub_token');
       updateAuthUI(); closeModal(); toast('Logged out');
@@ -1698,6 +1700,8 @@
     if (action === 'my-profile') { showProfile(state.user.id); return; }
     if (action === 'edit-profile') { editProfileModal(); return; }
     if (action === 'change-password') { changePasswordModal(); return; }
+    if (action === 'telegram-link') { telegramLinkModal(); return; }
+    if (action === 'my-data') { downloadMyData(); return; }
     if (action === 'delete-account') { deleteAccountModal(); return; }
     if (action === 'edit-preset') { editPreset(el.dataset.id); return; }
     if (action === 'delete-preset') { deletePreset(el.dataset.id); return; }
@@ -1776,23 +1780,15 @@
       document.querySelector('#presets')?.scrollIntoView({behavior:'smooth',block:'start'});
       return;
     }
-    if (e.target.id === 'authForm') { e.preventDefault(); submitAuth(e.target); return; }
-    if (e.target.id === 'forgotForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api('/auth/request-reset',{method:'POST',body:JSON.stringify({email:fd.get('email')})}); toast('If the email exists, a reset link has been sent.'); } catch(err){toast(err.message,'error');} return; }
-    if (e.target.id === 'resetForm') { e.preventDefault(); try { const fd=new FormData(e.target); await api('/auth/reset-password',{method:'POST',body:JSON.stringify({token:e.target.dataset.token,password:fd.get('password')})}); toast('Password reset successfully'); closeModal(); openAuth('login'); } catch(err){toast(err.message,'error');} return; }
     if (e.target.id === 'uploadForm') { e.preventDefault(); submitUpload(e.target); return; }
     if (e.target.id === 'bulkUploadForm') { e.preventDefault(); submitBulkUpload(e.target); return; }
     if (e.target.id === 'supportRequestForm') { e.preventDefault(); try { await api('/users/me/support-request',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))}); closeModal(); toast('Request sent to admin.'); } catch(err) { toast(err.message,'error'); } return; }
-    if (e.target.id === 'changePasswordForm') {
-      e.preventDefault(); const form=e.target; const d=Object.fromEntries(new FormData(form).entries());
-      if (d.newPassword !== d.confirmPassword) return toast('New passwords do not match','error');
-      try { await api('/auth/change-password',{method:'PUT',body:JSON.stringify({currentPassword:d.currentPassword,newPassword:d.newPassword})}); closeModal(); toast('Password changed successfully 🔐'); } catch(err){ toast(err.message,'error'); }
-      return;
-    }
     if (e.target.id === 'deleteAccountForm') {
       e.preventDefault(); const d=Object.fromEntries(new FormData(e.target).entries());
-      if (d.confirm !== 'on') return toast('Please confirm permanent deletion','error');
+      if (String(d.confirm || '').trim() !== 'DELETE') return toast('Type DELETE to confirm','error');
       if (!window.confirm('Delete your PresetHub account permanently? This cannot be undone.')) return;
-      try { await api('/auth/account',{method:'DELETE',body:JSON.stringify({password:d.password})}); state.user=null; state.token=''; closeModal(); updateAuthUI(); toast('Your account has been permanently deleted.'); setTimeout(()=>location.href='/',700); } catch(err){ toast(err.message,'error'); }
+      try { await api('/auth/account',{method:'DELETE',body:JSON.stringify({confirm:'DELETE'})}); state.user=null; state.token=''; closeModal(); toast('Your account has been deleted.'); await window.phAuth?.signOut(); }
+      catch(err){ toast(err.message,'error'); }
       return;
     }
     if (e.target.id === 'profileForm') {
@@ -1852,6 +1848,22 @@
 
   // ============ EXPORTS ============
   window.PresetHub = { showPreset, showProfile, openUpload, openAuth, installPWA, showShareStats, showMessagesInbox, openSiteMenu };
+
+  // CSP-safe image fallbacks (no inline onerror): one capturing listener handles every <img data-ph-img>.
+  document.addEventListener('error', e => {
+    const t = e.target;
+    if (!(t instanceof HTMLImageElement) || !t.dataset.phImg) return;
+    const mode = t.dataset.phImg;
+    if (mode === 'hide-self') { t.style.display = 'none'; return; }
+    if (mode === 'avatar') { t.style.display = 'none'; if (t.nextElementSibling) t.nextElementSibling.hidden = false; return; }
+    if (mode === 'hide-media') { t.closest('.home-ad-media')?.remove(); return; }
+    if (mode === 'fallback') { if (!t.dataset.fellBack && t.dataset.fallback) { t.dataset.fellBack = '1'; t.src = t.dataset.fallback; } return; }
+    if (mode === 'placeholder') {
+      t.classList.add('img-failed');
+      const w = t.parentElement;
+      if (w) { w.classList.add('img-failed-wrap'); w.setAttribute('data-initial', (t.alt || 'P').trim().charAt(0).toUpperCase()); }
+    }
+  }, true);
   window.PresetHubApp = { openAuth: m => openAuth(m || 'login'), toast: (...a) => toast(...a), user: () => state.user, showPro: () => showProModal(), checkout: (endpoint, body) => openYoupiCheckout(endpoint, body) };
   window.addEventListener('DOMContentLoaded', bootstrap);
   window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); });
