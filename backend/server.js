@@ -1,6 +1,8 @@
 require('dotenv').config();
 
 const express = require('express');
+const bcrypt = require('bcryptjs');
+const { SITE_FOOTER } = require('./seo/footer');
 require('express-async-errors');
 const cors = require('cors');
 const path = require('path');
@@ -120,12 +122,6 @@ const SITE_SOCIAL = 'https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0a
 const ICONS_CSS = '/icons.css?v=3.2.0';
 
 // ============ ENV CHECKS ============
-// Clerk: sign-in is unavailable without these keys (the site still loads).
-if (!process.env.CLERK_SECRET_KEY || !process.env.CLERK_PUBLISHABLE_KEY) {
-  console.warn('⚠️  CLERK_SECRET_KEY / CLERK_PUBLISHABLE_KEY not set: login will not work until they are added.');
-} else if (/^pk_test_/.test(process.env.CLERK_PUBLISHABLE_KEY) && process.env.NODE_ENV === 'production') {
-  console.warn('⚠️  Production site is using a Clerk TEST key (pk_test_). Use the Production instance keys (pk_live_ / sk_live_).');
-}
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   if (process.env.NODE_ENV === 'production') {
     console.error('❌ JWT_SECRET required (32+ chars)');
@@ -144,8 +140,9 @@ async function ensureAdminUser() {
     let username = usernameBase;
     let n = 1;
     while (await User.exists({ username })) username = `${usernameBase}${n++}`;
-    // No password is stored: sign-in is handled by Clerk (the admin verifies this email there).
-    await User.create({ email, name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
+    // The admin signs in with the password set from ADMIN_PASSWORD (hashed, never stored in plain text).
+    const password = process.env.ADMIN_PASSWORD ? await bcrypt.hash(process.env.ADMIN_PASSWORD, 12) : '';
+  await User.create({ email, password, name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
     console.log('✅ Admin account initialized.');
   } else if (existing.role !== 'admin') {
     existing.role = 'admin';
@@ -267,8 +264,6 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: [
-        "https://cdn.jsdelivr.net",
-        "https://challenges.cloudflare.com",
         "https://www.googletagmanager.com",
         "https://connect.facebook.net",
         "'self'",
@@ -287,10 +282,6 @@ app.use(helmet({
       ],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       connectSrc: [
-        "https://*.clerk.accounts.dev",
-        "https://clerk.presethub.site",
-        "https://api.clerk.com",
-        "https://*.clerk.com",
         "https://www.google-analytics.com",
         "https://*.google-analytics.com",
         "https://analytics.google.com",
@@ -306,8 +297,6 @@ app.use(helmet({
         "https://*.cashfree.com",
       ].filter(Boolean),
       frameSrc: [
-        "https://challenges.cloudflare.com",
-        "https://*.clerk.accounts.dev",
         "'self'",
         "https://googleads.g.doubleclick.net",
         "https://*.google.com",
@@ -394,7 +383,7 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests. Please try again later.' },
   handler: (req, res, next, options) => { securityAlert(req, 'API rate limit exceeded (possible scraping / DoS)', { limit: 300, window: '15 min' }, 'warning', 20 * 60 * 1000); res.status(429).json(options.message); }
 });
-// Sign-in now happens in Clerk; this limit only guards write calls under /api/auth (page loads call GET /me).
+// Login and signup attempts are limited on /api/auth writes (GET requests such as /me are not counted).
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -492,9 +481,6 @@ const GA_ID = /^G-[A-Z0-9]{6,12}$/.test(String(process.env.GA_MEASUREMENT_ID || 
 const PIXEL_ID = /^\d{8,20}$/.test(String(process.env.META_PIXEL_ID || '').trim()) ? String(process.env.META_PIXEL_ID).trim() : '';
 const TRACKING_TAG = (GA_ID || PIXEL_ID) ? `<script src="/tracking.js" data-ga="${GA_ID}" data-pixel="${PIXEL_ID}" defer></script>` : '';
 const PRIVATE_PAGES = new Set(['admin.html', 'creator.html']);
-// Clerk publishable key is public by design; only a well-formed value is sent to the browser.
-const CLERK_PK = /^pk_(test|live)_[A-Za-z0-9+/=_-]{20,}$/.test(String(process.env.CLERK_PUBLISHABLE_KEY || '').trim()) ? String(process.env.CLERK_PUBLISHABLE_KEY).trim() : '';
-const AUTH_TAG = CLERK_PK ? `<script src="/clerk-bridge.js" data-pk="${CLERK_PK}"></script>` : '<script>window.PH_AUTH_DISABLED=true</script>';
 app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   let reqPath;
@@ -508,7 +494,6 @@ app.use((req, res, next) => {
     let html = fs.readFileSync(file, 'utf8');
     html = html.replace('<!--GSC_VERIFY-->', name === 'index.html' && GSC_TOKEN ? `<meta name="google-site-verification" content="${GSC_TOKEN}">` : '');
     html = html.replace('<!--TRACKING-->', PRIVATE_PAGES.has(name) ? '' : TRACKING_TAG);
-    html = html.replace('<!--AUTH-->', AUTH_TAG);
     if (PRIVATE_PAGES.has(name)) { res.set('X-Robots-Tag', 'noindex, nofollow, noarchive'); res.set('Cache-Control', 'no-store'); }
     res.set('Cache-Control', 'public, max-age=300');
     res.type('html').send(html);
@@ -665,7 +650,7 @@ ${commonSeoHead({ title: `${p.name} Lightroom Preset | PresetHub`, description, 
 <section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(preview)}" alt="${escHtml(p.name)} Lightroom preset preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">${escHtml(p.category || 'LIGHTROOM PRESET')}</span><h1>${escHtml(p.name)}</h1><p class="author">By ${escHtml(p.author || 'Creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-price ${price===0?'free':''}">${price===0?'Free':`₹${price.toFixed(2)}`}</div><div class="seo-tags">${(p.tags||[]).slice(0,10).map(t=>`<span>${escHtml(t)}</span>`).join('')}</div><div class="seo-actions"><a class="btn btn-primary" href="/"><i class="fas fa-download"></i> Open &amp; Download</a><a class="btn btn-outline" href="#details"><i class="fas fa-circle-info"></i> Show Details</a><a class="btn btn-outline" href="/profile/${p.authorId}/${slugify(author?.username || author?.name || p.author)}/"><i class="fas fa-user"></i> Creator</a></div></div></section>
 <div class="seo-info-grid"><div class="seo-info-card"><b>${Number(p.downloads||0)}</b><span>Downloads</span></div><div class="seo-info-card"><b>${Number(p.views||0)}</b><span>Views</span></div><div class="seo-info-card"><b>${Number(p.avgRating||0).toFixed(1)}</b><span>Rating</span></div><div class="seo-info-card"><b>${Number((p.likes||[]).length)}</b><span>Likes</span></div><div class="seo-info-card"><b>${Number(commentsCount)}</b><span>Comments</span></div><div class="seo-info-card"><b>${Number(p.shares||0)}</b><span>Shares</span></div></div><section id="details" class="seo-details"><h2>Preset Details</h2><p>${escHtml(p.description || 'A Lightroom preset published on PresetHub.')}</p><div class="seo-tags">${(p.tags||[]).slice(0,10).map(t=>`<span>#${escHtml(t)}</span>`).join('')}</div></section>
 <section class="seo-related"><div class="profile-section-head"><h2>More ${escHtml(p.category || 'Lightroom')} Presets</h2><a class="btn btn-outline btn-sm" href="/?q=${encodeURIComponent(p.category || '')}">View all</a></div><div class="seo-related-grid">${related.map(r=>`<a class="seo-related-card" href="/preset/${r._id}/${slugify(r.name)}/"><img src="${escHtml(seoAssetUrl(r.previewImage))}" alt="${escHtml(r.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(r.name)}</h3><p>${escHtml(r.author||'Creator')} · ${Number(r.price||0)===0?'Free':`₹${Number(r.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No related presets yet.</p>'}</div></section>
-<footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=3.2.0" defer></script></div></main></body></html>`;
+${SITE_FOOTER}<script src="/cookie-consent.js?v=3.2.0" defer></script></div></main></body></html>`;
     res.type('html').send(html);
   } catch (e) { next(e); }
 });
@@ -679,7 +664,7 @@ app.get('/profile/:id/:slug?/', async (req, res, next) => {
     const presets = await Preset.find({ authorId:u._id, status:'approved' }).sort({createdAt:-1}).lean();
     const canonical = `${SITE_URL}/profile/${u._id}/${slugify(u.username || u.name)}/`;
     const avatar = seoAssetUrl(u.avatar); const description=(u.bio || `Lightroom presets by ${u.name || u.username} on PresetHub.`).slice(0,155);
-    const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${adsenseHead()}<title>${escHtml(u.name||u.username)} Presets &amp; Lightroom Presets | PresetHub</title>${commonSeoHead({ title: `${u.name||u.username} Presets | PresetHub`, description, canonical, image: avatar, type: 'profile', keywords: `${u.name||u.username}, Lightroom presets, preset creator, ${SITE_CREATOR}, PresetHub` })}<script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"ProfilePage","name":u.name||u.username,"url":canonical,"mainEntity":{"@type":"Person","name":u.name||u.username,"image":avatar,"sameAs":(u.socialLinks && Object.values(u.socialLinks).filter(Boolean).slice(0,4)) || []}})}</script></head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(avatar)}" alt="${escHtml(u.name||'Creator')} profile" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">CREATOR PROFILE</span><h1>${escHtml(u.name||u.username)}</h1><p class="author">@${escHtml(u.username||'creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-info-grid" style="margin:12px 0"><div class="seo-info-card"><b>${presets.length}</b><span>Presets</span></div><div class="seo-info-card"><b>${presets.reduce((a,p)=>a+Number(p.downloads||0),0)}</b><span>Downloads</span></div></div><a class="btn btn-primary" href="/"><i class="fas fa-arrow-left"></i> Open PresetHub</a></div></section><section class="seo-related"><div class="profile-section-head"><h2>Published Presets</h2><span>${presets.length} presets</span></div><div class="seo-related-grid">${presets.map(p=>`<a class="seo-related-card" href="/preset/${p._id}/${slugify(p.name)}/"><img src="${escHtml(seoAssetUrl(p.previewImage))}" alt="${escHtml(p.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(p.name)}</h3><p>${escHtml(p.category||'General')} · ${Number(p.price||0)===0?'Free':`₹${Number(p.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No published presets yet.</p>'}</div></section><footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/about.html">About</a></span></div></footer><script src="/cookie-consent.js?v=3.2.0" defer></script></div></main></body></html>`;
+    const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${adsenseHead()}<title>${escHtml(u.name||u.username)} Presets &amp; Lightroom Presets | PresetHub</title>${commonSeoHead({ title: `${u.name||u.username} Presets | PresetHub`, description, canonical, image: avatar, type: 'profile', keywords: `${u.name||u.username}, Lightroom presets, preset creator, ${SITE_CREATOR}, PresetHub` })}<script type="application/ld+json">${safeJson({"@context":"https://schema.org","@type":"ProfilePage","name":u.name||u.username,"url":canonical,"mainEntity":{"@type":"Person","name":u.name||u.username,"image":avatar,"sameAs":(u.socialLinks && Object.values(u.socialLinks).filter(Boolean).slice(0,4)) || []}})}</script></head><body><main class="seo-page"><div class="container seo-shell"><a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo">Preset<span>Hub</span></a><section class="seo-hero"><div class="seo-hero-image"><img src="${escHtml(avatar)}" alt="${escHtml(u.name||'Creator')} profile" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"></div><div class="seo-copy"><span class="eyebrow">CREATOR PROFILE</span><h1>${escHtml(u.name||u.username)}</h1><p class="author">@${escHtml(u.username||'creator')}</p><p class="desc">${escHtml(description)}</p><div class="seo-info-grid" style="margin:12px 0"><div class="seo-info-card"><b>${presets.length}</b><span>Presets</span></div><div class="seo-info-card"><b>${presets.reduce((a,p)=>a+Number(p.downloads||0),0)}</b><span>Downloads</span></div></div><a class="btn btn-primary" href="/"><i class="fas fa-arrow-left"></i> Open PresetHub</a></div></section><section class="seo-related"><div class="profile-section-head"><h2>Published Presets</h2><span>${presets.length} presets</span></div><div class="seo-related-grid">${presets.map(p=>`<a class="seo-related-card" href="/preset/${p._id}/${slugify(p.name)}/"><img src="${escHtml(seoAssetUrl(p.previewImage))}" alt="${escHtml(p.name)} preview" onerror="this.onerror=null;this.src='/assets/images/og-image.png'"><div><h3>${escHtml(p.name)}</h3><p>${escHtml(p.category||'General')} · ${Number(p.price||0)===0?'Free':`₹${Number(p.price).toFixed(2)}`}</p></div></a>`).join('') || '<p>No published presets yet.</p>'}</div></section>${SITE_FOOTER}<script src="/cookie-consent.js?v=3.2.0" defer></script></div></main></body></html>`;
     res.type('html').send(html);
   } catch(e){ next(e); }
 });

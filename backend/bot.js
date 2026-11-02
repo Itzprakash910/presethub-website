@@ -51,7 +51,7 @@ function money(v) { return Number(v || 0) <= 0 ? 'Free' : `₹${Number(v).toFixe
 function isLinkedAccount(user) { return !!(user && user.email && !/@users\.presethub\.local$/i.test(user.email) && user.status !== 'blocked' && user.status !== 'deactivated'); }
 function apiHeaders(user) {
   if (!isLinkedAccount(user) || !process.env.JWT_SECRET) return {};
-  const token = jwt.sign({ purpose: 'bot', id: String(user._id), email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '10m' });
+  const token = jwt.sign({ purpose: 'bot', id: String(user._id), email: user.email, role: user.role, ver: Number(user.sessionVersion || 0) }, process.env.JWT_SECRET, { expiresIn: '10m' });
   return { Authorization: `Bearer ${token}` };
 }
 function loggedIn(ctx) { return isLinkedAccount(ctx.dbUser); }
@@ -352,7 +352,7 @@ function registerHandlers() {
 
   bot.command(['help', 'menu'], ctx => ctx.reply('👇 नीचे से option चुनें। Commands की ज़रूरत नहीं है।', mainMenu(ctx.dbUser)));
   bot.command('signup', ctx => ctx.reply(`📝 Website पर account बनाएं:\n${SITE_URL}/?action=signup`, mainMenu(ctx.dbUser)));
-  // Accounts are managed by Clerk on the website. The bot is linked with a one-time code from the account page.
+  // Accounts are managed on the website (email and password). The bot is linked with a one-time code from the account page.
   bot.command('login', async ctx => {
     if (isLinkedAccount(ctx.dbUser)) return ctx.reply('✅ आपका account पहले से linked है।', mainMenu(ctx.dbUser));
     await ctx.reply(`🔐 Telegram को account से जोड़ने के लिए:\n1. ${SITE_URL}/?action=login पर login करें\n2. Profile → "Telegram link code" लें\n3. यहाँ भेजें: /link CODE (जैसे /link 123456)`, mainMenu(ctx.dbUser));
