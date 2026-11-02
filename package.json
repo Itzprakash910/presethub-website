@@ -1,6 +1,6 @@
 {
   "name": "presethub",
-  "version": "3.28.2",
+  "version": "3.23.1",
   "private": true,
   "description": "PresetHub – Lightroom preset marketplace (Railway-ready root)",
   "engines": {
@@ -11,7 +11,6 @@
     "build": "echo No build step needed",
     "start": "node backend/server.js",
     "dev": "npm --prefix backend run dev",
-    "create-admin": "npm --prefix backend run create-admin",
-    "test": "node scripts/verify-project.js"
+    "create-admin": "npm --prefix backend run create-admin"
   }
 }
