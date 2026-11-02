@@ -60,9 +60,7 @@ services:
         value: "10"
       - key: UPLOAD_PER_HOUR
         value: "30"
-      - key: CLERK_SECRET_KEY
-        sync: false
-      - key: CLERK_PUBLISHABLE_KEY
+      - key: ADMIN_PASSWORD
         sync: false
       - key: CASHFREE_ENV
         value: sandbox
