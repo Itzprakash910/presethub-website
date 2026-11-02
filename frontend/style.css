@@ -1594,3 +1594,13 @@ p { line-height: 1.7; }
 /* v3.22 contrast: small tags use a darker accent on light backgrounds (WCAG AA 4.5:1) */
 .feat-tag { color: #7a4f1d; }
 body.dark .feat-tag, [data-theme="dark"] .feat-tag { color: #f0c987; }
+
+/* v3.25: header Pro button is a round icon button (same size as the others) */
+.nav-pro { width:40px; height:40px; min-height:40px; padding:0; border-radius:50%; display:inline-grid; place-items:center; }
+.nav-pro span { display:none; }
+/* v3.25: preset card buttons: icon row, then a full-width Open button (no overflow) */
+.preset-card .card-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.preset-card .card-actions .icon-action { flex:0 0 auto; }
+.preset-card .card-actions .btn { flex:1 1 100%; min-width:0; white-space:nowrap; }
+/* v3.25: sponsored cards keep the preset look; the tag is clearly labelled */
+.ad-card .ad-tag { background:#1c1c1c; color:#fff; }

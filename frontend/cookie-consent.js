@@ -53,15 +53,15 @@
     });
     document.body.appendChild(banner);
   }
+  // The settings link lives in the footer ([data-cookie-settings]); no floating button over the content.
   function settingsButton() {
-    if (document.querySelector('#cookieSettings')) return;
-    const btn = document.createElement('button');
-    btn.id = 'cookieSettings';
-    btn.className = 'cookie-settings';
-    btn.type = 'button';
-    btn.textContent = 'Cookie settings';
-    btn.addEventListener('click', () => { write(''); showBanner(); });
-    document.body.appendChild(btn);
+    document.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-cookie-settings]');
+      if (!el) return;
+      e.preventDefault();
+      write('');
+      showBanner();
+    });
   }
   const consent = read();
   if (consent === 'accepted') loadAds();

@@ -71,7 +71,7 @@
   // ---------- 2. Streak ----------
   async function checkin() {
     if (!(await loadMe())) return;
-    const chip = $('#streakChip');
+    const chip = $('#streakChip') || document.createElement('span');
     try {
       const r = await api('/features/checkin', { method: 'POST', body: '{}' });
       if (chip) { chip.hidden = false; chip.textContent = `🔥 ${r.current}-day streak`; chip.title = `Best: ${r.best} days. Every 7 days = 1 free Pro day.`; }
@@ -274,6 +274,7 @@
     checkin();
     $('#featEarnings') && (async () => { if (await loadMe()) $('#featEarnings').hidden = false; })();
   }
+  window.phCheckin = checkin;
   window.PresetHubFeatures = { openReport, openTip, openSave, drawShareCard };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

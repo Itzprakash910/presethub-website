@@ -372,8 +372,14 @@
 
   function renderPresetGrid(data) {
     const grid = $('#presetGrid');
+    const ads = state.ads || [];
+    const cards = [];
+    state.presets.forEach((p, i) => {
+      cards.push(presetCard(p));
+      if (ads.length && (i + 1) % 6 === 0) cards.push(adCardHtml(ads[((i + 1) / 6 - 1) % ads.length]));
+    });
     if (grid) grid.innerHTML = state.presets.length
-      ? state.presets.map(presetCard).join('')
+      ? cards.join('')
       : `<div class="empty-state"><i class="fas fa-box-open"></i><h3>No presets found</h3><p>Try another search or upload the first preset.</p></div>`;
     const title = $('#listTitle');
     if (title) title.textContent = state.query ? `Search: ${state.query}` : 'सभी Presets';
@@ -409,39 +415,37 @@
     }
   }
 
-  async function loadHomeAd() {
-    const slot = $('#homeAdSlot');
-    if (!slot) return;
-    try {
-      const r = await api('/ads/home');
-      const a = r.ad;
-      if (!a) { slot.hidden = true; slot.innerHTML = ''; return; }
-      const price = Number(a.salePrice || 0);
-      const original = Number(a.originalPrice || 0);
-      const discount = Number(a.discountPercent || 0);
-      const link = /^https?:\/\//i.test(a.linkUrl || '') ? a.linkUrl : '';
-      const title = a.title || a.productName || 'Sponsored';
-      const card = `
-        <article class="preset-card compact home-ad-preset" aria-label="Sponsored: ${esc(title)}">
-          <div class="thumb" data-ad-open="${esc(link)}" role="button" tabindex="0" aria-label="Open ${esc(title)}">
-            ${imgTag(a.imageUrl, title, 'preset-preview-img')}
-            <span class="thumb-price ${price === 0 ? 'free' : ''}">${price > 0 ? money(price) : 'Sponsored'}</span>
+  function adCardHtml(a) {
+    const price = Number(a.salePrice || 0);
+    const original = Number(a.originalPrice || 0);
+    const discount = Number(a.discountPercent || 0);
+    const link = /^https?:\/\//i.test(a.linkUrl || '') ? a.linkUrl : '';
+    const title = a.title || a.productName || 'Sponsored';
+    return `
+      <article class="preset-card compact ad-card" aria-label="Sponsored: ${esc(title)}">
+        <div class="thumb" data-ad-open="${esc(link)}" data-ad-id="${esc(a.id || '')}" role="button" tabindex="0" aria-label="Open ${esc(title)}">
+          ${imgTag(a.imageUrl, title, 'preset-preview-img')}
+          <span class="thumb-price ad-tag">Sponsored</span>
+        </div>
+        <div class="info">
+          <h3>${esc(title)}</h3>
+          <button class="author-link" data-ad-open="${esc(link)}" data-ad-id="${esc(a.id || '')}">${esc(a.badge || 'Sponsored')}</button>
+          <div class="preset-stats" aria-label="Offer">
+            <span>${discount > 0 ? `${discount}% OFF` : (price > 0 ? money(price) : 'Featured')}</span>
+            ${original > price && original > 0 ? `<span>was ${money(original)}</span>` : ''}
           </div>
-          <div class="info">
-            <h3>${esc(title)}</h3>
-            <button class="author-link" data-ad-open="${esc(link)}">${esc(a.advertiser || 'Sponsored')}</button>
-            <div class="preset-stats" aria-label="Offer">
-              <span>${discount > 0 ? `${discount}% OFF` : 'Featured'}</span>
-              ${original > price && original > 0 ? `<span>was ${money(original)}</span>` : ''}
-            </div>
-            <div class="card-actions">
-              <button class="btn btn-primary btn-sm" data-ad-open="${esc(link)}">${esc(a.ctaText || 'Open')}</button>
-            </div>
+          <div class="card-actions">
+            <button class="btn btn-primary btn-sm" data-ad-open="${esc(link)}" data-ad-id="${esc(a.id || '')}">${esc(a.ctaText || 'Open')}</button>
           </div>
-        </article>`;
-      slot.innerHTML = `<div class="preset-grid">${card}</div>`;
-      slot.hidden = false;
-    } catch (_) { slot.hidden = true; }
+        </div>
+      </article>`;
+  }
+
+  // Ads come from /api/ads/feed and are placed between presets (after every 6th preset).
+  async function loadAdFeed() {
+    try { const r = await api('/ads/feed'); state.ads = r.ads || []; }
+    catch (_) { state.ads = []; }
+    if (state.presets && state.presets.length) renderPresetGrid();
   }
 
   // ============ LOAD PRESETS ============
@@ -1490,7 +1494,7 @@
     const u = state.user;
     const items = u ? [
       ...(u.role === 'admin' ? [['fa-crown','Admin Panel','admin-panel']] : []),
-      ['fa-crown', state.user?.isPro ? 'Pro Active' : 'Go Pro','pro'], ['fa-pen-nib','Shayari / Text Prompts','texts-page'], ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-paper-plane','Telegram link code','telegram-link'], ['fa-download','Download my data','my-data'], ['fa-pen','Edit Profile','edit-profile'],
+      ['fa-fire', `${state.user?.streakCurrent || 0}-day streak · Check in`, 'daily-streak'], ['fa-chart-line', 'My dashboard', 'my-dashboard'], ['fa-crown', state.user?.isPro ? 'Pro Active' : 'Go Pro','pro'], ['fa-pen-nib','Shayari / Text Prompts','texts-page'], ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-paper-plane','Telegram link code','telegram-link'], ['fa-download','Download my data','my-data'], ['fa-pen','Edit Profile','edit-profile'],
       ['fa-heart','Wishlist','wishlist-page'], ['fa-download','Downloads','downloads'], ['fa-bell','Notifications','notifications'],
       ['fa-message','Messages','messages'], ['fa-link','Share Links','my-shares'], ['fa-key','Change Password','change-password'],
       ['fa-shield-halved','Enable Notifications','enable-notifications'], ['fa-life-ring','Account Help','account-help'], ['fa-moon','Theme','theme'],
@@ -1578,7 +1582,7 @@
     })();
 
 
-    const publicPromise = Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured(), loadHomeAd()]);
+    const publicPromise = Promise.all([loadPresets(), loadCategories(), loadCreators(), loadFeatured(), loadAdFeed()]);
     await Promise.allSettled([authPromise, publicPromise]);
     updateAuthUI();
     const paymentParams = new URLSearchParams(location.search);
@@ -1732,6 +1736,8 @@
     if (action === 'edit-profile') { editProfileModal(); return; }
     if (action === 'change-password') { changePasswordModal(); return; }
     if (action === 'telegram-link') { telegramLinkModal(); return; }
+    if (action === 'daily-streak') { if (!requireAuth()) return; window.phCheckin && window.phCheckin(); return; }
+    if (action === 'my-dashboard') { if (!requireAuth()) return; location.href = '/creator.html'; return; }
     if (action === 'my-data') { downloadMyData(); return; }
     if (action === 'delete-account') { deleteAccountModal(); return; }
     if (action === 'edit-preset') { editPreset(el.dataset.id); return; }
@@ -1919,6 +1925,8 @@
     const el = e.target.closest('[data-ad-open]');
     if (!el) return;
     const url = el.getAttribute('data-ad-open') || '';
+    const id = el.getAttribute('data-ad-id') || '';
+    if (id) api(`/ads/${id}/click`, { method: 'POST', body: '{}' }).catch(() => {});
     if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener');
   });
 

@@ -3,3 +3,8 @@
 .cookie-consent-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .cookie-settings{position:fixed;right:14px;bottom:14px;z-index:9998;border:1px solid var(--border,#ddd);background:var(--surface,#fff);color:var(--text,#222);border-radius:999px;padding:7px 11px;font:600 12px/1.2 inherit;box-shadow:0 5px 18px rgba(0,0,0,.12);cursor:pointer}
 @media(max-width:680px){.cookie-consent{left:10px;right:10px;bottom:10px;display:block;padding:14px;border-radius:14px}.cookie-consent-actions{margin-top:12px;display:grid;grid-template-columns:1fr 1fr}.cookie-consent-actions .btn{width:100%;min-height:44px}.cookie-settings{bottom:8px;right:8px}}
+
+/* v3.25: banner buttons sit in a grid on phones (no clipped labels) */
+.cookie-consent-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; width:100%; }
+.cookie-consent-actions .btn { white-space:normal; min-width:0; text-align:center; }
+@media (min-width: 681px) { .cookie-consent-actions { display:flex; width:auto; } }
