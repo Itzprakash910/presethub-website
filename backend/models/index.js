@@ -14,8 +14,7 @@ const NotificationSchema = new Schema({
 // ========== USER ==========
 const UserSchema = new Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
-  password: { type: String, default: '' }, // legacy only; passwords are managed by Clerk
-  clerkId: { type: String, default: '' },
+  password: { type: String, default: '' }, // bcrypt hash (login with email and password)
   botLinkHash: { type: String, default: '' },
   botLinkExpires: { type: Date, default: null },
   name: { type: String, default: '' },
@@ -360,7 +359,6 @@ const CouponSchema = new Schema({
   note: { type: String, default: '', maxlength: 200 },
 }, { timestamps: true });
 
-UserSchema.index({ clerkId: 1 }, { unique: true, partialFilterExpression: { clerkId: { $gt: '' } } });
 const User = mongoose.model('User', UserSchema);
 const Preset = mongoose.model('Preset', PresetSchema);
 const Order = mongoose.model('Order', OrderSchema);
