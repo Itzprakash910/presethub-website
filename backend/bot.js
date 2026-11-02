@@ -352,7 +352,7 @@ function registerHandlers() {
 
   bot.command(['help', 'menu'], ctx => ctx.reply('👇 नीचे से option चुनें। Commands की ज़रूरत नहीं है।', mainMenu(ctx.dbUser)));
   bot.command('signup', ctx => ctx.reply(`📝 Website पर account बनाएं:\n${SITE_URL}/?action=signup`, mainMenu(ctx.dbUser)));
-  // Website accounts use PresetHub email/password login. The bot is linked with a one-time code from the account page.
+  // Accounts are managed by Clerk on the website. The bot is linked with a one-time code from the account page.
   bot.command('login', async ctx => {
     if (isLinkedAccount(ctx.dbUser)) return ctx.reply('✅ आपका account पहले से linked है।', mainMenu(ctx.dbUser));
     await ctx.reply(`🔐 Telegram को account से जोड़ने के लिए:\n1. ${SITE_URL}/?action=login पर login करें\n2. Profile → "Telegram link code" लें\n3. यहाँ भेजें: /link CODE (जैसे /link 123456)`, mainMenu(ctx.dbUser));

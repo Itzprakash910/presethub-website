@@ -120,6 +120,12 @@ const SITE_SOCIAL = 'https://www.instagram.com/heyomii_____08?stkn=cHQ5M3B4NzY0a
 const ICONS_CSS = '/icons.css?v=3.2.0';
 
 // ============ ENV CHECKS ============
+// Clerk: sign-in is unavailable without these keys (the site still loads).
+if (!process.env.CLERK_SECRET_KEY || !process.env.CLERK_PUBLISHABLE_KEY) {
+  console.warn('⚠️  CLERK_SECRET_KEY / CLERK_PUBLISHABLE_KEY not set: login will not work until they are added.');
+} else if (/^pk_test_/.test(process.env.CLERK_PUBLISHABLE_KEY) && process.env.NODE_ENV === 'production') {
+  console.warn('⚠️  Production site is using a Clerk TEST key (pk_test_). Use the Production instance keys (pk_live_ / sk_live_).');
+}
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   if (process.env.NODE_ENV === 'production') {
     console.error('❌ JWT_SECRET required (32+ chars)');
@@ -129,42 +135,42 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 }
 
 async function ensureAdminUser() {
-  // Never create a passwordless administrator. Set ADMIN_EMAIL and a strong
-  // ADMIN_PASSWORD (12+ chars) in the deployment environment, or run
-  // `npm run create-admin` as a one-off command.
-  const email = String(process.env.ADMIN_EMAIL || '').toLowerCase().trim();
-  const password = String(process.env.ADMIN_PASSWORD || '');
-  if (!email) return;
-  if (!password) {
-    console.warn('⚠️ ADMIN_PASSWORD is not set; automatic admin bootstrap skipped.');
-    return;
-  }
-  if (password.length < 12) {
-    console.warn('⚠️ ADMIN_PASSWORD must be at least 12 characters; automatic admin bootstrap skipped.');
-    return;
-  }
-  const bcrypt = require('bcryptjs');
+  if (!process.env.ADMIN_EMAIL) return;
   const { User } = require('./models');
+  const email = process.env.ADMIN_EMAIL.toLowerCase().trim();
   const existing = await User.findOne({ email });
-  const passwordHash = await bcrypt.hash(password, 12);
   if (!existing) {
     const usernameBase = email.split('@')[0].replace(/[^a-z0-9_]/g, '').slice(0, 24) || 'admin';
     let username = usernameBase;
     let n = 1;
     while (await User.exists({ username })) username = `${usernameBase}${n++}`;
-    await User.create({ email, password: passwordHash, name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
-    console.log('✅ Admin account initialized with a password hash.');
-  } else if (existing.role !== 'admin' || !existing.adminRole || !existing.password) {
-    existing.password = passwordHash;
+    // No password is stored: sign-in is handled by Clerk (the admin verifies this email there).
+    await User.create({ email, name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
+    console.log('✅ Admin account initialized.');
+  } else if (existing.role !== 'admin') {
     existing.role = 'admin';
-    existing.adminRole = 'super';
+    existing.adminRole = existing.adminRole || 'super';
     existing.verified = true;
-    existing.status = 'active';
-    existing.sessionVersion = Number(existing.sessionVersion || 0) + 1;
     await existing.save();
-    console.log('✅ Existing admin account repaired.');
+    console.log('✅ Existing admin email promoted to admin role.');
   }
 }
+
+async function autoPublishPendingPresets() {
+  try {
+    const { Preset, User } = require('./models');
+    // Remove obsolete plaintext Telegram/API tokens left by pre-v2.9 builds.
+    await User.collection.updateMany({ token: { $exists: true } }, { $unset: { token: '' } }).catch(() => {});
+    const result = await Preset.updateMany(
+      { status: 'pending' },
+      { $set: { status: 'approved' } }
+    );
+    if (result.modifiedCount) console.log(`✅ Auto-published ${result.modifiedCount} legacy preset(s).`);
+  } catch (err) {
+    console.warn('⚠️ Legacy preset auto-publish skipped:', err.message);
+  }
+}
+
 
 // ============ ENSURE FOLDERS ============
 function ensureStructure() {
@@ -281,6 +287,10 @@ app.use(helmet({
       ],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       connectSrc: [
+        "https://*.clerk.accounts.dev",
+        "https://clerk.presethub.site",
+        "https://api.clerk.com",
+        "https://*.clerk.com",
         "https://www.google-analytics.com",
         "https://*.google-analytics.com",
         "https://analytics.google.com",
@@ -297,6 +307,7 @@ app.use(helmet({
       ].filter(Boolean),
       frameSrc: [
         "https://challenges.cloudflare.com",
+        "https://*.clerk.accounts.dev",
         "'self'",
         "https://googleads.g.doubleclick.net",
         "https://*.google.com",
@@ -383,7 +394,7 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests. Please try again later.' },
   handler: (req, res, next, options) => { securityAlert(req, 'API rate limit exceeded (possible scraping / DoS)', { limit: 300, window: '15 min' }, 'warning', 20 * 60 * 1000); res.status(429).json(options.message); }
 });
-// Authentication endpoints are rate-limited; public profile reads remain available.
+// Sign-in now happens in Clerk; this limit only guards write calls under /api/auth (page loads call GET /me).
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -481,7 +492,9 @@ const GA_ID = /^G-[A-Z0-9]{6,12}$/.test(String(process.env.GA_MEASUREMENT_ID || 
 const PIXEL_ID = /^\d{8,20}$/.test(String(process.env.META_PIXEL_ID || '').trim()) ? String(process.env.META_PIXEL_ID).trim() : '';
 const TRACKING_TAG = (GA_ID || PIXEL_ID) ? `<script src="/tracking.js" data-ga="${GA_ID}" data-pixel="${PIXEL_ID}" defer></script>` : '';
 const PRIVATE_PAGES = new Set(['admin.html', 'creator.html']);
-const AUTH_TAG = '';
+// Clerk publishable key is public by design; only a well-formed value is sent to the browser.
+const CLERK_PK = /^pk_(test|live)_[A-Za-z0-9+/=_-]{20,}$/.test(String(process.env.CLERK_PUBLISHABLE_KEY || '').trim()) ? String(process.env.CLERK_PUBLISHABLE_KEY).trim() : '';
+const AUTH_TAG = CLERK_PK ? `<script src="/clerk-bridge.js" data-pk="${CLERK_PK}"></script>` : '<script>window.PH_AUTH_DISABLED=true</script>';
 app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   let reqPath;
@@ -496,13 +509,8 @@ app.use((req, res, next) => {
     html = html.replace('<!--GSC_VERIFY-->', name === 'index.html' && GSC_TOKEN ? `<meta name="google-site-verification" content="${GSC_TOKEN}">` : '');
     html = html.replace('<!--TRACKING-->', PRIVATE_PAGES.has(name) ? '' : TRACKING_TAG);
     html = html.replace('<!--AUTH-->', AUTH_TAG);
-    if (PRIVATE_PAGES.has(name)) {
-      res.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
-      res.set('Cache-Control', 'no-store, private, max-age=0');
-      res.set('Pragma', 'no-cache');
-    } else {
-      res.set('Cache-Control', 'public, max-age=300');
-    }
+    if (PRIVATE_PAGES.has(name)) { res.set('X-Robots-Tag', 'noindex, nofollow, noarchive'); res.set('Cache-Control', 'no-store'); }
+    res.set('Cache-Control', 'public, max-age=300');
     res.type('html').send(html);
   } catch (e) { next(e); }
 });
@@ -553,9 +561,6 @@ for (const page of staticPages) {
 
 app.get('/admin', (req, res) => {
   const adminPage = path.join(frontendRoot, 'admin.html');
-  res.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
-  res.set('Cache-Control', 'no-store, private, max-age=0');
-  res.set('Pragma', 'no-cache');
   if (fs.existsSync(adminPage)) return res.sendFile(adminPage);
   res.status(404).send('Admin page not found');
 });
@@ -749,7 +754,7 @@ app.use(errorHandler);
   try {
     await connectDB();
     await ensureAdminUser();
-    // Pending presets remain pending until an authorized admin approves them.
+    await autoPublishPendingPresets();
     // Daily database backup (JSON per collection, last 7 kept). BACKUP_DAILY=off disables it.
 // Note: backups are written to the server disk. Copy them off-site (e.g. Drive/S3) for real disaster recovery.
 async function runDailyBackup() {

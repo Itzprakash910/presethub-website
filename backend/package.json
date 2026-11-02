@@ -1,7 +1,7 @@
 {
   "name": "presethub-backend",
-  "version": "3.28.2",
-  "description": "PresetHub production backend \u2014 MongoDB + GridFS media storage + PWA + SEO + integrated Telegram bot",
+  "version": "3.23.1",
+  "description": "PresetHub production backend — MongoDB + GridFS media storage + PWA + SEO + integrated Telegram bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,6 +13,7 @@
     "generate-vapid": "node scripts/generate-vapid.js"
   },
   "dependencies": {
+    "@clerk/backend": "^1.0.0",
     "axios": "^1.7.9",
     "cookie-parser": "^1.4.7",
     "cors": "2.8.5",
@@ -29,8 +30,7 @@
     "multer": "^2.0.0",
     "telegraf": "^4.16.3",
     "uuid": "^9.0.1",
-    "web-push": "^3.6.7",
-    "bcryptjs": "2.4.3"
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
