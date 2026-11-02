@@ -1,3 +1,4 @@
+const { SITE_FOOTER } = require('./footer');
 /**
  * Server-rendered Shayari / Text Prompt pages so Google indexes the FULL text:
  *   /shayari/                      – latest + search (?q=) + pagination (?page=)
@@ -74,7 +75,7 @@ ${head}${prev ? `<link rel="prev" href="${escHtml(prev)}">` : ''}${next ? `<link
 </head><body><main class="seo-page"><div class="shayari-page">
 <a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo" width="36" height="36">Preset<span>Hub</span></a>
 ${body}
-<footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${SITE_CREATOR}</a></span><span><a href="/">Presets</a> · <a href="/shayari/">Shayari</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></span></div></footer>
+${SITE_FOOTER}
 </div></main><script src="/texts.js?v=3.4.0" defer></script><script src="/features.js?v=3.4.0" defer></script><script src="/cookie-consent.js?v=3.4.0" defer></script></body></html>`;
   }
 

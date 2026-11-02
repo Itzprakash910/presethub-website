@@ -1,3 +1,4 @@
+const { SITE_FOOTER } = require('./footer');
 /**
  * Server-rendered discovery pages for Google:
  *   /presets/                         all Lightroom presets (sort, pagination)
@@ -35,7 +36,7 @@ ${head}${prev ? `<link rel="prev" href="${esc(prev)}">` : ''}${next ? `<link rel
 </head><body><main class="seo-page"><div class="shayari-page">
 <a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo" width="36" height="36">Preset<span>Hub</span></a>
 ${body}
-<footer style="margin-top:34px"><div class="footer-bottom" style="border-top:0"><span>© PresetHub</span><span>Website by <a href="${SITE_SOCIAL}" target="_blank" rel="me noopener noreferrer">${esc(SITE_CREATOR)}</a></span><span><a href="/">Presets</a> · <a href="/presets/">All presets</a> · <a href="/shayari/">Shayari</a> · <a href="/tags/">Tags</a></span></div></footer>
+${SITE_FOOTER}
 </div></main><script src="/texts.js?v=3.4.0" defer></script><script src="/features.js?v=3.4.0" defer></script><script src="/cookie-consent.js?v=3.4.0" defer></script></body></html>`;
   }
 
