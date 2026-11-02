@@ -209,7 +209,7 @@
       const payload = JSON.parse(raw);
       await api('/auth/profile', { method: 'PUT', body: JSON.stringify(payload) });
       localStorage.removeItem('presethub_pending_profile');
-      const r = (window.phAuth && window.phAuth.user && window.phAuth.user()) ? await api('/auth/me') : { user: null };
+      const r = await api('/auth/me').catch(() => ({ user: null }));
       state.user = r.user; updateAuthUI();
       toast('Pending profile update completed');
     } catch (_) {}
@@ -419,10 +419,27 @@
       const price = Number(a.salePrice || 0);
       const original = Number(a.originalPrice || 0);
       const discount = Number(a.discountPercent || 0);
-      const priceHtml = (price > 0 || original > 0)
-        ? `<div class="home-ad-price">${price > 0 ? `<strong>${money(price)}</strong>` : ''}${original > 0 && original > price ? `<del>${money(original)}</del>` : ''}${discount > 0 ? `<span class="home-ad-discount">${discount}% OFF</span>` : ''}</div>` : '';
-      const image = a.imageUrl ? `<img src="${esc(assetUrl(a.imageUrl))}" alt="${esc(a.title)}" loading="lazy" decoding="async" data-ph-img="hide-media">` : '';
-      slot.innerHTML = `<article class="home-ad-card"><div class="home-ad-media" ${image ? '' : 'hidden'}>${image}</div><div class="home-ad-copy"><span class="home-ad-badge">${esc(a.adType === 'sponsor' ? 'Sponsored' : (a.badge || 'Featured'))}</span><h3>${esc(a.title)}</h3>${a.productName ? `<strong>${esc(a.productName)}</strong>` : ''}${a.description ? `<p>${esc(a.description)}</p>` : ''}${priceHtml}<div class="home-ad-actions"><a class="btn btn-primary btn-sm" href="${esc(a.linkUrl || '/') }" data-ad-click="${esc(a.id)}">देखें</a></div></div></article>`;
+      const link = /^https?:\/\//i.test(a.linkUrl || '') ? a.linkUrl : '';
+      const title = a.title || a.productName || 'Sponsored';
+      const card = `
+        <article class="preset-card compact home-ad-preset" aria-label="Sponsored: ${esc(title)}">
+          <div class="thumb" data-ad-open="${esc(link)}" role="button" tabindex="0" aria-label="Open ${esc(title)}">
+            ${imgTag(a.imageUrl, title, 'preset-preview-img')}
+            <span class="thumb-price ${price === 0 ? 'free' : ''}">${price > 0 ? money(price) : 'Sponsored'}</span>
+          </div>
+          <div class="info">
+            <h3>${esc(title)}</h3>
+            <button class="author-link" data-ad-open="${esc(link)}">${esc(a.advertiser || 'Sponsored')}</button>
+            <div class="preset-stats" aria-label="Offer">
+              <span>${discount > 0 ? `${discount}% OFF` : 'Featured'}</span>
+              ${original > price && original > 0 ? `<span>was ${money(original)}</span>` : ''}
+            </div>
+            <div class="card-actions">
+              <button class="btn btn-primary btn-sm" data-ad-open="${esc(link)}">${esc(a.ctaText || 'Open')}</button>
+            </div>
+          </div>
+        </article>`;
+      slot.innerHTML = `<div class="preset-grid">${card}</div>`;
       slot.hidden = false;
     } catch (_) { slot.hidden = true; }
   }
@@ -803,7 +820,7 @@
   // The YOUPI return query is only a navigation hint. The order is unlocked only after
   // the authenticated backend reports a verified paid state from a signed webhook/status lookup.
   async function onProActivated() {
-    try { const r = await fetchMe(); state.user = r.user; updateAuthUI(); } catch (_) {}
+    try { const r = await api('/auth/me'); state.user = r.user; updateAuthUI(); } catch (_) { state.user = null; }
     toast('👑 Welcome to PresetHub Pro! Ads are now removed.', 'success', 6000);
   }
   async function handleYoupiPaymentReturn(orderId) {
@@ -1088,38 +1105,52 @@
     return `<div class="form-group password-field"><label>${label}</label><div class="password-input-wrap"><input type="password" name="${name}" ${extra} autocomplete="${autocomplete}"><button type="button" class="password-toggle" data-action="toggle-password" aria-label="Show password" title="Show password"><i class="fas fa-eye"></i></button></div></div>`;
   }
   function togglePassword(button) { const input=button.closest('.password-input-wrap')?.querySelector('input'); if(!input)return; const show=input.type==='password'; input.type=show?'text':'password'; button.setAttribute('aria-label',show?'Hide password':'Show password'); button.title=show?'Hide password':'Show password'; const icon=button.querySelector('i'); if(icon) icon.className=`fas ${show?'fa-eye-slash':'fa-eye'}`; }
-  // Only signed-in users call /auth/me (a guest request would log a 401 in the console).
-  const fetchMe = () => (window.phAuth && window.phAuth.user && window.phAuth.user()) ? api('/auth/me') : Promise.resolve({ user: null });
-  // Sign-in, sign-up and password recovery are handled by Clerk (window.phAuth from clerk-bridge.js).
-  let pendingAfterAuth = null;
   function openAuth(mode = 'login', after = null) {
-    if (!window.phAuth || !window.phAuth.isReady()) { toast('Login is loading. Please try again in a moment.', 'info'); return; }
-    if (after) pendingAfterAuth = after;
-    if (mode === 'signup') window.phAuth.openSignUp(); else window.phAuth.openSignIn();
+    openModal(`
+      <div class="auth-box">
+        <h2>${mode === 'login' ? 'Welcome back' : 'Create your PresetHub account'}</h2>
+        <form id="authForm" data-mode="${mode}">
+          ${mode === 'signup' ? '<div class="form-group"><label>Name</label><input name="name" maxlength="50" required></div><div class="form-group"><label>Username</label><input name="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]+" required></div>' : ''}
+          <div class="form-group"><label>Email</label><input type="email" name="email" required autocomplete="${mode === 'login' ? 'username' : 'email'}" value="${mode === 'login' ? esc(rememberedEmail()) : ''}"></div>
+          ${mode === 'login' ? `<label class="check-row remember-row"><input type="checkbox" name="remember" ${rememberedEmail() ? 'checked' : ''}> Email yaad rakhein (password kabhi save nahi hoga)</label>` : ''}
+          ${passwordField('password', 'Password', mode === 'login' ? 'current-password' : 'new-password', 'minlength="8" required')}
+          ${mode === 'signup' ? '<small>At least 8 characters with upper/lowercase and a number.</small>' : ''}
+          <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
+        </form>
+        ${mode === 'login' ? '<button class="text-button" data-action="forgot-password">Forgot password?</button>' : ''}
+        <button class="text-button" data-action="switch-auth" data-mode="${mode === 'login' ? 'signup' : 'login'}">${mode === 'login' ? 'Create account' : 'Already have an account? Log in'}</button>
+      </div>`);
   }
-  function openForgotPassword() { openAuth('login'); }
-  function openResetPassword() { openAuth('login'); }
-  // Keeps state.user and the API token in step with Clerk's sign-in state.
-  async function refreshAuthState() {
-    if (!window.phAuth || !window.phAuth.isReady()) return;
-    const wasIn = Boolean(state.user);
-    try { state.token = await window.phAuth.getToken(); } catch (_) { state.token = ''; }
-    if (!state.token) { state.user = null; updateAuthUI(); return; }
+
+  function openForgotPassword(){
+    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Reset password</h2><p class="muted">Enter your account email. If it exists, PresetHub will send a reset link.</p><form id="forgotForm"><div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div><button class="btn btn-primary" type="submit"><i class="fas fa-envelope"></i> Send reset link</button></form></div>`);
+  }
+  function openResetPassword(token){
+    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}">${passwordField('password', 'New password', 'new-password', 'minlength="8" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
+  }
+
+  // Only the email is remembered on this device. Passwords are never stored in the browser.
+  const REMEMBER_KEY = 'ph_remember_email';
+  function rememberedEmail() { try { return localStorage.getItem(REMEMBER_KEY) || ''; } catch (_) { return ''; } }
+  function saveRememberedEmail(on, email) {
+    try { if (on && email) localStorage.setItem(REMEMBER_KEY, email); else localStorage.removeItem(REMEMBER_KEY); } catch (_) {}
+  }
+  async function submitAuth(form) {
+    const mode = form.dataset.mode;
+    const data = Object.fromEntries(new FormData(form).entries());
+    const remember = data.remember === 'on';
+    delete data.remember;
+    if (mode === 'login') saveRememberedEmail(remember, String(data.email || '').trim().toLowerCase());
     try {
-      const r = await fetchMe();
+      const r = await api(`/auth/${mode}`, { method: 'POST', body: JSON.stringify(data) });
+      state.token = '';
+      localStorage.removeItem('presethub_token');
       state.user = r.user;
-      updateAuthUI();
-      if (!wasIn) toast('Welcome to PresetHub 👋');
-      if (pendingAfterAuth) { const f = pendingAfterAuth; pendingAfterAuth = null; try { f(); } catch (_) {} }
-    } catch (e) {
-      if (e.code === 'EMAIL_NOT_VERIFIED') toast('Please verify your email address first.', 'error', 6000);
-      state.user = null; updateAuthUI();
-    }
+      updateAuthUI(); closeModal();
+      toast(mode === 'login' ? 'Logged in' : 'Account created');
+      await loadPresets();
+    } catch (e) { toast(e.message, 'error'); }
   }
-  window.addEventListener('presethub:auth', () => { refreshAuthState(); });
-  setInterval(() => {
-    if (state.user && window.phAuth && window.phAuth.isReady()) window.phAuth.getToken().then(t => { state.token = t || ''; }).catch(() => {});
-  }, 45000);
 
   async function openAccount() {
     if (!requireAuth()) return;
@@ -1446,11 +1477,11 @@
   }
   function changePasswordModal() {
     if (!requireAuth()) return;
-    window.phAuth && window.phAuth.openUserProfile();
+    openModal(`<div class="security-panel"><span class="eyebrow">ACCOUNT SECURITY</span><h2>Change password</h2><form id="changePasswordForm">${passwordField('currentPassword', 'Current password', 'current-password', 'required')}${passwordField('newPassword', 'New password', 'new-password', 'minlength="8" required')}${passwordField('confirmPassword', 'Confirm new password', 'new-password', 'minlength="8" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Change password</button></form></div>`);
   }
   async function deleteAccountModal() {
     if (!requireAuth()) return;
-    openModal(`<div class="danger-panel"><span class="eyebrow">PERMANENT ACTION</span><h2>Delete your account</h2><p>This removes your PresetHub profile and your login. Orders and payouts are kept for accounting. This cannot be undone.</p><form id="deleteAccountForm"><label class="tx-label">Type DELETE to confirm<input name="confirm" autocomplete="off" required></label><button class="btn btn-danger" type="submit">Delete my account</button></form></div>`);
+    openModal(`<div class="danger-panel"><span class="eyebrow">PERMANENT ACTION</span><h2>Delete your account</h2><p>This permanently removes your profile, published presets, messages, comments, downloads, shares and account data. This cannot be undone.</p><form id="deleteAccountForm">${passwordField('password', 'Enter your password to confirm', 'current-password', 'required')}<label class="danger-confirm"><input name="confirm" type="checkbox" required> I understand that this deletion is permanent.</label><button class="btn btn-danger" type="submit"><i class="fas fa-user-xmark"></i> Permanently delete account</button></form></div>`);
   }
   async function showMessageProfile(userId) {
     try { closeModal(); await showProfile(userId); } catch (e) { toast(e.message, 'error'); }
@@ -1543,7 +1574,7 @@
 
     try { localStorage.removeItem('presethub_token'); } catch (_) {}
     const authPromise = (async () => {
-      try { const r = await fetchMe(); state.user = r.user; } catch (_) {}
+      try { const r = await api('/auth/me'); state.user = r.user; } catch (_) { state.user = null; }
     })();
 
 
@@ -1600,7 +1631,7 @@
     }
     if (shortcutAction === 'logout') {
       if (state.user) {
-        try { await api('/auth/logout', { method: 'POST' }); await window.phAuth?.signOut(); } catch (_) {}
+        try { await api('/auth/logout', { method: 'POST' }); } catch (_) {}
         state.token = '';
         state.user = null;
         try { localStorage.removeItem('presethub_token'); } catch (_) {}
@@ -1672,7 +1703,7 @@
     if (action === 'signup') { openAuth('signup'); return; }
     if (action === 'account') { openAccount(); return; }
     if (action === 'logout') {
-      try { await api('/auth/logout', { method: 'POST' }); await window.phAuth?.signOut(); } catch (_) {}
+      try { await api('/auth/logout', { method: 'POST' }); } catch (_) {}
       state.token = ''; state.user = null;
       localStorage.removeItem('presethub_token');
       updateAuthUI(); closeModal(); toast('Logged out');
@@ -1787,7 +1818,7 @@
       e.preventDefault(); const d=Object.fromEntries(new FormData(e.target).entries());
       if (String(d.confirm || '').trim() !== 'DELETE') return toast('Type DELETE to confirm','error');
       if (!window.confirm('Delete your PresetHub account permanently? This cannot be undone.')) return;
-      try { await api('/auth/account',{method:'DELETE',body:JSON.stringify({confirm:'DELETE'})}); state.user=null; state.token=''; closeModal(); toast('Your account has been deleted.'); await window.phAuth?.signOut(); }
+      try { await api('/auth/account',{method:'DELETE',body:JSON.stringify({confirm:'DELETE'})}); state.user=null; state.token=''; closeModal(); toast('Your account has been deleted.'); }
       catch(err){ toast(err.message,'error'); }
       return;
     }
@@ -1864,6 +1895,33 @@
       if (w) { w.classList.add('img-failed-wrap'); w.setAttribute('data-initial', (t.alt || 'P').trim().charAt(0).toUpperCase()); }
     }
   }, true);
+  // Password-based account forms (login, signup, reset, change password, delete account).
+  document.addEventListener('submit', async (e) => {
+    const f = e.target;
+    if (!f || !['authForm', 'forgotForm', 'resetForm', 'changePasswordForm', 'deleteAccountForm'].includes(f.id)) return;
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(f).entries());
+    try {
+      if (f.id === 'authForm') { await submitAuth(f); return; }
+      if (f.id === 'forgotForm') { await api('/auth/request-reset', { method: 'POST', body: JSON.stringify({ email: d.email }) }); toast('If this email exists, a reset link was sent.'); closeModal(); return; }
+      if (f.id === 'resetForm') { await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token: d.token, password: d.password }) }); toast('Password updated. Please log in.'); closeModal(); openAuth('login'); return; }
+      if (f.id === 'changePasswordForm') { await api('/auth/change-password', { method: 'PUT', body: JSON.stringify({ currentPassword: d.currentPassword, newPassword: d.newPassword }) }); toast('Password changed.'); closeModal(); return; }
+      if (f.id === 'deleteAccountForm') {
+        if (!window.confirm('Delete your PresetHub account permanently? This cannot be undone.')) return;
+        await api('/auth/account', { method: 'DELETE', body: JSON.stringify({ password: d.password }) });
+        state.user = null; closeModal(); toast('Your account has been deleted.'); updateAuthUI(); return;
+      }
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  // Ad card clicks: only http(s) links open, in a new tab with noopener.
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-ad-open]');
+    if (!el) return;
+    const url = el.getAttribute('data-ad-open') || '';
+    if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener');
+  });
+
   window.PresetHubApp = { openAuth: m => openAuth(m || 'login'), toast: (...a) => toast(...a), user: () => state.user, showPro: () => showProModal(), checkout: (endpoint, body) => openYoupiCheckout(endpoint, body) };
   window.addEventListener('DOMContentLoaded', bootstrap);
   window.addEventListener('pageshow', () => { resumeQueuedUploads().catch(()=>{}); });
