@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const express = require('express');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
@@ -1062,7 +1063,22 @@ router.put('/support-requests/:id', async (req, res) => {
   } catch (err) { console.error('Support update error:', err); res.status(500).json({ error: 'Failed to update support request' }); }
 });
 
-router.post('/users/:id/reset-password', (req, res) => res.status(410).json({ error: 'Passwords are managed by Clerk. Reset the password in the Clerk Dashboard (Users).' }));
+router.post('/users/:id/reset-password', async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid user ID' });
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role === 'admin' && user._id.toString() !== req.user.id) return res.status(403).json({ error: 'Cannot reset another admin password' });
+    const tempPassword = crypto.randomBytes(8).toString('base64url').slice(0, 12) + 'aA1';
+    user.password = await bcrypt.hash(tempPassword, 12);
+    user.passwordResetTokenHash = '';
+    user.passwordResetExpires = null;
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+    await user.save();
+    if (user._id.toString() !== req.user.id) await createNotification(user._id, 'security', 'An administrator reset your password. Use the temporary password provided by support and change it immediately.', '/');
+    res.json({ success: true, temporaryPassword: tempPassword, message: 'Temporary password generated. It is shown only once.' });
+  } catch (err) { console.error('Admin reset password error:', err); res.status(500).json({ error: 'Failed to reset password' }); }
+});
 
 // ============================================================
 // HOME AD MANAGEMENT
