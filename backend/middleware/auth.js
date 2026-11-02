@@ -27,7 +27,7 @@ const authenticate = async (req, res, next) => {
     let decoded;
 
     try {
-      decoded = jwt.verify(token, JWT_SECRET);
+      decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     } catch (err) {
       if (err.name === 'TokenExpiredError') {
         return res.status(401).json({
@@ -128,7 +128,7 @@ const optionalAuth = async (req, res, next) => {
 
     if (!token || token.length < 10) return next();
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     if (!mongoose.Types.ObjectId.isValid(decoded.id)) return next();
 
     const user = await User.findById(decoded.id).select('role status sessionVersion').lean();
@@ -177,7 +177,7 @@ const isAdmin = authorize('admin');
 const signBotToken = (user) => jwt.sign(
   { purpose: 'bot', id: String(user._id), email: user.email, role: user.role, ver: Number(user.sessionVersion || 0) },
   JWT_SECRET,
-  { expiresIn: '10m' }
+  { expiresIn: '10m', algorithm: 'HS256' }
 );
 
 
