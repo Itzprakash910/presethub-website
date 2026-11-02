@@ -14,7 +14,7 @@ const NotificationSchema = new Schema({
 // ========== USER ==========
 const UserSchema = new Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
-  password: { type: String, default: '' }, // bcrypt password hash for PresetHub email/password auth
+  password: { type: String, default: '' }, // legacy only; passwords are managed by Clerk
   clerkId: { type: String, default: '' },
   botLinkHash: { type: String, default: '' },
   botLinkExpires: { type: Date, default: null },
