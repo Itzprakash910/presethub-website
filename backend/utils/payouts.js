@@ -2,8 +2,8 @@
  * Pure payout rules. Money is handled in integer paise to avoid float errors.
  */
 const CREATOR_SHARE = () => {
-  const v = Number(process.env.CREATOR_SHARE || 0.9);
-  return Number.isFinite(v) && v > 0 && v <= 1 ? v : 0.9;
+  const v = Number(process.env.CREATOR_SHARE || 0.8);
+  return Number.isFinite(v) && v > 0 && v <= 1 ? v : 0.8;
 };
 const MIN_PAYOUT_PAISE = () => Math.round(Number(process.env.PAYOUT_MIN_RUPEES || 100) * 100);
 
