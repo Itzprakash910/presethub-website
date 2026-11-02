@@ -1,7 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 
 const auth = require('../middleware/auth');
 
@@ -1063,33 +1062,7 @@ router.put('/support-requests/:id', async (req, res) => {
   } catch (err) { console.error('Support update error:', err); res.status(500).json({ error: 'Failed to update support request' }); }
 });
 
-// Generate a one-time temporary password for a user who cannot access email recovery.
-// The password is returned only in this response; only its bcrypt hash is stored.
-router.post('/users/:id/reset-password', async (req, res) => {
-  try {
-    if (!validObjectId(req.params.id)) return res.status(400).json({ error: 'Invalid user ID' });
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    if (user.role === 'admin' && req.user.adminRole !== 'super') {
-      return res.status(403).json({ error: 'Only a Super Admin can reset an admin account password.' });
-    }
-    if (String(user._id) === String(req.user.id)) {
-      return res.status(400).json({ error: 'Use account password settings to change your own password.' });
-    }
-    const temporaryPassword = crypto.randomBytes(18).toString('base64url') + 'Aa1!';
-    user.password = await bcrypt.hash(temporaryPassword, 12);
-    user.passwordResetTokenHash = '';
-    user.passwordResetExpires = null;
-    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
-    await user.save();
-    await createNotification(user._id, 'security', 'Your PresetHub password was reset by an administrator. Please sign in with your temporary password and change it immediately.', '/');
-    adminAlert({ type: 'security', severity: 'warning', title: 'User password reset by admin', fingerprint: `admin-password-reset-${user._id}`, throttleMs: 1000, details: { targetUserId: String(user._id), targetEmail: user.email, adminId: req.user.id } });
-    res.json({ success: true, temporaryPassword });
-  } catch (err) {
-    console.error('Admin password reset error:', err);
-    res.status(500).json({ error: 'Could not reset user password' });
-  }
-});
+router.post('/users/:id/reset-password', (req, res) => res.status(410).json({ error: 'Passwords are managed by Clerk. Reset the password in the Clerk Dashboard (Users).' }));
 
 // ============================================================
 // HOME AD MANAGEMENT
