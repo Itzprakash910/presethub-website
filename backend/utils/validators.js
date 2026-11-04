@@ -15,7 +15,9 @@ const signupValidation = [
     .matches(/[a-z]/).withMessage('Password needs lowercase'),
   body('name').optional().trim().isLength({ min: 1, max: 50 }),
   body('username').optional().trim().isLength({ min: 3, max: 30 })
-    .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username: letters, numbers, underscores only')
+    .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username: letters, numbers, underscores only'),
+  body('acceptTerms').custom(v => v === true || v === 'true' || v === 'on').withMessage('Please accept the Terms of Use and Privacy Policy'),
+  body('ageConfirmed').custom(v => v === true || v === 'true' || v === 'on').withMessage('You must confirm that you are 18 or older')
 ];
 
 const loginValidation = [
