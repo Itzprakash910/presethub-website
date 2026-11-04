@@ -46,7 +46,9 @@
         <div><b>Telegram bot</b><span>${s.bot?.configured ? (s.bot.started ? '✅ running' : '⚠️ configured, not started') : '❌ not configured'}</span></div>
         <div><b>Services</b><span>${Object.entries(s.services || {}).map(([k, v]) => `<em class="svc ${v ? 'on' : 'off'}">${esc(k)} ${v ? '✓' : '✗'}</em>`).join(' ')}</span></div>
         <div><b>Viral score</b><span>${fmt(s.viralScore)}</span></div>
-      </div>`;
+      </div>
+      <div id="v32Mfa" class="v32-mfa"></div>`;
+    renderMfa();
     const sig = o.signupSeries || [];
     const max = Math.max(1, ...sig.map(x => x.users));
     $('#v32Signups').innerHTML = `<div class="v32-chart">${sig.map(x => `<div title="${esc(x.date)}: ${x.users}"><span style="height:${Math.round((x.users / max) * 100)}%"></span><small>${esc(x.date.slice(5))}</small></div>`).join('')}</div>`;
@@ -55,6 +57,49 @@
     if (badge) { badge.textContent = o.unreadAlerts || ''; badge.classList.toggle('hidden', !o.unreadAlerts); badge.classList.toggle('crit', !!o.criticalAlerts); }
     return o;
   }
+
+  // ---------- TWO-STEP VERIFICATION (admin sign-in) ----------
+  async function authApi(path, opts = {}) {
+    const method = String(opts.method || 'GET').toUpperCase();
+    const headers = new Headers({ 'Content-Type': 'application/json' });
+    if (method !== 'GET') { const c = csrf(); if (c) headers.set('X-CSRF-Token', c); }
+    const r = await fetch(location.origin + '/api/auth' + path, { ...opts, headers, credentials: 'same-origin' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
+    return d;
+  }
+  async function renderMfa() {
+    const box = $('#v32Mfa'); if (!box) return;
+    let st;
+    try { st = await authApi('/mfa/status'); } catch (_) { box.innerHTML = ''; return; }
+    if (st.enabled) {
+      box.innerHTML = `<div><b>Two-step verification</b><span>✅ ON · ${st.backupCodesLeft} backup code(s) left</span></div>
+        <details><summary>Turn off</summary>
+          <input id="mfaOffPass" type="password" placeholder="Your password" autocomplete="current-password">
+          <input id="mfaOffCode" inputmode="numeric" placeholder="6-digit code or backup code" autocomplete="one-time-code">
+          <button type="button" class="btn btn-secondary" data-mfa="off">Turn off</button></details>`;
+    } else {
+      box.innerHTML = `<div><b>Two-step verification</b><span>⚠️ OFF — admin accounts should use it</span></div>
+        ${st.available ? '<button type="button" class="btn btn-primary" data-mfa="setup">Set up two-step verification</button>' : '<small>Set PAYOUT_ENC_KEY on the server to enable this feature.</small>'}`;
+    }
+  }
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-mfa]'); if (!b) return;
+    const box = $('#v32Mfa'); const act = b.dataset.mfa;
+    try {
+      if (act === 'setup') {
+        const r = await authApi('/mfa/setup', { method: 'POST', body: '{}' });
+        box.innerHTML = `<div><b>1. Add to your authenticator app</b><span>Enter this key manually: <code>${esc(r.secret)}</code> · <a href="${esc(r.otpauthUrl)}">open in app</a></span></div>
+          <div><b>2. Confirm</b><span><input id="mfaOnCode" inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code"> <button type="button" class="btn btn-primary" data-mfa="on">Turn on</button></span></div>`;
+      } else if (act === 'on') {
+        const r = await authApi('/mfa/enable', { method: 'POST', body: JSON.stringify({ code: ($('#mfaOnCode')?.value || '').trim() }) });
+        box.innerHTML = `<div><b>✅ Two-step verification is ON</b><span>Save these one-time backup codes now. They are shown only once.</span></div><pre class="v32-backup">${r.backupCodes.map(esc).join('\n')}</pre><button type="button" class="btn btn-secondary" data-mfa="done">I saved them</button>`;
+      } else if (act === 'off') {
+        await authApi('/mfa/disable', { method: 'POST', body: JSON.stringify({ password: $('#mfaOffPass')?.value || '', code: ($('#mfaOffCode')?.value || '').trim() }) });
+        note('Two-step verification turned off', 'success'); renderMfa();
+      } else if (act === 'done') { renderMfa(); }
+    } catch (err) { note(err.message, 'error'); }
+  });
 
   // ---------- ALERTS ----------
   async function loadAlerts() {

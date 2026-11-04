@@ -1,5 +1,6 @@
-/* PresetHub analytics loader (v3.18.0).
-   GA4 and Meta Pixel load ONLY after the visitor accepts cookies (consent key from cookie-consent.js).
+/* PresetHub analytics loader (v3.25.2).
+   Google Analytics 4 loads only if the visitor allowed "Analytics"; Meta Pixel only if they allowed "Marketing".
+   The choice comes from cookie-consent.js (localStorage key presethub_cookie_consent_v2, with the old v1 value still honoured).
    IDs come from data attributes set by the server from GA_MEASUREMENT_ID and META_PIXEL_ID. */
 (function () {
   'use strict';
@@ -9,7 +10,17 @@
   var PX = (me.getAttribute('data-pixel') || '').trim();
   var GA_OK = /^G-[A-Z0-9]{6,12}$/.test(GA);
   var PX_OK = /^\d{8,20}$/.test(PX);
-  var started = false;
+  var gaStarted = false, pxStarted = false;
+
+  function consent() {
+    try {
+      var raw = localStorage.getItem('presethub_cookie_consent_v2');
+      if (raw) { var o = JSON.parse(raw); if (o && o.v === 2) return o; }
+      var old = localStorage.getItem('presethub_cookie_consent_v1');
+      if (old === 'accepted') return { analytics: true, ads: true, marketing: true };
+    } catch (_) {}
+    return {};
+  }
 
   function loadGA() {
     window.dataLayer = window.dataLayer || [];
@@ -33,22 +44,18 @@
     window.fbq('track', 'PageView');
   }
 
-  function start() {
-    if (started) return;
-    started = true;
-    if (GA_OK) loadGA();
-    if (PX_OK) loadPixel();
+  function apply() {
+    var c = consent();
+    if (c.analytics && GA_OK && !gaStarted) { gaStarted = true; loadGA(); }
+    if (c.marketing && PX_OK && !pxStarted) { pxStarted = true; loadPixel(); }
   }
 
   // Helper for later events (e.g. purchase, lead): phTrack('lead') or phTrack('purchase', {value: 99, currency: 'INR'}).
   window.phTrack = function (name, params) {
-    if (!started) return;
-    if (GA_OK && window.gtag) window.gtag('event', name, params || {});
-    if (PX_OK && window.fbq) window.fbq('track', name.charAt(0).toUpperCase() + name.slice(1), params || {});
+    if (gaStarted && window.gtag) window.gtag('event', name, params || {});
+    if (pxStarted && window.fbq) window.fbq('track', name.charAt(0).toUpperCase() + name.slice(1), params || {});
   };
 
-  var consent = null;
-  try { consent = localStorage.getItem('presethub_cookie_consent_v1'); } catch (_) {}
-  if (consent === 'accepted') start();
-  window.addEventListener('presethub:consent', function (e) { if (e.detail === 'accepted') start(); });
+  apply();
+  window.addEventListener('presethub:consent', apply);
 })();

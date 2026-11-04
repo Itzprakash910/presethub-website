@@ -88,3 +88,9 @@
 .adm-nav-in a { flex: 0 0 auto; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border, #ddd); color: inherit; text-decoration: none; font-size: .8rem; font-weight: 700; white-space: nowrap; }
 .adm-nav-in a:hover, .adm-nav-in a:focus-visible { background: var(--accent, #d4a373); color: #1c1c1c; border-color: transparent; }
 section[id] { scroll-margin-top: 70px; }
+
+/* v3.25.2: admin two-step verification box */
+.v32-mfa{margin-top:12px;display:grid;gap:10px}
+.v32-mfa input{padding:8px 10px;border:1px solid var(--border,#ddd);border-radius:8px;margin:4px 6px 4px 0;max-width:100%}
+.v32-mfa code{word-break:break-all;user-select:all}
+.v32-backup{background:rgba(127,127,127,.12);padding:10px 12px;border-radius:8px;font-size:.95rem;user-select:all}

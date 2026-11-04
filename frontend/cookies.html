@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="/icons.css?v=3.2.0">
   <link rel="stylesheet" href="/style.css?v=3.2.0">
 <link rel="stylesheet" href="/content.css?v=3.7.0">
-<link rel="stylesheet" href="/cookie-consent.css?v=3.2.0">
+<link rel="stylesheet" href="/cookie-consent.css?v=3.25.2">
   <meta name="theme-color" content="#d4a373">
   <meta name="color-scheme" content="light dark">
   <meta name="format-detection" content="telephone=no">
@@ -70,18 +70,28 @@
 <main class="legal-page">
 <a href="/" class="logo">Preset<span>Hub</span></a>
 <h1>Cookie Policy</h1>
-<div class="last-updated">Last Updated: October 3, 2026</div>
+<div class="last-updated">Last Updated: November 3, 2026</div>
 <p>PresetHub uses limited browser storage and cookies to keep the marketplace functional and to remember privacy choices.</p>
-<h2>1. Essential cookies</h2>
+<h2>1. Essential cookies and storage</h2>
 <p>Your login session is kept in an HttpOnly cookie named <code>ph_auth</code>. It is used only to keep you signed in and is removed when you log out. <code>ph_csrf</code> is readable by the site JavaScript so state-changing requests can include a matching CSRF header.</p>
-<h2>2. Optional advertising</h2>
-<p>Google AdSense is loaded only after you choose <strong>Allow optional cookies</strong>. If you reject optional cookies, the advertising script is not intentionally loaded by PresetHub. Google may set additional cookies when advertising is enabled; those technologies are subject to Google's own policies and controls.</p>
+<h2>2. Optional tools (off until you choose)</h2>
+<p>Nothing below runs until you allow it. You can allow all, reject all, or choose each purpose separately.</p>
+<div style="overflow-x:auto"><table class="cookie-table" style="width:100%;border-collapse:collapse;font-size:.9rem">
+<thead><tr><th align="left">Tool (provider)</th><th align="left">Purpose</th><th align="left">When it loads</th><th align="left">Data / retention</th></tr></thead>
+<tbody>
+<tr><td>Google Analytics 4 (Google)</td><td>Analytics: which pages are used</td><td>Only if you allow “Analytics”</td><td>Pseudonymous usage data; kept 14 months</td></tr>
+<tr><td>Google AdSense (Google)</td><td>Advertising (never shown to Pro members)</td><td>Only if you allow “Advertising”</td><td>Ad cookies set by Google; see Google’s policy</td></tr>
+<tr><td>Meta Pixel (Meta)</td><td>Marketing: measures our ads</td><td>Only if you allow “Marketing”</td><td>Visit and event data; see Meta’s policy</td></tr>
+</tbody></table></div>
+<p>Google Fonts are loaded on every page for text styling; this sends your IP address to Google and sets no cookie.</p>
+
 <h2>3. Managing your choice</h2>
-<p>Use the <strong>Cookie settings</strong> button on public pages to reopen the consent prompt. Clearing browser storage also resets the local consent choice.</p>
+<p>Use “Cookie settings” in the page footer to reopen the choices and change them at any time. Switching a purpose off removes its cookies and reloads the page. We keep a record of each choice (a random visitor ID, the choice, the policy version, the page and the time, without your IP address) for three years, to show that your choice was respected. Clearing browser storage resets the choice on this device.</p>
+
 <h2>4. More information</h2>
 <p>For broader information about account, payment, content and privacy practices, see our <a href="/privacy.html">Privacy Policy</a> and <a href="/terms.html">Terms</a>.</p>
 <a href="/" class="back-link">← Back to Home</a>
 </main>
-<script src="/cookie-consent.js?v=3.2.0" defer></script>
+<script src="/cookie-consent.js?v=3.25.2" defer></script>
 </body>
 </html>

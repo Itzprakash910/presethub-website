@@ -8,3 +8,14 @@
 .cookie-consent-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; width:100%; }
 .cookie-consent-actions .btn { white-space:normal; min-width:0; text-align:center; }
 @media (min-width: 681px) { .cookie-consent-actions { display:flex; width:auto; } }
+
+/* v3.25.1: granular choices */
+.cookie-choices{margin-top:10px;display:grid;gap:8px}
+.cookie-choices[hidden]{display:none}
+.cookie-choice{display:flex;gap:10px;align-items:flex-start;font-size:.85rem;line-height:1.4;cursor:pointer}
+.cookie-choice input{margin-top:3px;width:18px;height:18px;flex:none}
+.cookie-choice strong{display:inline;font-size:.9rem;margin:0}
+.cookie-choice small{display:block;opacity:.8}
+.cookie-consent{max-height:90vh;overflow:auto}
+.cookie-consent-actions .btn-secondary{background:transparent;border:1px solid var(--border,#bbb);color:inherit}
+@media (min-width:681px){.cookie-consent-actions{flex-wrap:wrap}}

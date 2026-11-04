@@ -1118,7 +1118,7 @@
           <div class="form-group"><label>Email</label><input type="email" name="email" required autocomplete="${mode === 'login' ? 'username' : 'email'}" value="${mode === 'login' ? esc(rememberedEmail()) : ''}"></div>
           ${mode === 'login' ? `<label class="check-row remember-row"><input type="checkbox" name="remember" ${rememberedEmail() ? 'checked' : ''}> Email yaad rakhein (password kabhi save nahi hoga)</label>` : ''}
           ${passwordField('password', 'Password', mode === 'login' ? 'current-password' : 'new-password', mode === 'login' ? 'required' : 'minlength="10" required')}
-          ${mode === 'signup' ? '<small>At least 8 characters with upper/lowercase and a number.</small>' : ''}
+          ${mode === 'signup' ? '<small>At least 10 characters with upper/lowercase and a number.</small><label class="check-row"><input type="checkbox" name="acceptTerms" required> I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a> and <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</label><label class="check-row"><input type="checkbox" name="ageConfirmed" required> I am 18 years or older.</label>' : ''}
           <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
         </form>
         ${mode === 'login' ? '<button class="text-button" data-action="forgot-password">Forgot password?</button>' : ''}
@@ -1144,6 +1144,7 @@
     const data = Object.fromEntries(new FormData(form).entries());
     const remember = data.remember === 'on';
     delete data.remember;
+    if (mode === 'signup') { data.acceptTerms = data.acceptTerms === 'on'; data.ageConfirmed = data.ageConfirmed === 'on'; }
     if (mode === 'login') saveRememberedEmail(remember, String(data.email || '').trim().toLowerCase());
     try {
       const r = await api(`/auth/${mode}`, { method: 'POST', body: JSON.stringify(data) });
@@ -1153,7 +1154,17 @@
       updateAuthUI(); closeModal();
       toast(mode === 'login' ? 'Logged in' : 'Account created');
       await loadPresets();
-    } catch (e) { toast(e.message, 'error'); }
+    } catch (e) {
+      if (mode === 'login' && e.code === 'MFA_REQUIRED' && !form.querySelector('[name="mfaCode"]')) {
+        const row = document.createElement('div');
+        row.className = 'form-group';
+        row.innerHTML = '<label>Two-step code</label><input name="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="6-digit code or backup code" required>';
+        form.querySelector('button[type="submit"]').before(row);
+        row.querySelector('input').focus();
+        return toast('Enter the code from your authenticator app', 'info');
+      }
+      toast(e.message, 'error');
+    }
   }
 
   async function openAccount() {
