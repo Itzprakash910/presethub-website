@@ -57,6 +57,17 @@ const UserSchema = new Schema({
     adRewardDays: { type: Number, default: 0 },
     lastAdWatch: { type: Date, default: null },
   },
+  // Admin two-step verification (TOTP). The secret is encrypted (AES-GCM) and never returned by normal queries.
+  mfaEnabled: { type: Boolean, default: false },
+  mfaEnabledAt: { type: Date, default: null },
+  mfaSecretEnc: { type: String, default: '', select: false },
+  mfaLastStep: { type: Number, default: 0, select: false },
+  mfaBackupHashes: { type: [String], default: [], select: false },
+  // Proof of what the person agreed to when creating the account (DPDP: consent must be demonstrable).
+  consent: {
+    termsVersion: { type: String, default: '' }, privacyVersion: { type: String, default: '' },
+    acceptedAt: { type: Date, default: null }, ageConfirmed: { type: Boolean, default: false }, source: { type: String, default: '' }
+  },
   referral: {
     code: { type: String, default: null, index: true, sparse: true },
     referredBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
@@ -370,6 +381,7 @@ const Comment = mongoose.model('Comment', CommentSchema);
 
 const Message = mongoose.model('Message', MessageSchema);
 const HomeAd = mongoose.model('HomeAd', HomeAdSchema);
+SupportRequestSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 365 }); // keep one year
 const SupportRequest = mongoose.model('SupportRequest', SupportRequestSchema);
 const TextPost = mongoose.model('TextPost', TextPostSchema);
 const AlertLog = mongoose.model('AlertLog', AlertLogSchema);
@@ -406,4 +418,17 @@ AuditLogEntrySchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 *
 const AuditLogEntry = mongoose.model('AuditLogEntry', AuditLogEntrySchema);
 
 
-module.exports = { User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Collection, Report, Payout, Coupon, Boost, AuditLogEntry, TEXT_CATEGORIES };
+// Cookie / tracking consent records (no IP, no user agent). Deleted automatically after three years.
+const ConsentLogSchema = new Schema({
+  visitorId: { type: String, required: true, index: true },
+  userId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+  choice: { type: String, enum: ['accepted_all', 'rejected_all', 'custom', 'withdrawn'], required: true },
+  purposes: { analytics: Boolean, ads: Boolean, marketing: Boolean },
+  version: { type: String, default: '' },
+  page: { type: String, default: '/' },
+  createdAt: { type: Date, default: Date.now }
+});
+ConsentLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 365 * 3 });
+const ConsentLog = mongoose.model('ConsentLog', ConsentLogSchema);
+
+module.exports = { ConsentLog, User, Preset, Order, Download, Share, ShortLink, ShareClick, Comment, Message, HomeAd, SupportRequest, TextPost, AlertLog, Collection, Report, Payout, Coupon, Boost, AuditLogEntry, TEXT_CATEGORIES };
