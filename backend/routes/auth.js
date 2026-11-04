@@ -19,6 +19,9 @@ function signUserToken(user) {
   return jwt.sign({ id: user._id.toString(), email: user.email, role: user.role, ver: Number(user.sessionVersion || 0) }, JWT_SECRET, { expiresIn: '7d', algorithm: 'HS256' });
 }
 const auth = require('../middleware/auth');
+const legal = require('../utils/legal');
+const totp = require('../utils/totp');
+const cryptoBox = require('../utils/crypto');
 const { validate, signupValidation, loginValidation, changePasswordValidation } = require('../utils/validators');
 
 const router = express.Router();
@@ -76,7 +79,8 @@ router.post('/signup', signupLimiter, validate(signupValidation), async (req, re
     const hashed = await bcrypt.hash(password, 12);
     const user = new User({
       email, password: hashed,
-      name: name || username, username, role: 'user', verified: true
+      name: name || username, username, role: 'user', verified: true,
+      consent: { termsVersion: legal.TERMS_VERSION, privacyVersion: legal.PRIVACY_VERSION, acceptedAt: new Date(), ageConfirmed: true, source: 'web-signup' }
     });
 
     const refCode = req.query.ref;
@@ -128,12 +132,29 @@ router.post('/signup', signupLimiter, validate(signupValidation), async (req, re
 
 const DUMMY_HASH = bcrypt.hashSync('presethub-dummy-password', 12);
 
+// Checks an authenticator code (each 30-second code works once) or a one-time backup code.
+async function verifyMfaCode(user, code) {
+  const c = String(code || '').trim();
+  if (totp.looksLikeBackupCode(c)) {
+    const h = totp.hashCode(c);
+    const r = await User.updateOne({ _id: user._id, mfaBackupHashes: h }, { $pull: { mfaBackupHashes: h } });
+    return r.modifiedCount === 1;
+  }
+  if (!user.mfaSecretEnc) return false;
+  let secret;
+  try { secret = cryptoBox.decrypt(user.mfaSecretEnc); } catch (_) { return false; }
+  const step = totp.verifyTotp(secret, c);
+  if (step === null) return false;
+  const r = await User.updateOne({ _id: user._id, mfaLastStep: { $lt: step } }, { $set: { mfaLastStep: step } });
+  return r.modifiedCount === 1; // a code that was already used is refused
+}
+
 router.post('/login', validate(loginValidation), async (req, res) => {
   try {
     const email = req.body.email.toLowerCase().trim();
     const locked = isLockedOut(email, req);
     if (locked) return res.status(429).json({ error: `Too many wrong attempts. Try again in about ${locked} minute(s), or use "Forgot password".` });
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+mfaSecretEnc +mfaLastStep +mfaBackupHashes');
     if (!user) {
       // Same bcrypt work as a real login so response time does not reveal which emails exist.
       await bcrypt.compare(String(req.body.password || ''), DUMMY_HASH).catch(() => {});
@@ -145,6 +166,16 @@ router.post('/login', validate(loginValidation), async (req, res) => {
       recordFailedLogin(req, email); noteLoginFailure(email, req);
       if (user.role === 'admin') adminAlert({ type: 'security', severity: 'critical', title: 'Failed login on ADMIN account', fingerprint: `admin-fail-${req.ip}`, details: { ...requestInfo(req), email } });
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    // Admin two-step verification: a password alone is not enough once it is switched on.
+    if (user.role === 'admin' && user.mfaEnabled) {
+      const code = String(req.body.mfaCode || '').trim();
+      if (!code) return res.status(401).json({ error: 'Enter your two-step verification code.', code: 'MFA_REQUIRED' });
+      if (!(await verifyMfaCode(user, code))) {
+        recordFailedLogin(req, email); noteLoginFailure(email, req);
+        adminAlert({ type: 'security', severity: 'critical', title: 'Wrong two-step code on ADMIN account', fingerprint: `admin-mfa-fail-${req.ip}`, details: { ...requestInfo(req) } });
+        return res.status(401).json({ error: 'Invalid two-step code.', code: 'MFA_INVALID' });
+      }
     }
     clearFailedLogins(req, email); clearLoginFailures(email, req);
     if (user.role === 'admin') adminAlert({ type: 'security', severity: 'warning', title: 'Admin logged in', fingerprint: `admin-login-${req.ip}`, throttleMs: 30 * 60 * 1000, details: { ...requestInfo(req), email } });
@@ -292,7 +323,8 @@ router.delete('/account', auth, async (req, res) => {
       ShortLink.deleteMany({ $or: [{ userId:user._id }, { presetId:{ $in:presetIds } }] }),
       Comment.deleteMany({ $or: [{ userId:user._id }, { presetId:{ $in:presetIds } }] }),
       Message.deleteMany({ $or:[{ senderId:user._id }, { receiverId:user._id }] }),
-      Order.deleteMany({ userId:user._id }),
+      // Orders are financial records that the Privacy Policy says we keep as long as the law requires.
+      // They hold no name, email or phone; the link to the person disappears with the user record below.
       User.updateMany({ followers:user._id }, { $pull:{ followers:user._id } }),
       User.updateMany({ following:user._id }, { $pull:{ following:user._id } }),
       User.updateMany({ 'referral.referredBy': user._id }, { $set:{ 'referral.referredBy': null } })
@@ -347,6 +379,50 @@ router.get('/my-data', auth, async (req, res) => {
     payouts: payouts.map(x => ({ id: String(x._id), amountRupees: Math.round(x.amountPaise) / 100, method: x.method, destination: x.destinationMasked, status: x.status, createdAt: x.createdAt })),
     comments: comments.map(c => ({ text: c.text, createdAt: c.createdAt }))
   });
+});
+
+// ---------- Admin two-step verification (TOTP) ----------
+const adminOnly = (req, res, next) => (req.user && req.user.role === 'admin' ? next() : res.status(403).json({ error: 'Admin only' }));
+
+router.get('/mfa/status', auth, adminOnly, async (req, res) => {
+  const u = await User.findById(req.user.id).select('mfaEnabled mfaEnabledAt +mfaBackupHashes').lean();
+  res.json({ enabled: !!(u && u.mfaEnabled), enabledAt: u && u.mfaEnabledAt || null, backupCodesLeft: u && u.mfaEnabled ? (u.mfaBackupHashes || []).length : 0, available: cryptoBox.isKeyConfigured() });
+});
+router.post('/mfa/setup', auth, adminOnly, async (req, res) => {
+  try {
+    if (!cryptoBox.isKeyConfigured()) return res.status(503).json({ error: 'Set PAYOUT_ENC_KEY on the server first (it also protects the two-step secret).' });
+    const u = await User.findById(req.user.id).select('email mfaEnabled').lean();
+    if (u.mfaEnabled) return res.status(409).json({ error: 'Two-step verification is already on. Turn it off first to set it up again.' });
+    const secret = totp.generateSecret();
+    await User.updateOne({ _id: req.user.id }, { $set: { mfaSecretEnc: cryptoBox.encrypt(secret), mfaEnabled: false } });
+    res.json({ secret, otpauthUrl: totp.otpauthUrl(u.email, secret) });
+  } catch (e) { console.error('MFA setup error:', e.message); res.status(500).json({ error: 'Could not start two-step setup.' }); }
+});
+router.post('/mfa/enable', auth, adminOnly, async (req, res) => {
+  try {
+    const u = await User.findById(req.user.id).select('+mfaSecretEnc mfaEnabled');
+    if (u.mfaEnabled) return res.status(409).json({ error: 'Two-step verification is already on.' });
+    if (!u.mfaSecretEnc) return res.status(400).json({ error: 'Start the setup first.' });
+    let secret;
+    try { secret = cryptoBox.decrypt(u.mfaSecretEnc); } catch (_) { return res.status(400).json({ error: 'Start the setup again.' }); }
+    const step = totp.verifyTotp(secret, req.body && req.body.code);
+    if (step === null) return res.status(400).json({ error: 'That code is not correct. Check the time on your phone and try again.' });
+    const backup = totp.generateBackupCodes();
+    await User.updateOne({ _id: u._id }, { $set: { mfaEnabled: true, mfaEnabledAt: new Date(), mfaLastStep: step, mfaBackupHashes: backup.hashes } });
+    adminAlert({ type: 'security', severity: 'info', title: 'Admin turned ON two-step verification', fingerprint: `admin-mfa-on-${u._id}`, email: false, details: { ...requestInfo(req) } });
+    res.json({ enabled: true, backupCodes: backup.codes }); // shown once; only hashes are stored
+  } catch (e) { console.error('MFA enable error:', e.message); res.status(500).json({ error: 'Could not turn on two-step verification.' }); }
+});
+router.post('/mfa/disable', auth, adminOnly, async (req, res) => {
+  try {
+    const u = await User.findById(req.user.id).select('+password +mfaSecretEnc +mfaLastStep +mfaBackupHashes mfaEnabled');
+    if (!u.mfaEnabled) return res.json({ enabled: false });
+    if (!u.password || !(await bcrypt.compare(String(req.body && req.body.password || ''), u.password))) return res.status(401).json({ error: 'Password is incorrect.' });
+    if (!(await verifyMfaCode(u, req.body && req.body.code))) return res.status(401).json({ error: 'Two-step code is incorrect.' });
+    await User.updateOne({ _id: u._id }, { $set: { mfaEnabled: false, mfaEnabledAt: null, mfaSecretEnc: '', mfaLastStep: 0, mfaBackupHashes: [] } });
+    adminAlert({ type: 'security', severity: 'warning', title: 'Admin turned OFF two-step verification', fingerprint: `admin-mfa-off-${u._id}`, details: { ...requestInfo(req) } });
+    res.json({ enabled: false });
+  } catch (e) { console.error('MFA disable error:', e.message); res.status(500).json({ error: 'Could not turn off two-step verification.' }); }
 });
 
 module.exports = router;

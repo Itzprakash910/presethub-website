@@ -1891,7 +1891,9 @@ router.get('/system', async (req, res) => {
     const mem = process.memoryUsage();
     const usage = await getDbUsage();
     const hasEnv = k => Boolean(process.env[k]);
+    const me = await User.findById(req.user.id).select('mfaEnabled').lean();
     res.json({
+      mfa: { enabled: !!(me && me.mfaEnabled) },
       uptimeMinutes: Math.round(process.uptime() / 60), node: process.version, env: process.env.NODE_ENV || 'development',
       memoryMB: { rss: Math.round(mem.rss / 1048576), heapUsed: Math.round(mem.heapUsed / 1048576) },
       database: usage, bot: getBotStatus(),
