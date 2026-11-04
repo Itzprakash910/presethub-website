@@ -334,7 +334,7 @@ app.use(cors({
 // ============ MIDDLEWARE ============
 app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
   next();
 });
 
@@ -524,6 +524,7 @@ app.get('/api/bot/status', require('./middleware/auth').authenticate, require('.
 
 // ============ API ROUTES ============
 app.use('/api/auth', authRoutes);
+app.use('/api/legal', require('./routes/legal'));
 app.use('/api/presets', presetRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/reviews', reviewRoutes);
@@ -794,13 +795,11 @@ app.listen(PORT, '0.0.0.0', async () => {
       console.log(`🚀 PresetHub listening on port ${PORT}`);
       console.log(`🌐 Site: ${SITE_URL}`);
       console.log('🗄️  Storage: MongoDB GridFS (presethub_media)');
+      { const missing = require('./utils/legal').missingLegalFields(); if (missing.length) console.warn(`⚠️ Legal details missing (${missing.join(', ')}): the Privacy and Refund pages will show a generic contact instead of your business details.`); }
       console.log(`🤖 Telegram bot: ${process.env.BOT_TOKEN ? 'configured' : 'not configured'}`);
       if (process.env.BOT_TOKEN) {
-        const bootTelegram = async () => {
-          const ok = await startBot();
-          if (!ok) setTimeout(bootTelegram, 15000);
-        };
-        bootTelegram().catch(err => console.error('Telegram bot startup failed:', err.message));
+        // The bot restarts itself with a growing delay if Telegram or the database is unavailable (see bot.js scheduleRestart).
+        startBot().catch(err => console.error('Telegram bot startup failed:', err.message));
       }
       console.log(`🍃 Database: ${process.env.MONGODB_URI ? 'MongoDB' : 'not configured'}`);
       console.log('═══════════════════════════════════════');

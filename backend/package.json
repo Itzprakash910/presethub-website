@@ -1,6 +1,6 @@
 {
   "name": "presethub-backend",
-  "version": "3.25.1",
+  "version": "3.25.2",
   "description": "PresetHub production backend \u2014 MongoDB + GridFS media storage + PWA + SEO + integrated Telegram bot",
   "main": "server.js",
   "scripts": {
@@ -11,7 +11,11 @@
     "backup": "node backup.js",
     "create-admin": "node create-admin.js",
     "generate-vapid": "node scripts/generate-vapid.js",
-    "security:check": "node scripts/security-check.js"
+    "security:check": "node scripts/security-check.js",
+    "bot:test": "node scripts/bot-selftest.js",
+    "consent:test": "node scripts/consent-selftest.js",
+    "totp:test": "node scripts/totp-selftest.js",
+    "test": "npm run bot:test && npm run consent:test && npm run totp:test && npm run security:check"
   },
   "dependencies": {
     "axios": "^1.7.9",
