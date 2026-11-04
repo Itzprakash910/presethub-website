@@ -95,3 +95,15 @@ services:
         sync: false
       - key: API_BASE
         value: https://presethub.site/api
+      - key: LEGAL_ENTITY_NAME
+        sync: false
+      - key: LEGAL_ADDRESS
+        sync: false
+      - key: GRIEVANCE_OFFICER_NAME
+        sync: false
+      - key: GRIEVANCE_OFFICER_ADDRESS
+        sync: false
+      - key: ADMIN_TELEGRAM_IDS
+        sync: false
+      - key: BACKUP_ENC_KEY
+        sync: false
