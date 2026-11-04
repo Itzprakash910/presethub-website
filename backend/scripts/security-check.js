@@ -101,7 +101,7 @@ const PUBLIC_WRITES = new Set([
   'cashfree.js POST /webhook', 'payments.js POST /webhook', 'payments.js POST /youpi/webhook',
   'presets.js POST /:id/download', 'presets.js POST /:id/view', 'presets.js POST /:id/ad-impression', 'presets.js POST /:id/share',
   'texts.js POST /:id/view', 'texts.js POST /:id/copy', 'texts.js POST /:id/share',
-  'ads.js POST /:id/click', 'features.js POST /track', 'tracking.js POST /'
+  'ads.js POST /:id/click', 'features.js POST /track', 'tracking.js POST /', 'legal.js POST /consent'
 ]);
 const open = [];
 for (const f of files.filter(f => /backend\/routes\/[^/]+\.js$/.test(rel(f)) && !/admin\.js$/.test(f))) {
@@ -123,6 +123,36 @@ for (const f of jsFiles) {
   if (/\beval\(|new Function\(|child_process/.test(s) && !/security-check\.js$/.test(f)) danger.push(rel(f));
 }
 check('No eval / new Function / child_process in backend', danger.length === 0, danger.join(', '));
+
+// 11. Privacy and compliance (India: DPDP Act 2023 / Rules 2025, e-commerce rules).
+const htmlFiles = files.filter(f => /frontend\/[^/]+\.html$/.test(rel(f)));
+const placeholders = [];
+for (const f of htmlFiles) {
+  const t = fs.readFileSync(f, 'utf8');
+  if (/\[(Name|Your|Postal|postal|Address|Registered|Legal|Business|designated)[^\]]{0,60}\]/.test(t)) placeholders.push(rel(f));
+}
+check('No unfilled [placeholders] on legal pages', placeholders.length === 0, placeholders.join(', '));
+const inlineTrackers = htmlFiles.filter(f => /googletagmanager\.com|connect\.facebook\.net|pagead2\.googlesyndication/.test(fs.readFileSync(f, 'utf8'))).map(rel);
+check('No analytics/ad script is hard-coded in HTML (they load only after consent)', inlineTrackers.length === 0, inlineTrackers.join(', '));
+const cc = read('frontend/cookie-consent.js'), tr = read('frontend/tracking.js');
+check('Cookie banner offers Reject, Customize and per-purpose choices', /data-cookie="reject"/.test(cc) && /data-cookie="customize"/.test(cc) && ['analytics', 'ads', 'marketing'].every(k => cc.includes(`'${k}'`)));
+check('Trackers wait for the matching consent (GA=analytics, Pixel=marketing)', /c\.analytics && GA_OK/.test(tr) && /c\.marketing && PX_OK/.test(tr));
+check('Consent choices are recorded on the server', /\/api\/legal\/consent/.test(cc) && /router\.post\('\/consent'/.test(read('backend/routes/legal.js')));
+const val = read('backend/utils/validators.js');
+check('Signup requires Terms/Privacy acceptance and 18+ confirmation, and stores the record', /acceptTerms/.test(val) && /ageConfirmed/.test(val) && /consent:\s*\{\s*termsVersion/.test(authRoute));
+const priv = read('frontend/privacy.html');
+const claimsMfa = /two-step|two-factor|2fa/i.test(priv);
+check('Privacy Policy does not claim admin two-step unless it is implemented', !claimsMfa || (/MFA_REQUIRED/.test(authRoute) && fs.existsSync(path.join(root, 'backend/utils/totp.js'))));
+check('Account deletion keeps order records the policy says are retained', !/Order\.deleteMany/.test(authRoute));
+check('Database backups are encrypted', /backupCrypto/.test(read('backend/backup.js')));
+check('Bot does not store a profile for visitors who have not linked an account', !/User\.create\(/.test(read('backend/bot.js')));
+// Every documented environment variable must be used by the code (catches settings that do nothing).
+const envKeys = read('backend/.env.example').split('\n').map(l => (l.match(/^([A-Z][A-Z0-9_]+)=/) || [])[1]).filter(Boolean);
+const allSrc = jsFiles.map(f => fs.readFileSync(f, 'utf8')).join('\n');
+const deadEnv = envKeys.filter(k => !['NODE_VERSION'].includes(k) && !allSrc.includes(k));
+check('Every variable in .env.example is used by the code', deadEnv.length === 0, deadEnv.join(', '));
+const legalMissing = (read('backend/.env.example').match(/^(LEGAL_ENTITY_NAME|LEGAL_ADDRESS|GRIEVANCE_OFFICER_NAME)=/gm) || []).length === 3;
+check('Legal detail variables are documented in .env.example', legalMissing);
 
 // Report
 let failed = 0;
