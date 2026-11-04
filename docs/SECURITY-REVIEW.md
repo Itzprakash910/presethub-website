@@ -1,4 +1,6 @@
-# Security review: PresetHub v3.25.1
+# Security review: PresetHub v3.25.2
+
+> Newer and more complete: `SECURITY-27-CHECKLIST.md` (item-by-item status with evidence) and `PRIVACY-COMPLIANCE-CHECKLIST.md`.
 
 Method: manual source review of the backend (server, auth, payments, Cashfree, uploads, admin, bot, users, presets, texts, chat, comments, reviews, collections, share), the frontend (escaping, service worker) and the config files. No live penetration test and no `npm audit` (no network in the review environment): run `npm run security:check` and `npm audit` on your side.
 
