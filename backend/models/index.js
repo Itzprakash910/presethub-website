@@ -222,6 +222,7 @@ const ShareClickSchema = new Schema({
   clickedAt: { type: Date, default: Date.now },
   ip: String,
   userAgent: String,
+  source: { type: String, default: '' }, // 'qr' when the visit came from a scanned QR code
 });
 
 
