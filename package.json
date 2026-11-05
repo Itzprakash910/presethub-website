@@ -1,6 +1,6 @@
 {
   "name": "presethub",
-  "version": "3.25.2",
+  "version": "3.25.3",
   "private": true,
   "description": "PresetHub – Lightroom preset marketplace (Railway-ready root)",
   "engines": {
