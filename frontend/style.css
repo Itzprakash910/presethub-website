@@ -1604,3 +1604,15 @@ body.dark .feat-tag, [data-theme="dark"] .feat-tag { color: #f0c987; }
 .preset-card .card-actions .btn { flex:1 1 100%; min-width:0; white-space:nowrap; }
 /* v3.25: sponsored cards keep the preset look; the tag is clearly labelled */
 .ad-card .ad-tag { background:#1c1c1c; color:#fff; }
+
+/* v3.25.2: QR share card */
+.share-card-box{padding:12px}
+.share-card-canvas{display:block;width:100%;max-width:440px;height:auto;margin:0 auto;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.share-card-canvas.small{max-width:260px;background:#fff;padding:8px}
+.share-card-hint{margin:10px 0 0;font-size:.85rem;color:var(--muted)}
+.share-card-loading{display:grid;place-items:center;gap:8px;min-height:220px;color:var(--muted)}
+.share-card-loading .spinner{width:34px;height:34px;border:3px solid rgba(127,127,127,.3);border-top-color:var(--accent,#d9a46c);border-radius:50%;animation:phspin .8s linear infinite}
+@keyframes phspin{to{transform:rotate(360deg)}}
+.share-footer{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.share-footer .btn[disabled]{opacity:.55;cursor:wait}
+.share-footer .btn[hidden]{display:none}

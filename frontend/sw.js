@@ -1,8 +1,8 @@
-const STATIC_CACHE = 'presethub-static-v17';
+const STATIC_CACHE = 'presethub-static-v18';
 const API_CACHE = 'presethub-api-v8';
 const IMAGE_CACHE = 'presethub-images-v6';
 const CORE = [
-  '/', '/index.html', '/manifest.json', '/icons.css?v=3.25.2', '/style.css?v=3.25.2', '/app.js?v=3.25.2', '/texts.js?v=3.2.0', '/shayari/',
+  '/', '/index.html', '/manifest.json', '/icons.css?v=3.25.2', '/style.css?v=3.25.2', '/app.js?v=3.25.2', '/qr.js?v=3.25.2', '/share-card.js?v=3.25.2', '/texts.js?v=3.2.0', '/shayari/',
   '/privacy.html', '/terms.html', '/about.html', '/blog.html',
   '/creator-program.html', '/faq.html', '/contact.html',
   '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=3.25.2', '/cookie-consent.js?v=3.25.2', '/download-app.js?v=2.9.6'

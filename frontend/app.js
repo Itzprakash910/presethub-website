@@ -913,7 +913,6 @@
       const encodedText = encodeURIComponent(shareText);
       const encodedTitle = encodeURIComponent(`${p.name} — PresetHub`);
       const previewImg = assetUrl(p.previewImage);
-      const qr1 = `https://quickchart.io/qr?text=${encodedUrl}&size=220&margin=2`;
       openModal(`
         <div class="share-panel">
           <div class="share-title"><div><span class="eyebrow">PresetHub</span><h2><i class="fas fa-share-nodes"></i> Share Preset</h2></div><button class="share-close" data-action="close" aria-label="Close"><i class="fas fa-xmark"></i></button></div>
@@ -927,11 +926,15 @@
             <button class="share-btn native" data-share-platform="native" data-url="${encodedUrl}" data-text="${encodedText}" data-title="${encodedTitle}"><i class="fas fa-share"></i><span>More</span></button>
           </div>
           <div class="share-link-box"><label>Short Link</label><div class="share-link-input"><input readonly value="${esc(finalUrl)}" aria-label="Preset share link"><button class="btn btn-primary btn-sm" data-share-copy="${esc(finalUrl)}">Copy</button></div></div>
-          <div class="share-qr"><img class="qr-primary" src="${qr1}" alt="QR code to open ${esc(p.name)}" loading="eager" decoding="async" referrerpolicy="no-referrer"><p>Scan to open on mobile</p><small class="qr-status" hidden>QR image is temporarily unavailable.</small></div>
-          <div class="share-footer"><button class="btn btn-outline btn-sm" data-share-copy-image="${esc(previewImg)}" data-share-copy-url="${esc(finalUrl)}"><i class="fas fa-image"></i> Copy Image + Link</button><button class="btn btn-outline btn-sm" data-share-copy="${esc(finalUrl)}"><i class="fas fa-link"></i> Copy Short Link</button></div>
+          <div class="share-footer">
+            <button class="btn btn-primary btn-sm" data-share-card="download" disabled><i class="fas fa-download"></i> Download QR Card</button>
+            <button class="btn btn-outline btn-sm" data-share-card="qr" disabled><i class="fas fa-qrcode"></i> QR only</button>
+            <button class="btn btn-outline btn-sm" data-share-card="share" hidden><i class="fas fa-share-from-square"></i> Share image</button>
+            <button class="btn btn-outline btn-sm" data-share-copy="${esc(finalUrl)}"><i class="fas fa-link"></i> Copy Short Link</button>
+          </div>
+          <div class="share-qr share-card-box" id="shareCardBox"><div class="share-card-loading"><span class="spinner"></span><p>Preparing your QR card…</p></div></div>
         </div>`);
-      const qr=document.querySelector('.qr-primary');
-       if(qr) qr.onerror=()=>{ qr.onerror=null; const status=qr.parentElement?.querySelector('.qr-status'); if(status) status.hidden=false; };
+      renderShareCard(p, finalUrl);
       trackShare(p.id, 'open_menu');
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -960,22 +963,55 @@
     return true;
   }
 
-  async function copyImageAndLink(imageUrl, linkUrl){
-    try{
-      if(navigator.clipboard?.write && window.ClipboardItem && imageUrl){
-        const response=await fetch(imageUrl,{mode:'cors'});
-        const blob=await response.blob();
-        const textBlob=new Blob([`${linkUrl}`],{type:'text/plain'});
-        await navigator.clipboard.write([new ClipboardItem({'text/plain':textBlob,[blob.type]:blob})]);
-        toast('Preview image + link copied');
-      }else{
-        await navigator.clipboard.writeText(`${linkUrl}\n${imageUrl}`);
-        toast('Link + preview image URL copied');
-      }
-    }catch(e){
-      try{await navigator.clipboard.writeText(`${linkUrl}\n${imageUrl}`);toast('Link + image URL copied');}
-      catch(_){toast('Copy failed','error');}
+  // ---- QR card: creator, followers, reviews, likes, views and a QR that opens the preset ----
+  async function renderShareCard(p, finalUrl) {
+    const box = $('#shareCardBox');
+    if (!box) return;
+    const qrUrl = finalUrl + (finalUrl.includes('?') ? '&' : '?') + 'src=qr'; // lets us count scans separately
+    state.shareCard = { card: null, qr: null, name: p.name, url: finalUrl };
+    try {
+      if (!window.PresetHubShareCard || !window.PresetHubQR) throw new Error('QR tools are not loaded');
+      let creator = { name: p.author, followers: 0, avatar: '' };
+      try { if (p.authorId) { const u = await api(`/users/${encodeURIComponent(p.authorId)}`); creator = { name: u.name || u.username || p.author, followers: u.followers || 0, avatar: u.avatar || '' }; } } catch (_) {}
+      const built = await window.PresetHubShareCard.build({ preset: p, creator, url: finalUrl, qrUrl, previewUrl: assetUrl(p.previewImage), avatarUrl: creator.avatar ? assetUrl(creator.avatar) : '' });
+      if (!$('#shareCardBox')) return; // modal was closed while the card was drawing
+      built.canvas.className = 'share-card-canvas';
+      built.canvas.setAttribute('aria-label', `Share card with QR code for ${p.name}`);
+      box.replaceChildren(built.canvas);
+      const hint = document.createElement('p'); hint.className = 'share-card-hint'; hint.textContent = 'Scan the QR code to open this preset on PresetHub';
+      box.appendChild(hint);
+      state.shareCard.card = built;
+      document.querySelectorAll('[data-share-card]').forEach(b => { b.disabled = false; });
+      if (navigator.canShare && navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] })) { const sb = document.querySelector('[data-share-card="share"]'); if (sb) sb.hidden = false; }
+    } catch (e) {
+      // Always give the visitor a working QR, even if the card could not be drawn.
+      try {
+        const qr = window.PresetHubQR.create(qrUrl, { ecc: 'Q' });
+        const c = document.createElement('canvas'); c.width = c.height = 440; c.className = 'share-card-canvas small';
+        window.PresetHubQR.drawToCanvas(c.getContext('2d'), qr, 0, 0, 440, { border: 2 });
+        box.replaceChildren(c);
+        const hint = document.createElement('p'); hint.className = 'share-card-hint'; hint.textContent = 'Scan the QR code to open this preset on PresetHub';
+        box.appendChild(hint);
+        state.shareCard.card = { canvas: c, toBlob: () => new Promise(r => c.toBlob(r, 'image/png')), filename: `presethub-${slug(p.name)}-qr.png` };
+        document.querySelectorAll('[data-share-card="download"]').forEach(b => { b.disabled = false; });
+      } catch (_) { box.innerHTML = '<p class="muted">The QR code could not be created. Please copy the short link instead.</p>'; }
     }
+  }
+  async function shareCardAction(kind) {
+    const sc = state.shareCard;
+    if (!sc || !sc.card) return toast('Please wait, the card is still loading', 'info');
+    try {
+      if (kind === 'download') { window.PresetHubShareCard.saveBlob(await sc.card.toBlob(), sc.card.filename); toast('QR card downloaded'); }
+      else if (kind === 'qr') {
+        const q = await window.PresetHubShareCard.buildQrOnly({ qrUrl: sc.url + (sc.url.includes('?') ? '&' : '?') + 'src=qr', label: sc.name });
+        window.PresetHubShareCard.saveBlob(await q.toBlob(), q.filename); toast('QR code downloaded');
+      } else if (kind === 'share') {
+        const blob = await sc.card.toBlob();
+        const file = new File([blob], sc.card.filename, { type: 'image/png' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: sc.name, text: `${sc.name} on PresetHub`, url: sc.url });
+        else window.PresetHubShareCard.saveBlob(blob, sc.card.filename);
+      }
+    } catch (e) { if (e && e.name !== 'AbortError') toast('Could not create the image', 'error'); }
   }
   // ============ MY SHARE LINKS ============
   async function showMyShares() {
@@ -1573,7 +1609,9 @@
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (sessionStorage.getItem('ph-sw-refreshed') === '1') return;
         sessionStorage.setItem('ph-sw-refreshed', '1');
-        window.location.reload();
+        // Reload to pick up the new service worker, but never while the visitor has a preset, share card or form open.
+        const reloadWhenIdle = () => { if (document.querySelector('#overlay.active')) return setTimeout(reloadWhenIdle, 4000); window.location.reload(); };
+        reloadWhenIdle();
       });
     }
     window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); state.installPrompt = e; });
@@ -1620,6 +1658,10 @@
       const input = $('#searchInput'); if (input) input.value = state.query;
       await globalSearch(state.query);
       await loadPresets();
+    }
+    const deepPreset = params.get('preset');
+    if (/^[a-f0-9]{24}$/i.test(deepPreset || '')) {
+      await showPreset(deepPreset); // the address keeps ?preset=<id>, so a refresh (or the one-time service worker reload) reopens it
     }
     if (params.get('action') === 'search') $('#searchInput')?.focus();
     if (params.get('action') === 'wishlist') showWishlist();
@@ -1702,10 +1744,9 @@
       return;
     }
 
-    if (e.target.closest('[data-share-copy-image]')) {
+    if (e.target.closest('[data-share-card]')) {
       e.preventDefault(); e.stopPropagation();
-      const btn=e.target.closest('[data-share-copy-image]');
-      copyImageAndLink(btn.dataset.shareCopyImage,btn.dataset.shareCopyUrl);
+      shareCardAction(e.target.closest('[data-share-card]').dataset.shareCard);
       return;
     }
 
