@@ -144,6 +144,7 @@ async function markOrderPaid(order, payload) {
   );
   // Atomic transition created -> paid: webhook retries / status refresh can never double-fulfil.
   if (result.modifiedCount) {
+    try {
     if (order.kind === 'subscription') {
       await activateSubscription(order);
     } else if (order.kind === 'boost') {
@@ -169,6 +170,12 @@ async function markOrderPaid(order, payload) {
       const preset = await Preset.findById(order.presetId).select('name authorId').lean();
       if (preset) await createNotification(preset.authorId, 'sale', `💰 Someone purchased your preset “${preset.name}” for ₹${order.amount}.`, `/preset/${order.presetId}/`, 'New sale');
       adminAlert({ type: 'payment', severity: 'info', title: `Preset sale ₹${order.amount}`, details: { orderId: String(order._id), preset: preset?.name || String(order.presetId), utr: payload.utr || '' }, email: false });
+    }
+    } catch (fulfilErr) {
+      // The order is already "paid" (so a retry will not run again). Tell the admin loudly instead of failing silently.
+      await Order.updateOne({ _id: order._id }, { $set: { failureReason: `Paid, but fulfilment failed: ${String(fulfilErr.message || fulfilErr).slice(0, 250)}` } }).catch(() => {});
+      adminAlert({ type: 'payment', severity: 'critical', title: 'Payment received but fulfilment FAILED - fix manually', fingerprint: `fulfil-fail-${order._id}`, details: { orderId: String(order._id), kind: order.kind, userId: String(order.userId), error: String(fulfilErr.message || fulfilErr) } });
+      console.error('Order fulfilment failed:', order._id, fulfilErr.message);
     }
   }
   return result.modifiedCount > 0;

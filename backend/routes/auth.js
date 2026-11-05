@@ -36,8 +36,12 @@ function cleanSocialLinks(value) {
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
+// Only writes (login, signup, password change...) are counted. GET /me runs on every page load and must never be
+// rate-limited here, otherwise a shared mobile IP gets 429 and the app wrongly shows the visitor as logged out.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, max: 15,
+  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method),
+  standardHeaders: true, legacyHeaders: false,
   message: { error: 'Too many attempts, try again later' }
 });
 router.use(authLimiter);
@@ -53,12 +57,13 @@ function setAuthCookie(res, token) {
   });
 }
 
-function generateUniqueUsername(email, existing) {
-  let base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+// Checks the database one candidate at a time (indexed lookup) instead of loading every username on each signup.
+async function generateUniqueUsername(email) {
+  let base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24) || 'user';
   if (base.length < 3) base = base.padEnd(3, '0');
   let u = base, s = 1;
-  while (existing.includes(u) && s <= 100) u = `${base}${s++}`;
-  if (existing.includes(u)) u = `${base}${Date.now().toString().slice(-6)}`;
+  while (s <= 100 && await User.exists({ username: u })) u = `${base}${s++}`;
+  if (await User.exists({ username: u })) u = `${base}${Date.now().toString().slice(-6)}`;
   return u;
 }
 
@@ -69,11 +74,10 @@ router.post('/signup', signupLimiter, validate(signupValidation), async (req, re
 
     if (await User.exists({ email })) return res.status(409).json({ error: 'User already exists' });
 
-    const existing = await User.distinct('username', { username: { $ne: null } });
-    if (!username) username = generateUniqueUsername(email, existing);
+    if (!username) username = await generateUniqueUsername(email);
     else {
       username = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, '');
-      if (existing.includes(username)) username = generateUniqueUsername(email, existing);
+      if (username.length < 3 || await User.exists({ username })) username = await generateUniqueUsername(email);
     }
 
     const hashed = await bcrypt.hash(password, 12);
@@ -83,25 +87,29 @@ router.post('/signup', signupLimiter, validate(signupValidation), async (req, re
       consent: { termsVersion: legal.TERMS_VERSION, privacyVersion: legal.PRIVACY_VERSION, acceptedAt: new Date(), ageConfirmed: true, source: 'web-signup' }
     });
 
-    const refCode = req.query.ref;
+    // Referral: remember who referred this user; the reward is given only after the account is saved (below).
+    const refCode = String(req.query.ref || '').slice(0, 40);
+    let referrerId = null;
     if (refCode) {
-      const referrer = await User.findOne({ 'referral.code': refCode });
-      if (referrer) {
-        user.referral.referredBy = referrer._id;
-        referrer.referral.referralCount = (referrer.referral.referralCount || 0) + 1;
-        if (referrer.referral.referralCount % 10 === 0) {
-          const now = new Date();
-          let expiry = referrer.subscription?.expiry ? new Date(referrer.subscription.expiry) : now;
-          if (expiry < now) expiry = now;
-          expiry.setDate(expiry.getDate() + 28);
-          referrer.subscription.expiry = expiry;
-          referrer.referral.referralRewardDays = (referrer.referral.referralRewardDays || 0) + 28;
-        }
-        await referrer.save();
-      }
+      const referrer = await User.findOne({ 'referral.code': refCode }).select('_id').lean();
+      if (referrer) { user.referral.referredBy = referrer._id; referrerId = referrer._id; }
     }
 
     await user.save();
+
+    if (referrerId) {
+      try {
+        // Atomic counter: two signups at the same moment can no longer overwrite each other's count.
+        const bumped = await User.findOneAndUpdate({ _id: referrerId }, { $inc: { 'referral.referralCount': 1 } }, { new: true }).select('referral.referralCount subscription.expiry').lean();
+        if (bumped && bumped.referral.referralCount % 10 === 0) {
+          const now = new Date();
+          let expiry = bumped.subscription?.expiry ? new Date(bumped.subscription.expiry) : now;
+          if (expiry < now) expiry = now;
+          expiry.setDate(expiry.getDate() + 28);
+          await User.updateOne({ _id: referrerId }, { $set: { 'subscription.expiry': expiry }, $inc: { 'referral.referralRewardDays': 28 } });
+        }
+      } catch (refErr) { console.warn('Referral reward failed:', refErr.message); }
+    }
 
     adminAlert({
       type: 'new_user', severity: 'info', title: `New user joined: ${user.name || user.username}`, throttleMs: 1000,
@@ -203,7 +211,7 @@ router.post('/login', validate(loginValidation), async (req, res) => {
 
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password -token -passwordResetTokenHash -passwordResetExpires -pushSubscriptions -sessionVersion').lean();
+    const user = await User.findById(req.user.id).select('-password -token -passwordResetTokenHash -passwordResetExpires -pushSubscriptions -sessionVersion -botLinkHash -botLinkExpires').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ success: true, user: { ...user, id: user._id.toString(), isPro: isProUser(user), tick: tickForFollowers((user.followers || []).length) } });
   } catch (e) { res.status(500).json({ error: 'Failed' }); }
@@ -238,6 +246,8 @@ router.put('/profile', auth, async (req, res) => {
     delete safe.passwordResetExpires;
     delete safe.pushSubscriptions;
     delete safe.sessionVersion;
+    delete safe.botLinkHash;
+    delete safe.botLinkExpires;
     safe.id = safe._id.toString();
     res.json({ success: true, user: safe });
   } catch (e) { res.status(500).json({ error: 'Failed' }); }
@@ -308,6 +318,9 @@ router.delete('/account', auth, async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.role === 'admin') return res.status(403).json({ error: 'Admin accounts cannot be deleted from the user settings.' });
+    if (await require('../models').Payout.exists({ userId: user._id, status: { $in: ['requested', 'approved'] } })) {
+      return res.status(409).json({ error: 'You have a payout that is still being processed. Please wait until it is paid or rejected, then delete your account.', code: 'PAYOUT_PENDING' });
+    }
     if (!user.password || !(await bcrypt.compare(password, user.password))) return res.status(401).json({ error: 'Password is incorrect' });
 
     const avatarUrl = user.avatar || '';
@@ -335,7 +348,7 @@ router.delete('/account', auth, async (req, res) => {
   } catch (e) { console.error('Account deletion error:', e); res.status(500).json({ error:'Account deletion failed. Please try again.' }); }
 });
 
-router.post('/logout', auth, (req, res) => {
+router.post('/logout', (req, res) => {
   res.clearCookie('ph_auth', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' });
   res.json({ success: true });
 });

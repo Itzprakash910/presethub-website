@@ -400,6 +400,8 @@ router.post('/:id/download', optionalAuth, async (req, res) => {
   if (!preset.fileUrl) return res.status(404).json({ error: 'Preset file missing' });
 
   let counted = true;
+  // Visitors who are not logged in: count one download per visitor and preset every 30 minutes.
+  if (!req.user && seenRecently(`dl:${req.ip}:${preset._id}`, 30 * 60 * 1000)) counted = false;
   if (req.user) {
     const existingDownload = await Download.exists({ userId: req.user.id, presetId: preset._id });
     counted = !existingDownload;
