@@ -50,6 +50,13 @@
 - **Bug**: `Permissions-Policy: geolocation=()` blocked the "nearby creators" feature; now `geolocation=(self)`.
 - Docs: `docs/SECURITY-27-CHECKLIST.md`, `docs/PRIVACY-COMPLIANCE-CHECKLIST.md`, `docs/DATA-MAP.md`, `docs/INCIDENT-RESPONSE.md`. `npm test` runs bot, consent, TOTP and security checks (26 static checks).
 
+## Round 7: Share Preset QR (screenshot bug)
+- **Cause of "QR image is temporarily unavailable":** the QR came from a third-party service (quickchart.io) that was unreachable, and every shared link was being sent to that service. QR codes are now generated in the browser by `frontend/qr.js` (no service, works offline). The encoder was checked with a real decoder (OpenCV) on 2,100+ codes: versions 1-10, every mask, all four error-correction levels, Unicode.
+- **New QR card** (`frontend/share-card.js`): preview image, preset name, creator with follower count, rating and review count, likes, views, downloads, price, category, the QR, the short link and the site name. Buttons: **Download QR Card** (PNG), **QR only** (PNG), **Share image** (where the phone supports it) and **Copy Short Link**. "Copy Image + Link" is removed. If the preview image or creator data cannot be loaded, the card still builds; if the card fails, a plain working QR is shown.
+- **Scanning opens the full website with the preset**: the short link goes straight to `/?preset=<id>` (preview, download or buy, like, save, comments, reviews, share), not to the static SEO page. QR scans are counted separately (`?src=qr`). The SEO preset page's "Open & Download" button now opens the same view instead of the home page.
+- **Bugs found while testing**: the one-time service-worker reload could interrupt a visitor and drop a deep link (now it waits until no dialog is open, and `?preset=` stays in the address bar); server-rendered pages still requested old asset versions (`?v=3.2.0`/`3.4.0`).
+- Tests: `npm run qr:test` (7), `python3 backend/scripts/e2e/share-qr.py` (15 checks in headless Chromium: deep link, card, both downloads, QR decoded from the PNGs, failure cases), `security:check` (28).
+
 ## Config
 - `render.yaml`: note added that `CASHFREE_ENV` is `sandbox` (test mode). Switch to `production` for real payments.
 - Cache-bust version `?v=3.25.2` on frontend assets and service worker.
