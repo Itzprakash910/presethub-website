@@ -224,6 +224,7 @@ const ShareClickSchema = new Schema({
   userAgent: String,
   source: { type: String, default: '' }, // 'qr' when the visit came from a scanned QR code
 });
+ShareClickSchema.index({ clickedAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 180 }); // keep 180 days (data minimisation)
 
 
 
