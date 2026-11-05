@@ -154,6 +154,12 @@ check('Every variable in .env.example is used by the code', deadEnv.length === 0
 const legalMissing = (read('backend/.env.example').match(/^(LEGAL_ENTITY_NAME|LEGAL_ADDRESS|GRIEVANCE_OFFICER_NAME)=/gm) || []).length === 3;
 check('Legal detail variables are documented in .env.example', legalMissing);
 
+// 12. QR codes are generated locally (no share link is sent to a third-party QR service).
+const frontJs = files.filter(f => /frontend\/[^/]+\.js$/.test(rel(f)));
+const qrLeak = frontJs.filter(f => /quickchart\.io|api\.qrserver\.com|chart\.googleapis\.com\/chart|qr-code-generator\.com/i.test(fs.readFileSync(f, 'utf8'))).map(rel);
+check('QR codes come from the local encoder (qr.js), not a third-party service', qrLeak.length === 0 && /PresetHubQR/.test(read('frontend/share-card.js')), qrLeak.join(', '));
+check('Short link opens the full website with the preset (?preset=) and counts QR scans', /\?preset=\$\{preset\._id\}/.test(read('backend/server.js')) && /source: req\.query\.src === 'qr'/.test(read('backend/server.js')) && /get\('preset'\)/.test(read('frontend/app.js')));
+
 // Report
 let failed = 0;
 for (const r of results) {
