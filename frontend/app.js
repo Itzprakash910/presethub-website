@@ -1652,7 +1652,12 @@
     prefetchOfflineCatalog();
 
     const params = new URLSearchParams(location.search);
-    if (params.get('reset')) openResetPassword(params.get('reset'));
+    if (params.get('reset')) {
+      const resetToken = params.get('reset');
+      // Remove the one-time token from the address bar at once so it does not reach browser history, Referer headers or analytics.
+      try { params.delete('reset'); const qs = params.toString(); history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + location.hash); } catch (_) {}
+      openResetPassword(resetToken);
+    }
     if (params.get('q')) {
       state.query = params.get('q').trim();
       const input = $('#searchInput'); if (input) input.value = state.query;

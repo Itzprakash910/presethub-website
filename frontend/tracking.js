@@ -26,7 +26,9 @@
     window.dataLayer = window.dataLayer || [];
     window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
     window.gtag('js', new Date());
-    window.gtag('config', GA);
+    var loc = location.href;
+    try { var u = new URL(location.href); ['reset', 'token', 'orderId'].forEach(function (k) { u.searchParams.delete(k); }); loc = u.toString(); } catch (_) {}
+    window.gtag('config', GA, { page_location: loc });
     var t = document.createElement('script');
     t.async = true;
     t.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(GA);
