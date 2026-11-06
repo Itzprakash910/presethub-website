@@ -40,7 +40,7 @@
     "web-push": "^3.6.7"
   },
   "optionalDependencies": {
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "sharp": "^0.33.5"
   },
   "devDependencies": {
