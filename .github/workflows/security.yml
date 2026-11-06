@@ -1,1 +1,19 @@
-
+name: security
+on:
+  push: { branches: [main] }
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1'   # every Monday
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install --omit=dev --no-audit --no-fund
+      - name: Project security checks
+        run: npm run security:check
+      - name: Dependency vulnerabilities (high and critical)
+        run: npm audit --omit=dev --audit-level=high
