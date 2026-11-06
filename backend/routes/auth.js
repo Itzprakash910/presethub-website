@@ -209,7 +209,16 @@ router.post('/login', validate(loginValidation), async (req, res) => {
   }
 });
 
-router.get('/me', auth, async (req, res) => {
+// Logged-out visitors call /me on every page load. Answer 200 { user: null } when no credentials are sent at all,
+// so the browser console (and Lighthouse "Best Practices") is not filled with 401 errors. Invalid/expired tokens still get 401.
+const softMe = (req, res, next) => {
+  const hasHeader = !!req.header('Authorization');
+  const hasCookie = !!(req.cookies && req.cookies.ph_auth);
+  if (!hasHeader && !hasCookie) return res.json({ success: true, user: null });
+  next();
+};
+
+router.get('/me', softMe, auth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password -token -passwordResetTokenHash -passwordResetExpires -pushSubscriptions -sessionVersion -botLinkHash -botLinkExpires').lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
