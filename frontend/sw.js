@@ -1,11 +1,11 @@
-const STATIC_CACHE = 'presethub-static-v18';
+const STATIC_CACHE = 'presethub-static-v19';
 const API_CACHE = 'presethub-api-v8';
-const IMAGE_CACHE = 'presethub-images-v6';
+const IMAGE_CACHE = 'presethub-images-v7';
 const CORE = [
-  '/', '/index.html', '/manifest.json', '/icons.css?v=3.25.4', '/style.css?v=3.25.4', '/app.js?v=3.25.4', '/qr.js?v=3.25.4', '/share-card.js?v=3.25.4', '/texts.js?v=3.25.4', '/shayari/',
+  '/', '/index.html', '/manifest.json', '/icons.css?v=3.25.5', '/style.css?v=3.25.5', '/app.js?v=3.25.5', '/qr.js?v=3.25.5', '/share-card.js?v=3.25.5', '/texts.js?v=3.25.5', '/shayari/',
   '/privacy.html', '/terms.html', '/about.html', '/blog.html',
   '/creator-program.html', '/faq.html', '/contact.html',
-  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.css?v=3.25.4', '/cookie-consent.js?v=3.25.4', '/download-app.js?v=2.9.6'
+  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.js?v=3.25.5', '/download-app.js?v=2.9.6'
 ];
 
 self.addEventListener('install', e => e.waitUntil(

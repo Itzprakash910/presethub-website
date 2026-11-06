@@ -61,7 +61,9 @@
     if (!src) return `<span class="avatar-fallback ${cls}" aria-hidden="true">${initial}</span>`;
     return `<span class="avatar-shell ${cls}"><img src="${esc(assetUrl(src))}" alt="${esc(name || 'User')} profile photo" loading="lazy" decoding="async" data-ph-img="avatar"><span class="avatar-fallback" hidden aria-hidden="true">${initial}</span></span>`;
   };
-  const imgTag = (src, alt, cls='') => `<img class="${cls}" src="${esc(assetUrl(src))}" alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer-when-downgrade" data-ph-img="placeholder">`;
+  // Public GridFS previews can be requested as a smaller WebP (?w=); the server falls back to the original if it cannot resize.
+  const thumbUrl = (v, w) => { const u = assetUrl(v); return w && /\/media\/[a-f0-9]{24}$/i.test(u) ? `${u}?w=${w}` : u; };
+  const imgTag = (src, alt, cls='', w=0) => `<img class="${cls}" src="${esc(thumbUrl(src, w))}" alt="${esc(alt)}" loading="lazy" decoding="async" referrerpolicy="no-referrer-when-downgrade" data-ph-img="placeholder">`;
 
   // ============ PERSISTENT CLIENT QUEUE / CACHE ============
   const UPLOAD_DB = 'presethub-client-v2';
@@ -340,7 +342,7 @@
     return `<div class="sr-only" role="status">Loading presets…</div>` + one.repeat(n);
   }
   function presetCard(p) {
-    const image = imgTag(p.previewImage, `${p.name} preset preview`, 'preset-preview-img');
+    const image = imgTag(p.previewImage, `${p.name} preset preview`, 'preset-preview-img', 480);
     const likes = Number(p.likesCount || (p.likes || []).length);
     const rating = Number(p.avgRating || 0).toFixed(1);
     const downloads = Number(p.downloads || 0);
@@ -388,7 +390,7 @@
   }
 
   function featuredCard(p) {
-    return `<article class="featured-card"><a class="featured-image" href="${presetUrl(p)}"><img src="${esc(assetUrl(p.previewImage))}" alt="${esc(p.name)} preview" loading="lazy" decoding="async" data-ph-img="fallback" data-fallback="${fallbackPreview}"></a><div class="featured-body"><div class="featured-top"><span class="tag">${esc(p.category || 'General')}</span><span class="price ${Number(p.price||0)===0?'free':''}">${money(p.price)}</span></div><h3>${esc(p.name)}</h3><button class="author-link" data-action="profile" data-id="${esc(p.authorId||'')}">By ${esc(p.author||'Creator')}</button><p>${esc(p.description || 'Lightroom preset')}</p><div class="featured-stats"><span>★ ${Number(p.avgRating||0).toFixed(1)}</span><span>👁 ${p.views||0}</span><span>♥ ${p.likesCount||0}</span><span>💬 ${p.commentsCount||0}</span><span>↗ ${p.shares||0}</span><span>↓ ${p.downloads||0}</span></div><div class="card-actions"><button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}">View details</button><button class="icon-action" data-action="share" data-id="${esc(p.id)}" title="Share"><i class="fas fa-share-nodes"></i></button></div></div></article>`;
+    return `<article class="featured-card"><a class="featured-image" href="${presetUrl(p)}"><img src="${esc(thumbUrl(p.previewImage, 480))}" alt="${esc(p.name)} preview" loading="lazy" decoding="async" data-ph-img="fallback" data-fallback="${fallbackPreview}"></a><div class="featured-body"><div class="featured-top"><span class="tag">${esc(p.category || 'General')}</span><span class="price ${Number(p.price||0)===0?'free':''}">${money(p.price)}</span></div><h3>${esc(p.name)}</h3><button class="author-link" data-action="profile" data-id="${esc(p.authorId||'')}">By ${esc(p.author||'Creator')}</button><p>${esc(p.description || 'Lightroom preset')}</p><div class="featured-stats"><span>★ ${Number(p.avgRating||0).toFixed(1)}</span><span>👁 ${p.views||0}</span><span>♥ ${p.likesCount||0}</span><span>💬 ${p.commentsCount||0}</span><span>↗ ${p.shares||0}</span><span>↓ ${p.downloads||0}</span></div><div class="card-actions"><button class="btn btn-primary btn-sm" data-action="view-preset" data-id="${esc(p.id)}">View details</button><button class="icon-action" data-action="share" data-id="${esc(p.id)}" title="Share"><i class="fas fa-share-nodes"></i></button></div></div></article>`;
   }
   function updateHeroFeatured(p) {
     const img=$('#heroFeaturedImage'), link=$('#heroFeaturedLink'), badge=$('#heroFeaturedBadge');
@@ -396,7 +398,8 @@
     img.loading='eager';
     img.fetchPriority='high';
     img.decoding='async';
-    img.src=assetUrl(p.previewImage);
+    img.removeAttribute('srcset'); img.removeAttribute('sizes');
+    img.src=thumbUrl(p.previewImage, 800);
     img.alt=`${p.name || 'Featured'} Lightroom preset preview`;
     img.onerror=()=>{ img.onerror=null; img.src=fallbackPreview; };
     if(link) link.href=presetUrl(p);
@@ -1210,6 +1213,7 @@
     if (!requireAuth()) return;
     try {
       const [u, d] = await Promise.all([api('/auth/me'), api('/users/me/dashboard')]);
+      if (!u.user) { state.user = null; updateAuthUI(); requireAuth(); return; }
       state.user = u.user;
       const s = d.stats || {};
       openModal(`
