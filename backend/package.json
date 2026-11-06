@@ -1,6 +1,6 @@
 {
   "name": "presethub-backend",
-  "version": "3.25.4",
+  "version": "3.25.5",
   "description": "PresetHub production backend \u2014 MongoDB + GridFS media storage + PWA + SEO + integrated Telegram bot",
   "main": "server.js",
   "scripts": {
@@ -38,6 +38,10 @@
     "telegraf": "^4.16.3",
     "uuid": "^9.0.1",
     "web-push": "^3.6.7"
+  },
+  "optionalDependencies": {
+    "esbuild": "^0.25.0",
+    "sharp": "^0.33.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
