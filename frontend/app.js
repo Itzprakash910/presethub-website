@@ -393,6 +393,9 @@
   function updateHeroFeatured(p) {
     const img=$('#heroFeaturedImage'), link=$('#heroFeaturedLink'), badge=$('#heroFeaturedBadge');
     if(!img || !p) return;
+    img.loading='eager';
+    img.fetchPriority='high';
+    img.decoding='async';
     img.src=assetUrl(p.previewImage);
     img.alt=`${p.name || 'Featured'} Lightroom preset preview`;
     img.onerror=()=>{ img.onerror=null; img.src=fallbackPreview; };

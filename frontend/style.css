@@ -1616,3 +1616,17 @@ body.dark .feat-tag, [data-theme="dark"] .feat-tag { color: #f0c987; }
 .share-footer{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
 .share-footer .btn[disabled]{opacity:.55;cursor:wait}
 .share-footer .btn[hidden]{display:none}
+
+
+/* v3.25.4 performance + accessibility refinements */
+html, body { font-family: Inter, "Noto Sans Devanagari", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+/* Darker tag text and visible link affordances meet WCAG contrast expectations. */
+.tx-tag, .tag-cloud .text-chip small, .preset-card .info .tag { color: #51402e; }
+body.dark .tx-tag, body.dark .tag-cloud .text-chip small, body.dark .preset-card .info .tag,
+[data-theme="dark"] .tx-tag, [data-theme="dark"] .tag-cloud .text-chip small { color: #f0d7b5; }
+.creator-badge { color: #694313; background: #f6e8d2; border: 1px solid #9b6b2e; }
+body.dark .creator-badge, [data-theme="dark"] .creator-badge { color: #ffe2b4; background: #49351d; border-color: #bd9258; }
+a.author-link, a.text-button, .tx-tag { text-decoration: underline; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #1769aa; outline-offset: 3px; }
+#heroFeaturedImage { display:block; width:100%; height:auto; aspect-ratio: 1200 / 630; object-fit:cover; }
+.featured-image img, .seo-related-card img { aspect-ratio: 16 / 9; object-fit:cover; }
