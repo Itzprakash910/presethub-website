@@ -1,27 +1,16 @@
-# PresetHub v3.25.5 — PageSpeed / console-error fix release
+# PresetHub v3.25.5: separate full-function pages
 
-Based on the PageSpeed Insights reports (mobile + desktop, Nov 6 2026) and a code audit.
+Built on v3.25.4. See `docs/PAGES-AND-FEATURES.md` for the full URL map and the list of features that can also become pages.
 
-## Fixed
-| Problem (report) | Cause | Fix |
-|---|---|---|
-| `…/auth/me` 401 ×4 in console (Best Practices 96) | Every page load asks `/api/auth/me`; logged-out visitors got 401 | `routes/auth.js`: no credentials at all → `200 {user:null}` (invalid/expired tokens still 401). `app.js`: guard in `openAccount()` |
-| Render-blocking requests (80 ms desktop / 440 ms mobile) | `style.css` **and** `cookie-consent.css` blocked first paint | `cookie-consent.css` merged into `style.css`; link removed from all pages, `server.js` SEO head and `sw.js` |
-| Hero image 1200×630 shown at ~550×290 (Improve image delivery) | One big PNG for every viewport | `hero-640.webp` + `srcset/sizes`; srcset dropped when the real featured preview replaces it |
-| `/media/*` `net::ERR_FAILED` ×14 + 503 on API | GridFS streams kept running after the visitor cancelled; no `Content-Length`/304 → pool exhaustion under load | `/media`: ETag + 304, `Content-Length`, stream destroyed on client abort |
-| Multi-MB preview images | Originals served for 500 px cards | Optional `/media/:id?w=320..1200` → WebP thumbnail via `sharp` (cached, max 2 parallel). Falls back to original if `sharp` missing. Cards/featured/hero request `?w=` |
-| Minify JS/CSS, no compression | Sources served as-is | `utils/assetMinify.js`: esbuild minify + gzip/brotli in memory, `?v=` URLs cached 1 year, ETag/304. Sources in `/frontend` unchanged. `sw.js` excluded |
-| Non-composited animations (`background-position`) | Skeleton shimmer | Shimmer now uses `transform` on `::after`; `prefers-reduced-motion` respected |
-| "Links rely on color" (Accessibility 97) | Footer links (`@HeyOmii`) only coloured | Footer links underlined |
-| llms.txt "Timed out fetching resource" | Served only by generic static handler | Explicit `/llms.txt` route (`text/markdown`, cached) |
-| Image/font caching | No cache headers on static images | `Cache-Control: public, max-age=604800` for images/fonts |
+## What changed
+- **Every preset, profile, list and shayari page now shares one shell** (`backend/seo/pageShell.js`): the same header and footer as the home page (read from `index.html`, so they never drift apart), a Back button with breadcrumbs, the dialog container and all scripts.
+- **Full function on the pages**: the preset page (`/preset/<id>/<slug>/`) and profile page (`/profile/<id>/<slug>/`) now run the real app inside the page: download or buy, Like (new button, it was missing from the popup too), Save, Share with the QR card, reviews, comments, report, follow, message. The server-rendered text stays as the fallback for Google and for no-JavaScript visitors.
+- **New pages**: `/saved/`, `/downloads/`, `/notifications/`, `/messages/`, `/pro/`, `/account/`, `/upload/`, `/my-shares/` (login required, not indexed). The ••• menu opens them as pages. A guest sees "Please log in" and the content appears right after logging in.
+- **Home cards open pages**: preset cards, category cards and author names navigate to their own URLs (ctrl/cmd-click opens a new tab); Featured and "सभी Presets" have "view all" links to `/presets/`.
+- **Lists and shayari pages** (`/presets/`, categories, tags, `/shayari/`, categories, posts) now have the full header, footer and Back button; meta tags were checked on all 10 page types.
+- **Small fixes found while testing**: Back button and "QR only" icons showed black squares (not in the local icon pack: switched to icons that exist, added `fa-qrcode`); the share dialog's "SEO Page" link is hidden when it would point to the same page; guests see "Log in to write a review / comment"; like updates its count in place.
+- Service worker cache bumped (`v19`), assets `?v=3.25.5`.
 
-## Other
-- HSTS `includeSubDomains`/`preload` now switchable with `HSTS_INCLUDE_SUBDOMAINS=off`, `HSTS_PRELOAD=off`.
-- Version bumped to 3.25.5 (all `?v=` URLs, `sw.js` cache names bumped so users get the new CSS/JS).
-- `esbuild` and `sharp` added as **optionalDependencies** (install failure cannot break deploy).
+## Tests
+`python3 backend/scripts/e2e/pages.py` (77 checks), `python3 backend/scripts/e2e/share-qr.py` (15), plus all earlier suites.
 
-## Not code bugs (action needed outside the ZIP)
-- **503 on `/api/presets`, `/api/texts`, `/api/features/*`** are not returned by this code (only `/media` returns 503 when Mongo is not connected). They come from the host/proxy (cold start or overload on Render) — keep the instance warm (ping `/healthz`), use a paid/always-on plan, and check Mongo Atlas connectivity.
-- Existing 2.29 MiB GridFS previews: thumbnails now fix delivery size; re-uploading as WebP still saves storage.
-- Remaining "Reduce unused JS (55 KiB)" needs splitting `app.js` into route-level chunks (larger refactor).
