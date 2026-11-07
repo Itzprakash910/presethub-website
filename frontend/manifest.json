@@ -16,19 +16,13 @@
       "src": "/assets/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "/assets/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/assets/icons/icon-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
@@ -39,8 +33,8 @@
       "url": "/?action=upload",
       "icons": [
         {
-          "src": "/assets/icons-pack/png/fa-upload.png",
-          "sizes": "64x64",
+          "src": "/assets/icons/icon-192.png",
+          "sizes": "192x192",
           "type": "image/png"
         }
       ]
@@ -52,21 +46,8 @@
       "url": "/?action=profile",
       "icons": [
         {
-          "src": "/assets/icons-pack/png/fa-user.png",
-          "sizes": "64x64",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Messages",
-      "short_name": "Messages",
-      "description": "Open your messages",
-      "url": "/?action=messages",
-      "icons": [
-        {
-          "src": "/assets/icons-pack/png/fa-envelope.png",
-          "sizes": "64x64",
+          "src": "/assets/icons/icon-192.png",
+          "sizes": "192x192",
           "type": "image/png"
         }
       ]
@@ -78,8 +59,8 @@
       "url": "/?action=notifications",
       "icons": [
         {
-          "src": "/assets/icons-pack/png/fa-bell.png",
-          "sizes": "64x64",
+          "src": "/assets/icons/icon-192.png",
+          "sizes": "192x192",
           "type": "image/png"
         }
       ]
@@ -91,8 +72,8 @@
       "url": "/?action=logout",
       "icons": [
         {
-          "src": "/assets/icons-pack/png/fa-right-from-bracket.png",
-          "sizes": "64x64",
+          "src": "/assets/icons/icon-192.png",
+          "sizes": "192x192",
           "type": "image/png"
         }
       ]
