@@ -13,6 +13,3 @@ Still requires production data / browser verification:
 - Re-run PageSpeed on mobile and desktop after deployment. Verify AdSense, Cashfree checkout, analytics, login, public and protected media, and the CSP in browser DevTools.
 - `401` from `/api/auth/me` for logged-out visitors can be expected; public media must not require auth. Confirm any reported `/media/:id` 401 corresponds to a protected preset binary rather than a public preview.
 - Trusted Types enforcement is intentionally not enabled until DOM sinks are audited; enabling it prematurely can break app functionality.
-
-
-> See ../CHANGELOG-v3.25.5.md for the follow-up fixes (401 console errors, render-blocking CSS, hero image, /media hardening, minify + compression).
