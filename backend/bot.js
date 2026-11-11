@@ -69,6 +69,7 @@ let botStarting = false;
 let botStopping = false;
 let botUsername = '';
 let restartTimer = null;
+let stableTimer = null;
 let restartAttempt = 0;
 
 // ====================================================================================
@@ -1303,19 +1304,30 @@ function registerHandlers(b) {
 // ====================================================================================
 // Start / stop
 // ====================================================================================
+let commandMenuDone = false;
 async function setupCommandMenu() {
+  if (commandMenuDone) return; // Telegram rate-limits setMyCommands (429); restarts must not repeat it
+  let menuFailed = false;
   const publicList = COMMANDS.filter(c => !c.admin && !c.hidden && ['start', 'menu', 'search', 'latest', 'trending', 'categories', 'shayari', 'pro', 'account', 'upload', 'help', 'login'].includes(c.name));
   const toMenu = list => list.map(c => ({ command: c.name, description: cut(c.desc.replace(/[^\x20-\x7E\u0900-\u097F]/g, '') || c.name, 250) }));
-  await bot.telegram.setMyCommands(toMenu(publicList)).catch(e => console.warn('Telegram command menu setup failed:', e.message));
+  await bot.telegram.setMyCommands(toMenu(publicList)).catch(e => { menuFailed = true; console.warn('Telegram command menu setup failed:', e.message); });
   if (ADMIN_CHAT_ID && /^-?\d+$/.test(ADMIN_CHAT_ID)) {
     const adminList = [...publicList, ...COMMANDS.filter(c => ['admin', 'support', 'alerts', 'system', 'botstats', 'errors'].includes(c.name))];
-    await bot.telegram.setMyCommands(toMenu(adminList), { scope: { type: 'chat', chat_id: Number(ADMIN_CHAT_ID) } }).catch(e => console.warn('Telegram admin menu setup failed:', e.message));
+    await bot.telegram.setMyCommands(toMenu(adminList), { scope: { type: 'chat', chat_id: Number(ADMIN_CHAT_ID) } }).catch(e => { menuFailed = true; console.warn('Telegram admin menu setup failed:', e.message); });
   }
+  if (!menuFailed) commandMenuDone = true;
 }
 function scheduleRestart(reason) {
   if (botStopping || restartTimer) return;
   restartAttempt++;
-  const wait = Math.min(5 * 60 * 1000, 10 * 1000 * 2 ** Math.min(restartAttempt, 5));
+  clearTimeout(stableTimer);
+  let wait = Math.min(5 * 60 * 1000, 10 * 1000 * 2 ** Math.min(restartAttempt, 5));
+  // 409 = ANOTHER process is polling with the same BOT_TOKEN. Retrying every 20 s only makes both instances kick each other out,
+  // so back off hard (1 min -> 10 min) and keep the log honest about the cause.
+  if (/409|Conflict/i.test(String(reason))) {
+    wait = Math.min(10 * 60 * 1000, 60 * 1000 * 2 ** Math.min(restartAttempt - 1, 4));
+    console.warn('⚠️ Another instance is using the same BOT_TOKEN (old deploy, local `npm run bot`, or a second service). Stop the other one.');
+  }
   console.warn(`⚠️ Telegram bot will restart in ${Math.round(wait / 1000)}s (${reason})`);
   restartTimer = setTimeout(() => { restartTimer = null; bot = null; botStarted = false; startBot(); }, wait);
   if (restartTimer.unref) restartTimer.unref();
@@ -1345,7 +1357,8 @@ async function startBot() {
       });
     await setupCommandMenu();
     if (pollFailed) return false;                    // polling already crashed while we were setting up; a restart is scheduled
-    botStarted = true; restartAttempt = 0;
+    botStarted = true;
+    clearTimeout(stableTimer); stableTimer = setTimeout(() => { if (botStarted) restartAttempt = 0; }, 90 * 1000); if (stableTimer.unref) stableTimer.unref();
     console.log(`✅ Telegram bot started inside PresetHub web server (@${botUsername}).`);
     return true;
   } catch (e) {
@@ -1358,6 +1371,7 @@ async function startBot() {
 async function stopBot(signal = 'SIGTERM') {
   botStopping = true;
   if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+  clearTimeout(stableTimer);
   if (!bot) return;
   try { bot.stop(signal); } catch (_) {}
   botStarted = false;
