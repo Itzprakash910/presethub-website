@@ -1,5 +1,4 @@
 const { SITE_FOOTER } = require('./footer');
-const { pageBody, autoNav } = require('./pageShell');
 /**
  * Server-rendered discovery pages for Google:
  *   /presets/                         all Lightroom presets (sort, pagination)
@@ -34,7 +33,11 @@ module.exports = function registerListPages(app, h) {
 <title>${esc(title)}</title>
 ${head}${prev ? `<link rel="prev" href="${esc(prev)}">` : ''}${next ? `<link rel="next" href="${esc(next)}">` : ''}
 <script type="application/ld+json">${safeJson({ '@context': 'https://schema.org', '@graph': ld })}</script>
-</head>${pageBody({ page: 'static', ...autoNav(canonical), main: `<div class="shayari-page">${body}</div>` })}</html>`;
+</head><body><main class="seo-page"><div class="shayari-page">
+<a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo" width="36" height="36">Preset<span>Hub</span></a>
+${body}
+${SITE_FOOTER}
+</div></main><script src="/texts.js?v=3.25.3" defer></script><script src="/features.js?v=3.25.3" defer></script><script src="/cookie-consent.js?v=3.25.3" defer></script></body></html>`;
   }
 
   const crumbs = items => ({ '@type': 'BreadcrumbList', itemListElement: items.map((it, i) => ({ '@type': 'ListItem', position: i + 1, name: it[0], item: SITE_URL + it[1] })) });
