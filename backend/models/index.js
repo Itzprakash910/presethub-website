@@ -414,7 +414,7 @@ const AuditLogEntrySchema = new Schema({
   ip: { type: String, default: '', maxlength: 64 },
   userAgent: { type: String, default: '', maxlength: 160 },
   fields: [{ type: String, maxlength: 60 }],
-  createdAt: { type: Date, default: Date.now, index: true },
+  createdAt: { type: Date, default: Date.now }, // indexed below (TTL); a second index:true caused the Mongoose duplicate-index warning
 });
 AuditLogEntrySchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 365 }); // keep one year
 const AuditLogEntry = mongoose.model('AuditLogEntry', AuditLogEntrySchema);
