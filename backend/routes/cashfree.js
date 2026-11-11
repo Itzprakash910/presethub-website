@@ -76,6 +76,15 @@ async function startCheckout(req, res, { userId, presetId = null, kind, plan = '
     const phone = await resolvePhone(user, customerPhone);
     if (!phone) return res.status(400).json({ code: 'PHONE_REQUIRED', error: 'Please enter your 10-digit mobile number to continue.' });
 
+    // Same user opening checkout twice for the same preset (two tabs, double click): hand back the order that is already open
+    // instead of creating a second one that could be paid as well. Only for plain preset purchases with the same coupon.
+    if (kind === 'preset' && presetId) {
+      const open = await Order.findOne({ userId, presetId, kind: 'preset', provider: 'cashfree', status: 'created', paymentSessionId: { $nin: ['', null] }, createdAt: { $gt: new Date(Date.now() - 10 * 60 * 1000) } }).sort({ createdAt: -1 }).lean();
+      if (open && String(open.couponCode || '') === String(couponCode || '').trim().toUpperCase()) {
+        return res.json({ provider: 'cashfree', mode: cf.ENV(), orderId: String(open._id), paymentSessionId: open.paymentSessionId, amount: open.amount, currency: 'INR', reused: true });
+      }
+    }
+
     const list = Math.round(Number(amountRupees) * 100) / 100;
     if (!Number.isFinite(list) || list < 1 || list > 100000) return res.status(400).json({ error: 'Amount is outside the supported range.' });
     const priced = await resolveCoupon({ couponCode, kind, presetId, listRupees: list, userId });
