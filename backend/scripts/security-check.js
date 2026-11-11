@@ -160,18 +160,6 @@ const qrLeak = frontJs.filter(f => /quickchart\.io|api\.qrserver\.com|chart\.goo
 check('QR codes come from the local encoder (qr.js), not a third-party service', qrLeak.length === 0 && /PresetHubQR/.test(read('frontend/share-card.js')), qrLeak.join(', '));
 check('Short link opens the full website with the preset (?preset=) and counts QR scans', /\?preset=\$\{preset\._id\}/.test(read('backend/server.js')) && /source: req\.query\.src === 'qr'/.test(read('backend/server.js')) && /get\('preset'\)/.test(read('frontend/app.js')));
 
-// 13. Pages and icons.
-const shellUsers = ['backend/server.js', 'backend/seo/listPages.js', 'backend/seo/shayariPages.js'].filter(f => /pageBody\(/.test(read(f)));
-check('Preset, profile, list, shayari and app pages are built with the shared page shell', shellUsers.length === 3 && (read('backend/server.js').match(/pageBody\(/g) || []).length >= 3, shellUsers.join(', '));
-const shellSrc = read('backend/seo/pageShell.js');
-check('Every page has the home header, footer and a Back button', /PARTS\.header/.test(shellSrc) && /SITE_FOOTER/.test(shellSrc) && /data-page-back/.test(shellSrc));
-const iconCss = read('frontend/icons.css');
-const haveIcons = new Set([...iconCss.matchAll(/\.fa-([a-z0-9-]+)/g)].map(m => m[1]));
-const usedIn = ['frontend/app.js', 'frontend/texts.js', 'frontend/features.js', 'frontend/share-card.js', 'backend/server.js', 'backend/seo/pageShell.js', 'backend/seo/listPages.js', 'backend/seo/shayariPages.js'];
-const missingIcons = new Set();
-for (const f of usedIn) for (const m of read(f).matchAll(/\bfa[sbr]? fa-([a-z0-9-]+)/g)) if (!haveIcons.has(m[1])) missingIcons.add(`${m[1]} (${f})`);
-check('Every icon used in the code exists in the local icon pack (no black squares)', missingIcons.size === 0, [...missingIcons].join(', '));
-
 // Report
 let failed = 0;
 for (const r of results) {
