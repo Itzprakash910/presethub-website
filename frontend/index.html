@@ -15,9 +15,7 @@
   <link rel="stylesheet" href="/icons.css?v=3.25.5" media="print" data-async-css>
   <noscript><link rel="stylesheet" href="/icons.css?v=3.25.5"></noscript>
   <link rel="stylesheet" href="/style.css?v=3.25.5">
-  <link rel="stylesheet" href="/cookie-consent.css?v=3.25.5">
-
-  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
   <meta name="googlebot" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
   <meta name="theme-color" content="#d4a373">
   <meta name="color-scheme" content="light dark">
@@ -110,7 +108,7 @@
       </div>
       <div class="hero-visual">
         <a id="heroFeaturedLink" href="#presets" aria-label="Open featured preset">
-          <img id="heroFeaturedImage" src="/assets/images/og-image.png" alt="Featured Lightroom preset preview" width="1200" height="630" decoding="async" fetchpriority="high">
+          <img id="heroFeaturedImage" src="/assets/images/hero-640.webp" srcset="/assets/images/hero-640.webp 640w, /assets/images/og-image.png 1200w" sizes="(max-width: 900px) 92vw, 560px" alt="Featured Lightroom preset preview" width="1200" height="630" decoding="async" fetchpriority="high">
         </a>
         <div class="hero-badge" id="heroFeaturedBadge"><i class="fas fa-star" aria-hidden="true"></i> Top featured preset</div>
       </div>
@@ -134,13 +132,13 @@
     <h2 class="section-title">Categories</h2>
     <div class="categories" id="categories"></div>
 
-    <h2 class="section-title featured-title"><span>Featured Presets</span><span class="section-subtitle">Rating · Views · Likes · Comments · Shares</span><a class="btn btn-outline btn-sm view-all-link" href="/presets/">सभी देखें →</a></h2>
+    <h2 class="section-title featured-title"><span>Featured Presets</span><span class="section-subtitle">Rating · Views · Likes · Comments · Shares</span></h2>
     <div class="featured-grid" id="featuredGrid" aria-live="polite"></div>
 
     <div class="search-entity-results" id="searchEntityResults" hidden></div>
 
     <h2 class="section-title" id="presets">
-      <span id="listTitle">सभी Presets</span> <a class="btn btn-outline btn-sm view-all-link" href="/presets/">अलग page में खोलें →</a>
+      <span id="listTitle">सभी Presets</span>
       <span style="display:flex;gap:8px;flex-wrap:wrap">
         <select class="filter-select" id="priceFilter" aria-label="Price filter">
           <option value="">सभी कीमतें</option><option value="free">Free</option><option value="paid">Paid</option>
