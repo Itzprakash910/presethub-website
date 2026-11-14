@@ -17,6 +17,7 @@ const UserSchema = new Schema({
   password: { type: String, default: '' }, // bcrypt hash (login with email and password)
   botLinkHash: { type: String, default: '' },
   botLinkExpires: { type: Date, default: null },
+  profileRev: { type: Number, default: 0 }, // bumped on every profile edit: lets two tabs/devices detect that they edited the same profile
   name: { type: String, default: '' },
   username: { type: String, lowercase: true, trim: true, index: true },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
@@ -171,7 +172,7 @@ const OrderSchema = new Schema({
   amount: { type: Number, required: true },
   currency: { type: String, default: 'INR' },
   status: { type: String, enum: ['created', 'paid', 'refunded', 'cancelled', 'failed', 'expired', 'suspicious'], default: 'created', index: true },
-  provider: { type: String, enum: ['youpi', 'cashfree', 'legacy'], default: 'youpi', index: true },
+  provider: { type: String, enum: ['youpi', 'cashfree', 'phonepe', 'legacy'], default: 'youpi', index: true },
   paymentSessionId: { type: String, default: '' },
   listAmount: { type: Number, default: null },
   refundReference: { type: String, default: '', maxlength: 60 },
