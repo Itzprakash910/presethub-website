@@ -29,7 +29,15 @@ const YOUPI_CONFIGURED = Boolean(
 );
 
 function activeProvider() {
-  if (require('../utils/cashfree').isConfigured()) return 'cashfree';
+  const cashfreeOk = require('../utils/cashfree').isConfigured();
+  const phonepeOk = require('../utils/phonepe').isConfigured();
+  // PAYMENT_PROVIDER=phonepe|cashfree|youpi forces a gateway (only if its keys exist); default order: Cashfree, PhonePe, YOUPI.
+  const forced = String(process.env.PAYMENT_PROVIDER || '').toLowerCase();
+  if (forced === 'phonepe' && phonepeOk) return 'phonepe';
+  if (forced === 'cashfree' && cashfreeOk) return 'cashfree';
+  if (forced === 'youpi' && YOUPI_CONFIGURED) return 'youpi';
+  if (cashfreeOk) return 'cashfree';
+  if (phonepeOk) return 'phonepe';
   return YOUPI_CONFIGURED ? 'youpi' : 'disabled';
 }
 
@@ -130,7 +138,7 @@ async function activateSubscription(order) {
 
 async function markOrderPaid(order, payload) {
   const result = await Order.updateOne(
-    { _id: order._id, provider: { $in: ['youpi', 'cashfree'] }, status: 'created' },
+    { _id: order._id, provider: { $in: ['youpi', 'cashfree', 'phonepe'] }, status: 'created' },
     {
       $set: {
         status: 'paid',
@@ -185,7 +193,7 @@ async function applyYoupiOutcome(order, payload) {
   const event = String(payload.event || payload.status || '').toUpperCase();
   if (String(payload.orderId || '') !== String(order._id)) {
     await Order.updateOne(
-      { _id: order._id, provider: { $in: ['youpi', 'cashfree'] }, status: 'created' },
+      { _id: order._id, provider: { $in: ['youpi', 'cashfree', 'phonepe'] }, status: 'created' },
       { $set: { status: 'suspicious', failureReason: 'Gateway order ID mismatch.' } }
     );
     adminAlert({ type: 'payment', severity: 'critical', title: 'Payment held: gateway order ID mismatch', details: { orderId: String(order._id), reported: String(payload.orderId || '') } });
@@ -193,7 +201,7 @@ async function applyYoupiOutcome(order, payload) {
   }
   if (!amountMatches(order, payload)) {
     await Order.updateOne(
-      { _id: order._id, provider: { $in: ['youpi', 'cashfree'] }, status: 'created' },
+      { _id: order._id, provider: { $in: ['youpi', 'cashfree', 'phonepe'] }, status: 'created' },
       { $set: { status: 'suspicious', failureReason: 'Gateway amount or currency mismatch.' } }
     );
     adminAlert({ type: 'payment', severity: 'critical', title: 'Payment held: amount/currency mismatch', details: { orderId: String(order._id), expectedPaise: Math.round(Number(order.amount) * 100), reportedPaise: payload.amountPaise, currency: payload.currency } });
@@ -203,7 +211,7 @@ async function applyYoupiOutcome(order, payload) {
   if (event === 'SUCCESS') {
     if (!payload.paymentId && !order.gatewayPaymentId) {
       await Order.updateOne(
-        { _id: order._id, provider: { $in: ['youpi', 'cashfree'] }, status: 'created' },
+        { _id: order._id, provider: { $in: ['youpi', 'cashfree', 'phonepe'] }, status: 'created' },
         { $set: { status: 'suspicious', failureReason: 'Gateway success has no payment ID.' } }
       );
       return { accepted: false, reviewRequired: true, reason: 'Missing payment ID.' };
@@ -222,7 +230,7 @@ async function applyYoupiOutcome(order, payload) {
   const nextStatus = statusMap[event];
   if (nextStatus) {
     await Order.updateOne(
-      { _id: order._id, provider: { $in: ['youpi', 'cashfree'] }, status: 'created' },
+      { _id: order._id, provider: { $in: ['youpi', 'cashfree', 'phonepe'] }, status: 'created' },
       { $set: { status: nextStatus, failureReason: `YOUPI PG outcome: ${event}` } }
     );
   }
@@ -232,7 +240,7 @@ async function applyYoupiOutcome(order, payload) {
 // Public, non-sensitive configuration. No gateway keys/secrets are exposed.
 router.get('/provider', (req, res) => {
   const provider = activeProvider();
-  res.json({ provider, enabled: provider !== 'disabled', mode: provider === 'cashfree' ? require('../utils/cashfree').ENV() : undefined });
+  res.json({ provider, enabled: provider !== 'disabled', mode: provider === 'cashfree' ? require('../utils/cashfree').ENV() : provider === 'phonepe' ? require('../utils/phonepe').ENV() : undefined });
 });
 
 // Public Pro plans (prices are decided server-side only).
@@ -251,7 +259,7 @@ async function startYoupiCheckout(req, res, { userId, presetId = null, kind, pla
       return res.status(400).json({ error: 'Amount is outside the supported payment range.' });
 
     // Reuse a recent still-pending checkout so repeated clicks do not create many sessions.
-    const pendingFilter = { userId, provider: { $in: ['youpi', 'cashfree'] }, status: 'created', kind, checkoutUrl: { $type: 'string', $ne: '' }, createdAt: { $gte: new Date(Date.now() - 4 * 60 * 1000) } };
+    const pendingFilter = { userId, provider: { $in: ['youpi', 'cashfree', 'phonepe'] }, status: 'created', kind, checkoutUrl: { $type: 'string', $ne: '' }, createdAt: { $gte: new Date(Date.now() - 4 * 60 * 1000) } };
     if (kind === 'preset') pendingFilter.presetId = presetId; else if (kind === 'tip') { pendingFilter.recipientId = recipientId; pendingFilter.amount = Math.round(Number(amountRupees) * 100) / 100; } else pendingFilter.plan = plan;
     const pending = await Order.findOne(pendingFilter).sort({ createdAt: -1 }).lean();
     if (pending) return res.json({ provider: 'youpi', orderId: String(pending._id), checkoutUrl: pending.checkoutUrl, amount: pending.amount, currency: pending.currency, reused: true });
@@ -275,7 +283,7 @@ async function startYoupiCheckout(req, res, { userId, presetId = null, kind, pla
       adminAlert({ type: 'payment', severity: 'critical', title: 'YOUPI returned an invalid checkout session', details: { orderId, kind } });
       return res.status(502).json({ error: 'Payment gateway returned an invalid checkout session. Please contact support before retrying.' });
     }
-    await Order.updateOne({ _id: orderId, provider: { $in: ['youpi', 'cashfree'] }, status: 'created' }, { $set: { gatewayPaymentId: String(payment.paymentId), checkoutUrl: payment.checkoutUrl } });
+    await Order.updateOne({ _id: orderId, provider: { $in: ['youpi', 'cashfree', 'phonepe'] }, status: 'created' }, { $set: { gatewayPaymentId: String(payment.paymentId), checkoutUrl: payment.checkoutUrl } });
     res.json({ provider: 'youpi', orderId, checkoutUrl: payment.checkoutUrl, amount: amountPaise / 100, currency: 'INR' });
   } catch (err) {
     if (orderId) {
@@ -388,6 +396,7 @@ router.post('/youpi/refresh/:orderId', auth, async (req, res) => {
   // The return page uses this path for every provider; Cashfree orders are synced by their own handler.
   const probe = await Order.findById(String(req.params.orderId)).select('provider').lean();
   if (probe?.provider === 'cashfree') return require('./cashfree').refreshHandler(req, res);
+  if (probe?.provider === 'phonepe') return require('./phonepe').refreshHandler(req, res);
   if (!YOUPI_CONFIGURED) return res.status(503).json({ error: 'YOUPI PG is not configured.' });
   try {
     const order = await Order.findById(String(req.params.orderId));

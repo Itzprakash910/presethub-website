@@ -73,7 +73,11 @@ function toPublicPreset(p) {
 
 // ===== GET ALL PRESETS =====
 router.get('/', async (req, res) => {
-  const { category, price, rating, sort, q, page = 1, limit = 20 } = req.query;
+  // Query values must be plain strings: ?category[$ne]=x would otherwise reach MongoDB as an operator object.
+  const str = v => (typeof v === 'string' ? v : '');
+  const category = str(req.query.category).slice(0, 60);
+  const price = str(req.query.price), rating = str(req.query.rating), sort = str(req.query.sort), q = str(req.query.q);
+  const page = req.query.page, limit = req.query.limit ?? 20;
   const filter = { status: 'approved' };
 
   if (q) {
@@ -88,7 +92,7 @@ router.get('/', async (req, res) => {
   if (category) filter.category = category;
   if (price === 'free') filter.price = 0;
   if (price === 'paid') filter.price = { $gt: 0 };
-  if (rating) filter.avgRating = { $gte: parseFloat(rating) };
+  if (rating && Number.isFinite(parseFloat(rating))) filter.avgRating = { $gte: parseFloat(rating) };
 
   let sortObj = { createdAt: -1 };
   if (sort === 'popular') sortObj = { downloads: -1 };
@@ -96,8 +100,8 @@ router.get('/', async (req, res) => {
   else if (sort === 'price-low') sortObj = { price: 1 };
   else if (sort === 'price-high') sortObj = { price: -1 };
 
-  const p = Math.max(1, parseInt(page));
-  const l = Math.min(50, Math.max(1, parseInt(limit)));
+  const p = Math.max(1, parseInt(page, 10) || 1);
+  const l = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
 
   // Boosted presets come first on page 1 of an unfiltered list.
   const plain = p === 1 && !q && !category && !price && !rating;

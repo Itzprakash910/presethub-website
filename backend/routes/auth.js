@@ -228,9 +228,20 @@ router.get('/me', softMe, auth, async (req, res) => {
 
 router.put('/profile', auth, async (req, res) => {
   try {
-    const { name, username, bio, avatar, socialLinks } = req.body;
+    const { name, username, bio, avatar, socialLinks, baseRev } = req.body;
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Lost-update guard: the client sends the profileRev it last saw. If the profile was saved elsewhere since
+    // (another tab/device), refuse instead of silently overwriting and hand back the current profile.
+    const currentRev = Number(user.profileRev || 0);
+    const conflict = () => {
+      const fresh = user.toObject();
+      for (const k of ['password', 'token', 'passwordResetTokenHash', 'passwordResetExpires', 'pushSubscriptions', 'sessionVersion', 'botLinkHash', 'botLinkExpires']) delete fresh[k];
+      fresh.id = fresh._id.toString();
+      return res.status(409).json({ code: 'PROFILE_CONFLICT', error: 'Your profile was changed in another tab or device. The latest version has been loaded — please review and save again.', user: fresh });
+    };
+    if (baseRev !== undefined && baseRev !== null && Number(baseRev) !== currentRev) return conflict();
 
     if (username && username !== user.username) {
       if (!/^[a-zA-Z0-9_]{3,30}$/.test(String(username).trim())) return res.status(400).json({ error: 'Invalid username' });
@@ -247,6 +258,13 @@ router.put('/profile', auth, async (req, res) => {
     }
     if (socialLinks) user.socialLinks = { ...(user.socialLinks?.toObject?.() || {}), ...cleanSocialLinks(socialLinks) };
 
+    // Atomic compare-and-increment right before saving: of two simultaneous saves only one wins, the other gets 409.
+    const claimed = await User.updateOne(
+      { _id: user._id, ...(currentRev === 0 ? { $or: [{ profileRev: 0 }, { profileRev: { $exists: false } }] } : { profileRev: currentRev }) },
+      { $inc: { profileRev: 1 } }
+    );
+    if (!claimed.modifiedCount) return conflict();
+    user.profileRev = currentRev + 1;
     await user.save();
     const safe = user.toObject();
     delete safe.password;

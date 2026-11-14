@@ -63,6 +63,11 @@ async function resolveCoupon({ couponCode, kind, presetId, listRupees, userId })
   if (!check.ok) throw Object.assign(new Error(check.reason), { status: 400 });
   // One paid use per account.
   if (userId && await Order.exists({ userId, couponCode: code, status: 'paid' })) throw Object.assign(new Error('You have already used this coupon.'), { status: 400 });
+  // ...and not two unpaid checkouts at once: with two tabs open both could otherwise be paid and use the coupon twice.
+  // A retry of the SAME item is excluded (presets reuse their open order instead), and checkouts expire after 30 minutes.
+  if (userId && await Order.exists({ userId, couponCode: code, status: 'created', createdAt: { $gt: new Date(Date.now() - 30 * 60 * 1000) }, $or: [{ kind: { $ne: kind } }, { presetId: { $ne: presetId || null } }] })) {
+    throw Object.assign(new Error('You already have an open checkout using this coupon. Complete it, or try again in a few minutes.'), { status: 400 });
+  }
   const { finalPaise } = C.applyDiscount(list, c);
   return { finalPaise, listPaise: list, code, couponId: c._id };
 }
@@ -146,56 +151,59 @@ async function syncOrder(order) {
   return 'created';
 }
 
-// ----- checkout endpoints -----
-router.post('/create-order', auth, textPostLimiter, async (req, res) => {
-  const { presetId, customerPhone } = req.body || {};
-  if (!isId(presetId)) return res.status(400).json({ error: 'Invalid preset ID' });
-  const preset = await Preset.findById(presetId).select('_id name price status authorId').lean();
-  if (!preset || preset.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
-  if (!(Number(preset.price) > 0)) return res.status(400).json({ error: 'Preset is free or has an invalid price' });
-  if (String(preset.authorId) === req.user.id) return res.status(400).json({ error: 'You cannot purchase your own preset.' });
-  if (await Order.exists({ presetId: preset._id, userId: req.user.id, status: 'paid' })) return res.status(400).json({ error: 'You already own this preset.' });
-  return startCheckout(req, res, { userId: req.user.id, presetId: preset._id, kind: 'preset', amountRupees: preset.price, label: preset.name, customerPhone, couponCode: req.body?.couponCode });
-});
+// ----- checkout endpoints (shared with the PhonePe router through registerCheckoutRoutes) -----
+function registerCheckoutRoutes(r, startCheckout) {
+  r.post('/create-order', auth, textPostLimiter, async (req, res) => {
+    const { presetId, customerPhone } = req.body || {};
+    if (!isId(presetId)) return res.status(400).json({ error: 'Invalid preset ID' });
+    const preset = await Preset.findById(presetId).select('_id name price status authorId').lean();
+    if (!preset || preset.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
+    if (!(Number(preset.price) > 0)) return res.status(400).json({ error: 'Preset is free or has an invalid price' });
+    if (String(preset.authorId) === req.user.id) return res.status(400).json({ error: 'You cannot purchase your own preset.' });
+    if (await Order.exists({ presetId: preset._id, userId: req.user.id, status: 'paid' })) return res.status(400).json({ error: 'You already own this preset.' });
+    return startCheckout(req, res, { userId: req.user.id, presetId: preset._id, kind: 'preset', amountRupees: preset.price, label: preset.name, customerPhone, couponCode: req.body?.couponCode });
+  });
 
-router.post('/subscribe', auth, textPostLimiter, async (req, res) => {
-  const plan = getPlans()[String(req.body?.plan || '')];
-  if (!plan) return res.status(400).json({ error: 'Invalid subscription plan.' });
-  return startCheckout(req, res, { userId: req.user.id, kind: 'subscription', plan: plan.id, amountRupees: plan.price, label: plan.label, customerPhone: req.body?.customerPhone, couponCode: req.body?.couponCode });
-});
+  r.post('/subscribe', auth, textPostLimiter, async (req, res) => {
+    const plan = getPlans()[String(req.body?.plan || '')];
+    if (!plan) return res.status(400).json({ error: 'Invalid subscription plan.' });
+    return startCheckout(req, res, { userId: req.user.id, kind: 'subscription', plan: plan.id, amountRupees: plan.price, label: plan.label, customerPhone: req.body?.customerPhone, couponCode: req.body?.couponCode });
+  });
 
-router.post('/tip', auth, textPostLimiter, async (req, res) => {
-  const { recipientId, amount, note, customerPhone } = req.body || {};
-  if (!isId(recipientId)) return res.status(400).json({ error: 'Invalid creator' });
-  if (String(recipientId) === req.user.id) return res.status(400).json({ error: 'You cannot tip yourself.' });
-  const value = Math.round(Number(amount) * 100) / 100;
-  if (!(value >= 10 && value <= 500)) return res.status(400).json({ error: 'Tip must be between ₹10 and ₹500.' });
-  const creator = await User.findOne({ _id: recipientId, status: 'active' }).select('name username').lean();
-  if (!creator) return res.status(404).json({ error: 'Creator not found' });
-  return startCheckout(req, res, { userId: req.user.id, kind: 'tip', recipientId, note, amountRupees: value, label: `Tip to ${creator.name || creator.username}`, customerPhone, couponCode: req.body?.couponCode });
-});
+  r.post('/tip', auth, textPostLimiter, async (req, res) => {
+    const { recipientId, amount, note, customerPhone } = req.body || {};
+    if (!isId(recipientId)) return res.status(400).json({ error: 'Invalid creator' });
+    if (String(recipientId) === req.user.id) return res.status(400).json({ error: 'You cannot tip yourself.' });
+    const value = Math.round(Number(amount) * 100) / 100;
+    if (!(value >= 10 && value <= 500)) return res.status(400).json({ error: 'Tip must be between ₹10 and ₹500.' });
+    const creator = await User.findOne({ _id: recipientId, status: 'active' }).select('name username').lean();
+    if (!creator) return res.status(404).json({ error: 'Creator not found' });
+    return startCheckout(req, res, { userId: req.user.id, kind: 'tip', recipientId, note, amountRupees: value, label: `Tip to ${creator.name || creator.username}`, customerPhone, couponCode: req.body?.couponCode });
+  });
 
-// Boost a profile, preset or text prompt for 7, 14 or 30 days. Only the owner can boost, and the price comes from the server table.
-router.post('/boost', auth, textPostLimiter, async (req, res) => {
-  const { targetType, targetId, days, customerPhone, couponCode } = req.body || {};
-  if (!B.TARGETS.includes(targetType)) return res.status(400).json({ error: 'Boost a profile, preset or text prompt.' });
-  if (!isId(targetId)) return res.status(400).json({ error: 'Invalid item' });
-  const price = B.priceFor(targetType, days);
-  if (price === null) return res.status(400).json({ error: 'Choose 7, 14 or 30 days.' });
-  let owner = null;
-  if (targetType === 'profile') owner = targetId;
-  else if (targetType === 'preset') {
-    const p = await Preset.findById(targetId).select('authorId status').lean();
-    if (!p || p.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
-    owner = String(p.authorId);
-  } else {
-    const t = await TextPost.findById(targetId).select('authorId status').lean();
-    if (!t || t.status !== 'approved') return res.status(404).json({ error: 'Text post not found' });
-    owner = String(t.authorId);
-  }
-  if (owner !== req.user.id) return res.status(403).json({ error: 'You can only boost your own content.' });
-  return startCheckout(req, res, { userId: req.user.id, kind: 'boost', amountRupees: price, label: `Boost ${targetType} ${days}d`, customerPhone, couponCode, boost: { targetType, targetId: String(targetId), days: Number(days) } });
-});
+  // Boost a profile, preset or text prompt for 7, 14 or 30 days. Only the owner can boost, and the price comes from the server table.
+  r.post('/boost', auth, textPostLimiter, async (req, res) => {
+    const { targetType, targetId, days, customerPhone, couponCode } = req.body || {};
+    if (!B.TARGETS.includes(targetType)) return res.status(400).json({ error: 'Boost a profile, preset or text prompt.' });
+    if (!isId(targetId)) return res.status(400).json({ error: 'Invalid item' });
+    const price = B.priceFor(targetType, days);
+    if (price === null) return res.status(400).json({ error: 'Choose 7, 14 or 30 days.' });
+    let owner = null;
+    if (targetType === 'profile') owner = targetId;
+    else if (targetType === 'preset') {
+      const p = await Preset.findById(targetId).select('authorId status').lean();
+      if (!p || p.status !== 'approved') return res.status(404).json({ error: 'Preset not found' });
+      owner = String(p.authorId);
+    } else {
+      const t = await TextPost.findById(targetId).select('authorId status').lean();
+      if (!t || t.status !== 'approved') return res.status(404).json({ error: 'Text post not found' });
+      owner = String(t.authorId);
+    }
+    if (owner !== req.user.id) return res.status(403).json({ error: 'You can only boost your own content.' });
+    return startCheckout(req, res, { userId: req.user.id, kind: 'boost', amountRupees: price, label: `Boost ${targetType} ${days}d`, customerPhone, couponCode, boost: { targetType, targetId: String(targetId), days: Number(days) } });
+  });
+}
+registerCheckoutRoutes(router, startCheckout);
 
 // Preview a coupon before paying (does not reserve a use).
 router.post('/coupon/check', auth, async (req, res) => {
@@ -271,3 +279,8 @@ async function sweepStaleOrders(limit = 25) {
 module.exports = router;
 module.exports.refreshHandler = refreshHandler;
 module.exports.sweepStaleOrders = sweepStaleOrders;
+module.exports.registerCheckoutRoutes = registerCheckoutRoutes;
+module.exports.resolveCoupon = resolveCoupon;
+module.exports.releaseCoupon = releaseCoupon;
+module.exports.newOrderId = newOrderId;
+module.exports.baseUrl = baseUrl;
