@@ -15,9 +15,12 @@
     "bot:test": "node scripts/bot-selftest.js",
     "consent:test": "node scripts/consent-selftest.js",
     "totp:test": "node scripts/totp-selftest.js",
-    "test": "npm run bot:test && npm run consent:test && npm run totp:test && npm run qr:test && npm run fixes:test && npm run security:check",
+    "test": "npm run bot:test && npm run consent:test && npm run totp:test && npm run qr:test && npm run fixes:test && npm run phonepe:test && npm run profile:test && npm run coupon:test && npm run security:check",
     "qr:test": "node scripts/qr-selftest.js",
-    "fixes:test": "node scripts/fixes-selftest.js"
+    "fixes:test": "node scripts/fixes-selftest.js",
+    "phonepe:test": "node scripts/phonepe-selftest.js",
+    "profile:test": "node scripts/profile-selftest.js",
+    "coupon:test": "node scripts/coupon-selftest.js"
   },
   "dependencies": {
     "axios": "^1.7.9",

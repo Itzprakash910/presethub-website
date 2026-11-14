@@ -592,6 +592,7 @@ app.use('/api/presets', presetRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments/cashfree', require('./routes/cashfree'));
+app.use('/api/payments/phonepe', require('./routes/phonepe'));
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ads', adsRoutes);
@@ -861,6 +862,7 @@ async function postDailyToChannel() {
 setInterval(postDailyToChannel, 60 * 60 * 1000).unref?.();
 // Close abandoned Cashfree checkouts and release their coupon uses.
 setInterval(() => { require('./routes/cashfree').sweepStaleOrders().catch(e => console.warn('Order sweep failed:', e.message)); }, 15 * 60 * 1000).unref?.();
+setInterval(() => { require('./routes/phonepe').sweepStaleOrders().catch(e => console.warn('PhonePe order sweep failed:', e.message)); }, 15 * 60 * 1000).unref?.();
 
 httpServer = app.listen(PORT, '0.0.0.0', async () => {
       console.log('');
@@ -899,4 +901,16 @@ async function shutdown(signal) {
   process.exit(0);
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+// A rejected promise nobody awaited must not take the whole site (payments, uploads) down: log it and alert the admin.
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error('❌ Unhandled promise rejection:', err.stack || err.message);
+  try { require('./utils/alerts').adminAlert({ type: 'server', severity: 'warning', title: 'Unhandled promise rejection', fingerprint: 'unhandled-rejection', throttleMs: 15 * 60 * 1000, details: { error: err.message } }); } catch (_) {}
+});
+// After an uncaught exception the process state is unknown: alert, finish running requests, exit, and let Render restart us.
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught exception:', err && err.stack || err);
+  try { require('./utils/alerts').adminAlert({ type: 'server', severity: 'critical', title: 'Uncaught exception — restarting', fingerprint: 'uncaught-exception', throttleMs: 5 * 60 * 1000, details: { error: String(err && err.message || err) } }); } catch (_) {}
+  shutdown('uncaughtException');
+});
 process.on('SIGINT', () => shutdown('SIGINT'));
