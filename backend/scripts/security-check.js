@@ -98,7 +98,7 @@ check('security.txt has a future Expires date', exp && new Date(exp) > new Date(
 // 9. Unauthenticated write routes must be on the known-public list.
 const PUBLIC_WRITES = new Set([
   'auth.js POST /signup', 'auth.js POST /login', 'auth.js POST /logout', 'auth.js POST /forgot-password', 'auth.js POST /request-reset', 'auth.js POST /reset-password',
-  'cashfree.js POST /webhook', 'payments.js POST /webhook', 'payments.js POST /youpi/webhook',
+  'cashfree.js POST /webhook', 'phonepe.js POST /webhook', 'payments.js POST /webhook', 'payments.js POST /youpi/webhook',
   'presets.js POST /:id/download', 'presets.js POST /:id/view', 'presets.js POST /:id/ad-impression', 'presets.js POST /:id/share',
   'texts.js POST /:id/view', 'texts.js POST /:id/copy', 'texts.js POST /:id/share',
   'ads.js POST /:id/click', 'features.js POST /track', 'tracking.js POST /', 'legal.js POST /consent'
