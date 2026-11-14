@@ -71,6 +71,21 @@ services:
         sync: false
       - key: CASHFREE_API_VERSION
         value: 2025-01-01
+      # PhonePe PG: sandbox = test payments only; switch PHONEPE_ENV to "production" with live credentials.
+      - key: PAYMENT_PROVIDER
+        value: ""
+      - key: PHONEPE_ENV
+        value: sandbox
+      - key: PHONEPE_CLIENT_ID
+        sync: false
+      - key: PHONEPE_CLIENT_SECRET
+        sync: false
+      - key: PHONEPE_CLIENT_VERSION
+        value: "1"
+      - key: PHONEPE_WEBHOOK_USERNAME
+        sync: false
+      - key: PHONEPE_WEBHOOK_PASSWORD
+        sync: false
       - key: YOUPI_API_URL
         sync: false
       - key: YOUPI_MERCHANT_ID
