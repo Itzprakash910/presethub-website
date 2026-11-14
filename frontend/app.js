@@ -266,7 +266,7 @@
         localStorage.removeItem('presethub_token');
         updateAuthUI();
       }
-      if (!res.ok) { const err = new Error(data.error || `Request failed (${res.status})`); err.status = res.status; err.code = data.code || ''; throw err; }
+      if (!res.ok) { const err = new Error(data.error || `Request failed (${res.status})`); err.status = res.status; err.code = data.code || ''; err.data = data; throw err; }
       if (method === 'GET' && cacheableApi(path)) cacheSet(cacheKey, data);
       return data;
     } catch (err) {
@@ -520,8 +520,8 @@
     }
   }
 
-  async function loadCategories() {
-    const cached = cacheGet('categories');
+  async function loadCategories(force = false) {
+    const cached = !force ? cacheGet('categories') : null;
     if (cached) { state.categories=cached; const el=$('#categories'); if(el) el.innerHTML=cached.length ? cached.map(([name,count])=>`<button class="category-card" data-action="category" data-category="${esc(name)}"><div class="icon">✦</div><div class="name">${esc(name)}</div><div class="count">${count} presets</div></button>`).join('') : '<p>No categories yet.</p>'; }
     try {
       const cats = await api('/presets/categories');
@@ -777,13 +777,14 @@
     paymentStartInFlight = true;
     try {
       const config = await api('/payments/provider');
-      if (!config.enabled || !['cashfree', 'youpi'].includes(config.provider)) throw new Error('Payments are not configured yet. Please contact PresetHub support.');
-      const cashfree = config.provider === 'cashfree';
-      const url = cashfree ? endpoint.replace('/payments/youpi/', '/payments/cashfree/') : endpoint;
+      if (!config.enabled || !['cashfree', 'phonepe', 'youpi'].includes(config.provider)) throw new Error('Payments are not configured yet. Please contact PresetHub support.');
+      const phonepe = config.provider === 'phonepe';
+      const cashfree = config.provider === 'cashfree' || phonepe;   // both gateways use the same coupon/phone dialog and endpoints
+      const url = phonepe ? endpoint.replace('/payments/youpi/', '/payments/phonepe/') : cashfree ? endpoint.replace('/payments/youpi/', '/payments/cashfree/') : endpoint;
       const payload = { ...body };
       if (cashfree) {
         const couponKind = endpoint.includes('create-order') ? 'preset' : endpoint.includes('subscribe') ? 'subscription' : '';
-        const details = await askCheckoutDetails({ needPhone: !state.user?.phone, couponKind, presetId: body.presetId, plan: body.plan });
+        const details = await askCheckoutDetails({ needPhone: !phonepe && !state.user?.phone, couponKind, presetId: body.presetId, plan: body.plan });
         if (!details) return;
         if (details.phone) payload.customerPhone = details.phone;
         if (details.couponCode) payload.couponCode = details.couponCode;
@@ -801,6 +802,13 @@
       }
       if (payload.customerPhone && state.user) state.user = { ...state.user, phone: payload.customerPhone };
 
+      if (phonepe) {
+        // PhonePe: full-page redirect to its hosted checkout; it returns to /?payment_return=1&orderId=… and the server verifies the status.
+        if (!order.redirectUrl || !/^https:\/\//i.test(order.redirectUrl)) throw new Error('Payment gateway returned an invalid checkout URL.');
+        showCheckoutBusy('PhonePe checkout khul raha hai…');
+        window.location.assign(order.redirectUrl);
+        return;
+      }
       if (cashfree) {
         if (!order.paymentSessionId) throw new Error('Payment session was not created. Please try again.');
         const CashfreeFactory = await loadCashfreeSdk();
@@ -843,7 +851,7 @@
         <ul class="pro-features">${(cfg.features || []).map(f => `<li><i class="fas fa-check"></i> ${esc(f)}</li>`).join('')}</ul>
         <div class="pro-plans" role="radiogroup" aria-label="Choose a plan">${plans.map((pl, i) => `<label class="pro-plan ${pl.id === 'yearly' ? 'selected' : ''}"><input type="radio" name="proPlan" value="${esc(pl.id)}" ${pl.id === 'yearly' ? 'checked' : ''}><span class="pro-plan-name">${esc(pl.label)}</span><span class="pro-plan-price">₹${Number(pl.price).toFixed(0)}</span><small>${pl.days} days${pl.badge ? ` · <b>${esc(pl.badge)}</b>` : ''}</small></label>`).join('')}</div>
         <button class="btn btn-primary pro-buy" data-action="buy-pro" ${cfg.enabled ? '' : 'disabled'}><i class="fas fa-lock"></i> ${cfg.enabled ? 'Continue to secure payment' : 'Payments unavailable right now'}</button>
-        <p class="pro-note">Secure checkout by YOUPI PG · UPI supported · Pro activates automatically after payment is verified.</p>
+        <p class="pro-note">Secure checkout · UPI supported · Pro activates automatically after payment is verified.</p>
       </div>`);
       $$('input[name="proPlan"]').forEach(r => r.addEventListener('change', () => $$('.pro-plan').forEach(l => l.classList.toggle('selected', l.querySelector('input').checked))));
     } catch (e) { toast(e.message || 'Could not load Pro plans.', 'error'); }
@@ -1928,13 +1936,24 @@
       const payload = { name: fd.get('name'), username: fd.get('username'), bio: fd.get('bio'), socialLinks: { instagram: fd.get('instagram') || '', youtube: fd.get('youtube') || '', twitter: fd.get('twitter') || '', website: fd.get('website') || '' } };
       try {
         localStorage.setItem('presethub_pending_profile', JSON.stringify({ uid: state.user.id, payload, t: Date.now() }));
-        const r = await api('/auth/profile', { method: 'PUT', body: JSON.stringify(payload) });
+        // baseRev = the profile revision this tab last saw; the server answers 409 if it was edited elsewhere in the meantime.
+        const r = await api('/auth/profile', { method: 'PUT', body: JSON.stringify({ ...payload, baseRev: state.user.profileRev || 0 }) });
         localStorage.removeItem('presethub_pending_profile'); state.user = r.user; updateAuthUI();
         if (avatarFile instanceof File && avatarFile.size) {
           const id=makeId(); const record={id,kind:'avatar',method:'PUT',path:'/users/me/avatar',token:state.token,name:'profile image',fields:[],files:[{field:'avatar',file:avatarFile}]};
           await queuePut(record); await processQueuedUpload(record,true);
         } else toast('Profile updated');
-      } catch (err) { toast(err.message || 'Profile update failed. Your changes are saved and will retry when you return.', 'error'); }
+      } catch (err) {
+        if (err.status === 409 && err.code === 'PROFILE_CONFLICT') {
+          // Never replay our older copy over the newer one: drop the queued retry and adopt the server's version.
+          localStorage.removeItem('presethub_pending_profile');
+          if (err.data && err.data.user) { state.user = { ...state.user, ...err.data.user }; updateAuthUI(); }
+          toast(err.message, 'error', 7000);
+          Promise.resolve(openAccount()).catch(() => {});
+          return;
+        }
+        toast(err.message || 'Profile update failed. Your changes are saved and will retry when you return.', 'error');
+      }
       return;
     }
     if (e.target.id === 'editPresetForm') {

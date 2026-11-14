@@ -23,8 +23,8 @@
     if (!me) { try { me = (await api('/auth/me')).user; } catch (_) { me = null; } }
     return me;
   }
-  function toast(msg, type = 'success') {
-    if (window.PresetHubApp?.toast) return window.PresetHubApp.toast(msg, type);
+  function toast(msg, type = 'success', duration) {
+    if (window.PresetHubApp?.toast) return window.PresetHubApp.toast(msg, type, duration);
     const n = document.createElement('div'); n.className = `tx-toast-item ${type}`; n.textContent = msg;
     let box = $('#txToast'); if (!box) { box = document.createElement('div'); box.id = 'txToast'; box.className = 'tx-toast'; document.body.appendChild(box); }
     box.appendChild(n); setTimeout(() => n.remove(), 3200);

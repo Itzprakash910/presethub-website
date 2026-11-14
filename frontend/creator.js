@@ -189,7 +189,13 @@
       const phoneInput = bf.querySelector('[name=customerPhone]');
       const body = { targetType: type, targetId, days, customerPhone: phoneInput ? String(phoneInput.value || '').replace(/\D/g, '').slice(-10) : undefined };
       try {
-        const order = await api('/payments/cashfree/boost', { method: 'POST', body: JSON.stringify(body) });
+        const cfg = await api('/payments/provider').catch(() => ({ provider: 'cashfree' }));
+        const gateway = cfg.provider === 'phonepe' ? 'phonepe' : 'cashfree';
+        const order = await api(`/payments/${gateway}/boost`, { method: 'POST', body: JSON.stringify(body) });
+        if (gateway === 'phonepe') {
+          if (!order.redirectUrl || !/^https:\/\//i.test(order.redirectUrl)) throw new Error('Payment gateway returned an invalid checkout URL.');
+          toast('Opening PhonePe checkout…'); location.assign(order.redirectUrl); return;
+        }
         await openCashfree(order);
       } catch (err) {
         if (err.code === 'PHONE_REQUIRED' && !phoneInput) {
