@@ -302,9 +302,28 @@
     const overlay = $('#overlay'), body = $('#modalBody');
     if (!overlay || !body) return;
     body.innerHTML = html;
+    mountCaptcha(body);
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
   }
+  // ---- Optional Cloudflare Turnstile (only when the server has it configured: GET /auth/captcha-config) ----
+  let captchaCfg = null, captchaScript = null;
+  async function mountCaptcha(root) {
+    const boxes = root.querySelectorAll('[data-captcha]');
+    if (!boxes.length) return;
+    try {
+      if (!captchaCfg) captchaCfg = await fetch('/api/auth/captcha-config', { credentials: 'same-origin' }).then(r => r.json()).catch(() => ({ enabled: false }));
+      if (!captchaCfg.enabled || !captchaCfg.siteKey) return;
+      if (!captchaScript) captchaScript = new Promise((ok, fail) => { const s = document.createElement('script'); s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; s.async = true; s.onload = ok; s.onerror = fail; document.head.appendChild(s); });
+      await captchaScript;
+      boxes.forEach(box => {
+        if (box.dataset.ready) return; box.dataset.ready = '1';
+        const input = box.closest('form')?.querySelector('input[name="captchaToken"]');
+        window.turnstile.render(box, { sitekey: captchaCfg.siteKey, callback: t => { if (input) input.value = t; }, 'expired-callback': () => { if (input) input.value = ''; } });
+      });
+    } catch (_) { /* the server refuses the request itself if a token is required but missing */ }
+  }
+  function resetCaptcha(form) { try { if (window.turnstile && form.querySelector('[data-captcha]')) { window.turnstile.reset(); const i = form.querySelector('input[name="captchaToken"]'); if (i) i.value = ''; } } catch (_) {} }
   function closeModal() {
     if(chatTimer){clearInterval(chatTimer);chatTimer=null;}
     const overlay = $('#overlay');
@@ -1196,6 +1215,7 @@
           ${mode === 'login' ? `<label class="check-row remember-row"><input type="checkbox" name="remember" ${rememberedEmail() ? 'checked' : ''}> Email yaad rakhein (password kabhi save nahi hoga)</label>` : ''}
           ${passwordField('password', 'Password', mode === 'login' ? 'current-password' : 'new-password', mode === 'login' ? 'required' : 'minlength="10" required')}
           ${mode === 'signup' ? '<small>At least 10 characters with upper/lowercase and a number.</small><label class="check-row"><input type="checkbox" name="acceptTerms" required> I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a> and <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</label><label class="check-row"><input type="checkbox" name="ageConfirmed" required> I am 18 years or older.</label>' : ''}
+          ${mode === 'signup' ? '<input type="hidden" name="captchaToken" value=""><div data-captcha></div><input type=\"text\" name=\"company_website\" tabindex=\"-1\" autocomplete=\"off\" aria-hidden=\"true\" style=\"position:absolute;left:-9999px;width:1px;height:1px;opacity:0\">' : ''}
           <button class="btn btn-primary" type="submit">${mode === 'login' ? 'Log in' : 'Sign up'}</button>
         </form>
         ${mode === 'login' ? '<button class="text-button" data-action="forgot-password">Forgot password?</button>' : ''}
@@ -1204,7 +1224,7 @@
   }
 
   function openForgotPassword(){
-    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Reset password</h2><p class="muted">Enter your account email. If it exists, PresetHub will send a reset link.</p><form id="forgotForm"><div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div><button class="btn btn-primary" type="submit"><i class="fas fa-envelope"></i> Send reset link</button></form></div>`);
+    openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Reset password</h2><p class="muted">Enter your account email. If it exists, PresetHub will send a reset link.</p><form id="forgotForm"><div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div><input type="hidden" name="captchaToken" value=""><div data-captcha></div><input type="text" name="company_website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0"><button class="btn btn-primary" type="submit"><i class="fas fa-envelope"></i> Send reset link</button></form></div>`);
   }
   function openResetPassword(token){
     openModal(`<div class="auth-box"><span class="eyebrow">ACCOUNT RECOVERY</span><h2>Create new password</h2><form id="resetForm" data-token="${esc(token)}">${passwordField('password', 'New password', 'new-password', 'minlength="10" required')}<button class="btn btn-primary" type="submit"><i class="fas fa-key"></i> Reset password</button></form></div>`);
@@ -1586,6 +1606,7 @@
       ['fa-fire', `${state.user?.streakCurrent || 0}-day streak · Check in`, 'daily-streak'], ['fa-chart-line', 'My dashboard', 'my-dashboard'], ['fa-crown', state.user?.isPro ? 'Pro Active' : 'Go Pro','pro'], ['fa-pen-nib','Shayari / Text Prompts','texts-page'], ['fa-cloud-arrow-up','Upload Preset','upload'], ['fa-user','Profile','my-profile'], ['fa-paper-plane','Telegram link code','telegram-link'], ['fa-download','Download my data','my-data'], ['fa-pen','Edit Profile','edit-profile'],
       ['fa-heart','Wishlist','wishlist-page'], ['fa-download','Downloads','downloads'], ['fa-bell','Notifications','notifications'],
       ['fa-message','Messages','messages'], ['fa-link','Share Links','my-shares'], ['fa-key','Change Password','change-password'],
+      ...(u.emailVerified === false ? [['fa-envelope-circle-check','Verify your email','resend-verification']] : []),
       ['fa-shield-halved','Enable Notifications','enable-notifications'], ['fa-life-ring','Account Help','account-help'], ['fa-moon','Theme','theme'],
       ['fa-circle-info','About PresetHub','site-about'], ['fa-circle-question','FAQ','site-faq'], ['fa-right-from-bracket','Log out','logout'], ['fa-user-xmark','Delete Account','delete-account']
     ] : [
@@ -1632,7 +1653,7 @@
       openModal(`<div class="chat-panel"><div class="chat-head"><button class="chat-profile-link" data-action="profile" data-id="${esc(userId)}"><div class="profile-mini">${avatarTag(r.user.avatar,r.user.name)}<div><b>${esc(r.user.name||r.user.username)}</b><small>@${esc(r.user.username||'user')} · ${Number(r.user.followers||0)} followers</small></div></div></button><button class="icon-action" data-action="close" aria-label="Close chat"><i class="fas fa-xmark"></i></button></div><div id="chatMessages" class="chat-messages"></div><form id="chatForm" data-user="${esc(userId)}" class="chat-form"><input name="text" maxlength="1000" placeholder="Message…" autocomplete="off" required><button class="btn btn-primary"><i class="fas fa-paper-plane"></i></button></form><small class="chat-note">Messages are stored securely in MongoDB and automatically expire after 24 hours.</small></div>`);
       render();
       if(chatTimer) clearInterval(chatTimer);
-      chatTimer=setInterval(async()=>{try{const n=await api(`/chat/with/${encodeURIComponent(userId)}`);r.messages=n.messages||[];render();}catch(_){}} ,2000);
+      chatTimer=setInterval(async()=>{if(document.hidden)return;try{const n=await api(`/chat/with/${encodeURIComponent(userId)}`);r.messages=n.messages||[];render();}catch(_){}} ,2000);
     }catch(e){toast(e.message,'error');}
   }
   // ============ PWA ============
@@ -1683,10 +1704,10 @@
     if (state.user) {
       refreshUnreadNotifications();
       if (state.notificationTimer) clearInterval(state.notificationTimer);
-      state.notificationTimer = setInterval(refreshUnreadNotifications, 30000);
+      state.notificationTimer = setInterval(() => { if (!document.hidden) refreshUnreadNotifications(); }, 30000);
       refreshUnreadMessages();
       if (state.messageTimer) clearInterval(state.messageTimer);
-      state.messageTimer = setInterval(refreshUnreadMessages, 15000);
+      state.messageTimer = setInterval(() => { if (!document.hidden) refreshUnreadMessages(); }, 15000);
     }
     await flushPendingProfile();
     await resumeQueuedUploads();
@@ -1699,6 +1720,13 @@
       // Remove the one-time token from the address bar at once so it does not reach browser history, Referer headers or analytics.
       try { params.delete('reset'); const qs = params.toString(); history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + location.hash); } catch (_) {}
       openResetPassword(resetToken);
+    }
+    if (params.get('verify')) {
+      const verifyToken = params.get('verify');
+      try { params.delete('verify'); const qs = params.toString(); history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + location.hash); } catch (_) {}
+      api('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token: verifyToken }) })
+        .then(() => { toast('Email verified. Thank you!'); if (state.user) state.user.emailVerified = true; })
+        .catch(err => toast(err.message, 'error', 7000));
     }
     if (params.get('q')) {
       state.query = params.get('q').trim();
@@ -1835,6 +1863,7 @@
     if (action === 'my-profile') { showProfile(state.user.id); return; }
     if (action === 'edit-profile') { editProfileModal(); return; }
     if (action === 'change-password') { changePasswordModal(); return; }
+    if (action === 'resend-verification') { api('/auth/resend-verification', { method: 'POST', body: '{}' }).then(r => toast(r.alreadyVerified ? 'Your email is already verified.' : 'Verification email sent. Please check your inbox (and spam).')).catch(err => toast(err.message, 'error')); return; }
     if (action === 'telegram-link') { telegramLinkModal(); return; }
     if (action === 'daily-streak') { if (!requireAuth()) return; window.phCheckin && window.phCheckin(); return; }
     if (action === 'my-dashboard') { if (!requireAuth()) return; location.href = '/creator.html'; return; }
@@ -1920,14 +1949,6 @@
     if (e.target.id === 'uploadForm') { e.preventDefault(); submitUpload(e.target); return; }
     if (e.target.id === 'bulkUploadForm') { e.preventDefault(); submitBulkUpload(e.target); return; }
     if (e.target.id === 'supportRequestForm') { e.preventDefault(); try { await api('/users/me/support-request',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target).entries()))}); closeModal(); toast('Request sent to admin.'); } catch(err) { toast(err.message,'error'); } return; }
-    if (e.target.id === 'deleteAccountForm') {
-      e.preventDefault(); const d=Object.fromEntries(new FormData(e.target).entries());
-      if (String(d.confirm || '').trim() !== 'DELETE') return toast('Type DELETE to confirm','error');
-      if (!window.confirm('Delete your PresetHub account permanently? This cannot be undone.')) return;
-      try { await api('/auth/account',{method:'DELETE',body:JSON.stringify({confirm:'DELETE'})}); state.user=null; state.token=''; closeModal(); announceAuthChange(); toast('Your account has been deleted.'); }
-      catch(err){ toast(err.message,'error'); }
-      return;
-    }
     if (e.target.id === 'profileForm') {
       e.preventDefault();
       if (!requireAuth()) return;
@@ -2020,7 +2041,7 @@
     const d = Object.fromEntries(new FormData(f).entries());
     try {
       if (f.id === 'authForm') { await submitAuth(f); return; }
-      if (f.id === 'forgotForm') { await api('/auth/request-reset', { method: 'POST', body: JSON.stringify({ email: d.email }) }); toast('If this email exists, a reset link was sent.'); closeModal(); return; }
+      if (f.id === 'forgotForm') { await api('/auth/request-reset', { method: 'POST', body: JSON.stringify({ email: d.email, captchaToken: d.captchaToken || '', company_website: d.company_website || '' }) }); toast('If this email exists, a reset link was sent.'); closeModal(); return; }
       if (f.id === 'resetForm') { await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token: d.token, password: d.password }) }); toast('Password updated. Please log in.'); closeModal(); openAuth('login'); return; }
       if (f.id === 'changePasswordForm') { await api('/auth/change-password', { method: 'PUT', body: JSON.stringify({ currentPassword: d.currentPassword, newPassword: d.newPassword }) }); toast('Password changed.'); closeModal(); return; }
       if (f.id === 'deleteAccountForm') {
@@ -2028,7 +2049,7 @@
         await api('/auth/account', { method: 'DELETE', body: JSON.stringify({ password: d.password }) });
         state.user = null; closeModal(); toast('Your account has been deleted.'); updateAuthUI(); announceAuthChange(); return;
       }
-    } catch (err) { toast(err.message, 'error'); }
+    } catch (err) { resetCaptcha(f); toast(err.message, 'error'); }
   });
 
   // Ad card clicks: only http(s) links open, in a new tab with noopener.
@@ -2047,7 +2068,12 @@
   window.addEventListener('focus', () => { resumeQueuedUploads().catch(()=>{}); if (navigator.onLine) refreshPublicData(); });
   window.addEventListener('online', () => { setNetworkState(true, 'Back online — syncing latest data…'); resumeQueuedUploads().catch(()=>{}); flushPendingProfile().catch(()=>{}); refreshPublicData(); });
   window.addEventListener('offline', () => setNetworkState(false, 'Network disconnected — showing saved data'));
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeQueuedUploads().catch(()=>{}); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    resumeQueuedUploads().catch(()=>{});
+    // Polling is paused while the tab is hidden: catch up as soon as the user comes back.
+    if (state.user) { refreshUnreadNotifications(); refreshUnreadMessages(); }
+  });
 })();
 
 // ============ ANTI-TAMPERING & SECURITY ============
