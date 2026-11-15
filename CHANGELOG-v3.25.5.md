@@ -56,3 +56,13 @@ Based on the PageSpeed Insights reports (mobile + desktop, Nov 6 2026) and a cod
 - **Coupon used twice from two tabs** (`routes/cashfree.js` `resolveCoupon`, shared by Cashfree and PhonePe): besides one paid use per account, a second *unpaid* checkout with the same coupon for a different item is refused for 30 minutes. Retrying the same item is not blocked (presets reuse their open order).
 - New self-tests: `profile-selftest.js`, `coupon-selftest.js` (in `npm test` and CI).
 - Known limit: two simultaneous *subscription* checkouts of the same plan with one coupon are not blocked (retry of the same item is intentionally allowed).
+
+## Security hardening pass (checklist audit)
+- **New files**: `SECURITY.md`, `AUDIT.md` (git-ignored; delete after reading), `.github/dependabot.yml`, `deploy/{nginx.conf,htaccess,web.config}.example`, `utils/{rateLimit,passwordPolicy,honeypot,captcha,mailer,emailVerification}.js`, `middleware/adminIp.js`.
+- **Rate limits** shared in MongoDB with memory fallback; `TRUST_PROXY_HOPS` configurable.
+- **Public forms**: honeypot (always on), optional Cloudflare Turnstile (`TURNSTILE_*`), common-password denylist.
+- **Admin**: optional `ADMIN_IP_ALLOWLIST`. **Server**: crash handlers, slow-client timeouts, CSP violation reports (`/api/csp-report`).
+- **Injection guard**: deep-nesting bypass closed, malformed URL no longer 500, repeated query params collapsed.
+- **E-mail verification** (soft; `REQUIRE_VERIFIED_EMAIL=on` to enforce), resend action in the account menu.
+- **Account deletion** removes more personal data; broken duplicate delete handler fixed. **Polling** pauses on hidden tabs.
+- New self-tests: ratelimit, hardening (in `npm test` and CI); security-check now 36 checks.

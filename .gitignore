@@ -8,3 +8,18 @@ backend/uploads/
 frontend/uploads/
 backups/
 private_uploads/
+# secrets / keys / local reports
+*.pem
+*.key
+*.p12
+*.pfx
+.env.*
+!.env.example
+!backend/.env.example
+AUDIT.md
+*.sql
+*.sqlite
+*.dump
+coverage/
+.vscode/
+.idea/

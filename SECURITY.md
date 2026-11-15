@@ -1,31 +1,24 @@
-# Security Policy
+# Security policy
 
 ## Reporting a vulnerability
-Please email **security@presethub.site** with steps to reproduce. Do not open a public issue for security problems.
-You will get a reply within 3 working days. Please give us reasonable time to fix the problem before sharing details.
+E-mail **security@presethub.site** (also listed in `/.well-known/security.txt`). Please include the page/endpoint, steps to reproduce and the impact.
+Do not test with real users' accounts or data, do not run load tests, and give us a reasonable time to fix before disclosing. We reply within 3 working days.
 
-In scope: the website, `/api/*`, payments, uploads, accounts and the Telegram bot.
-Out of scope: spam, social engineering, denial-of-service by traffic volume, and reports from automated scanners with no proof of impact.
+## What the app already enforces
+HTTPS + HSTS · CSP / X-Frame / Referrer / Permissions policies (with violation reports) · httpOnly SameSite cookies + CSRF token · bcrypt passwords, common-password denylist, lockout after repeated failures ·
+shared (MongoDB) rate limits · honeypot + optional Cloudflare Turnstile on public forms · NoSQL-operator / prototype-pollution / HPP guard · admin 2-step verification (TOTP) and optional IP allowlist ·
+verified payment webhooks, server-side prices, one open checkout per item · upload type/size/zip-bomb checks · field encryption for payout details · audit log + admin alerts · account deletion that removes personal data.
 
-## What is already protected
-- Passwords: bcrypt (cost 12); password rules enforced on the server; sessions are revoked when a password changes.
-- Sessions: signed JWT (HS256 only) in an httpOnly, SameSite=Lax, Secure cookie; double-submit CSRF check for cookie sessions.
-- Payments: Cashfree webhooks are HMAC-verified with a timestamp; the amount is re-checked with Cashfree's API; orders move `created -> paid` atomically.
-- Uploads: file type, magic bytes and ZIP structure are checked; paid files are served only after a purchase check.
-- Headers: Helmet with a strict CSP (no inline scripts), HSTS, `nosniff`, frame protection.
-- Payout bank/UPI details are encrypted with AES-256-GCM (`PAYOUT_ENC_KEY`).
-- Admin actions are role-checked and written to an audit log. Admins can turn on authenticator-app two-step verification (Admin → System).
-- Database backups are encrypted (AES-256-GCM).
-- The service worker caches only public API data, and clears it on logout.
+## If a key or password leaks (do this in order)
+1. **Revoke** it at the provider (Render env, MongoDB Atlas user, Cashfree/PhonePe/YOUPI dashboard, Resend, Telegram BotFather `/revoke`).
+2. **Create a new one** and set it in Render → Environment, then redeploy.
+3. Rotate `JWT_SECRET` if sessions might be exposed (all users are logged out — that is intended).
+4. Check provider dashboards and the admin audit log for activity since the leak.
+5. If user data may be affected, tell users and the authorities as the DPDP Act requires.
 
-## Operations checklist (before going live)
-1. `NODE_ENV=production`, `JWT_SECRET` (32+ random characters), `PAYOUT_ENC_KEY` (64 hex characters) set in the host dashboard, never in git.
-2. `CASHFREE_ENV=production` with live keys (the sample `render.yaml` uses `sandbox`).
-3. Change the admin password after the first login, **turn on two-step verification** (Admin → System) and keep admin accounts to the minimum.
-4. Run `npm audit --omit=dev` (also runs in CI) and update dependencies monthly.
-5. Refresh the `Expires` date in `frontend/security.txt` at least once a year.
-6. Rotate secrets if they were ever shared in chat, email or screenshots.
-7. Keep daily backups enabled, set `BACKUP_ENC_KEY`, copy them off-site and test a restore (`node backend/scripts/decrypt-backup.js`).
-8. Fill `LEGAL_ENTITY_NAME`, `LEGAL_ADDRESS` and `GRIEVANCE_OFFICER_NAME` so the Privacy and Refund pages show real details.
-9. Turn on MFA for hosting, domain, email, MongoDB Atlas, payment and GitHub accounts.
-10. Run `npm test` before each release. See `docs/SECURITY-27-CHECKLIST.md` and `docs/PRIVACY-COMPLIANCE-CHECKLIST.md`.
+## Settings you control outside the code
+Two-factor on GitHub, Render, MongoDB Atlas, your domain registrar and payment dashboards · registrar lock + WHOIS privacy · SPF/DKIM/DMARC on the sending domain ·
+Cloudflare (WAF / DDoS) in front of the site (then set `TRUST_PROXY_HOPS=2`) · MongoDB Atlas backups tested by a restore · uptime + error alerts · spending limits at every paid provider.
+
+## Optional switches (environment)
+`TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` · `ADMIN_IP_ALLOWLIST` · `REQUIRE_VERIFIED_EMAIL=on` · `TRUST_PROXY_HOPS` · `HSTS_PRELOAD` / `HSTS_INCLUDE_SUBDOMAINS` — see `backend/.env.example`.
