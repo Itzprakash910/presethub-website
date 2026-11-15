@@ -17,6 +17,10 @@ const UserSchema = new Schema({
   password: { type: String, default: '' }, // bcrypt hash (login with email and password)
   botLinkHash: { type: String, default: '' },
   botLinkExpires: { type: Date, default: null },
+  // Accounts created before this feature have no flag = treated as verified. New accounts start unverified only when e-mail can actually be sent.
+  emailVerified: { type: Boolean, default: true },
+  emailVerifyHash: { type: String, default: '', select: false },
+  emailVerifyExpires: { type: Date, default: null, select: false },
   profileRev: { type: Number, default: 0 }, // bumped on every profile edit: lets two tabs/devices detect that they edited the same profile
   name: { type: String, default: '' },
   username: { type: String, lowercase: true, trim: true, index: true },
