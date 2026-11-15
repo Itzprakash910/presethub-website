@@ -155,7 +155,8 @@ function securityAlert(req, title, extra = {}, severity = 'warning', throttleMs)
 
 // Blocks NoSQL operator injection ({"$ne":..}), prototype pollution and absurd payloads.
 function hasDangerousKey(obj, depth = 0) {
-  if (!obj || typeof obj !== 'object' || depth > 6) return null;
+  if (!obj || typeof obj !== 'object') return null;
+  if (depth > 6) return '[nesting too deep]'; // legitimate requests are never nested this deep; deep nesting could hide an operator
   for (const k of Object.keys(obj)) {
     if (k.startsWith('$') || k === '__proto__' || k === 'constructor' || k.includes('.$')) return k;
     const inner = hasDangerousKey(obj[k], depth + 1);
@@ -169,7 +170,11 @@ function securityGuard(req, res, next) {
     securityAlert(req, 'Blocked injection attempt (NoSQL/prototype keys)', { offendingKey: bad }, 'critical', 5 * 60 * 1000);
     return res.status(400).json({ error: 'Invalid request.' });
   }
-  const url = decodeURIComponent(String(req.originalUrl || '').slice(0, 2000)).toLowerCase();
+  let url;
+  try { url = decodeURIComponent(String(req.originalUrl || '').slice(0, 2000)).toLowerCase(); }
+  catch (_) { return res.status(400).json({ error: 'Invalid request.' }); } // malformed %-encoding used to crash here with a 500
+  // HTTP parameter pollution: ?x=1&x=2 would become an array; keep only the last value.
+  for (const k of Object.keys(req.query || {})) if (Array.isArray(req.query[k])) req.query[k] = req.query[k][req.query[k].length - 1];
   if (/(\.\.\/|\.\.\\|<script|union\s+select|\/etc\/passwd|\.env\b|wp-admin|phpmyadmin)/.test(url)) {
     securityAlert(req, 'Suspicious URL probe blocked', { url: url.slice(0, 200) }, 'warning', 5 * 60 * 1000);
     return res.status(404).end();

@@ -5,7 +5,7 @@
  *  - scanner / bot user-agent blocking
  *  - zip-bomb and zip-slip inspection for preset ZIP uploads
  */
-const rateLimit = require('express-rate-limit');
+const rateLimit = require('./rateLimit');
 const { securityAlert } = require('./alerts');
 
 // ---------- login lockout ----------

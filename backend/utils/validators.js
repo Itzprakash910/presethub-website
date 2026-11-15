@@ -12,7 +12,8 @@ const signupValidation = [
   body('password').isLength({ min: 10, max: 128 }).withMessage('Password must be 10–128 characters')
     .matches(/\d/).withMessage('Password needs a number')
     .matches(/[A-Z]/).withMessage('Password needs uppercase')
-    .matches(/[a-z]/).withMessage('Password needs lowercase'),
+    .matches(/[a-z]/).withMessage('Password needs lowercase')
+    .custom((v, { req }) => !require('./passwordPolicy').isCommonPassword(v, { email: req.body && req.body.email })).withMessage(require('./passwordPolicy').COMMON_MESSAGE),
   body('name').optional().trim().isLength({ min: 1, max: 50 }),
   body('username').optional().trim().isLength({ min: 3, max: 30 })
     .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username: letters, numbers, underscores only'),
@@ -22,7 +23,7 @@ const signupValidation = [
 
 const loginValidation = [
   body('email').isEmail().withMessage('Invalid email').normalizeEmail().trim(),
-  body('password').notEmpty().withMessage('Password required')
+  body('password').isString().withMessage('Password required').bail().notEmpty().withMessage('Password required')
 ];
 
 const presetValidation = [
