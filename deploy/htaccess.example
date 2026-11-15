@@ -1,0 +1,26 @@
+# OPTIONAL — Apache / LiteSpeed. Copy to the web root as ".htaccess" only if the site is served by Apache (not on Render).
+
+Options -Indexes
+ServerSignature Off
+
+# HTTPS everywhere
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Security headers
+<IfModule mod_headers.c>
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
+</IfModule>
+
+# Block dotfiles (except /.well-known), config, backups, dumps and logs
+<FilesMatch "^\.(?!well-known)">
+  Require all denied
+</FilesMatch>
+<FilesMatch "\.(env|bak|old|orig|sql|sqlite|log|swp|pem|key|ini|conf)$">
+  Require all denied
+</FilesMatch>

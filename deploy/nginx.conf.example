@@ -1,0 +1,44 @@
+# OPTIONAL — only if you ever put PresetHub behind your own Nginx (Render already terminates HTTPS for you).
+# The Node app sets its own security headers (helmet); these rules add a second layer at the edge.
+# Set TRUST_PROXY_HOPS in the app's environment to match the number of proxies in front of Node.
+
+limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+
+server {
+    listen 80;
+    server_name presethub.site www.presethub.site;
+    return 301 https://presethub.site$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name presethub.site;
+
+    # ssl_certificate     /etc/letsencrypt/live/presethub.site/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/presethub.site/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    server_tokens off;
+    client_max_body_size 60m;          # preset ZIP uploads
+    client_body_timeout 30s;
+    client_header_timeout 15s;
+    keepalive_timeout 65s;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # never serve dotfiles, backups, dumps, logs or source maps
+    location ~ /\.(?!well-known) { deny all; }
+    location ~* \.(env|bak|old|orig|sql|sqlite|log|map|swp|zip|tar|gz|pem|key)$ { deny all; }
+
+    location = /api/auth/login  { limit_req zone=login burst=5 nodelay; proxy_pass http://127.0.0.1:5000; include /etc/nginx/proxy_params; }
+    location = /api/auth/signup { limit_req zone=login burst=5 nodelay; proxy_pass http://127.0.0.1:5000; include /etc/nginx/proxy_params; }
+    location /api/              { limit_req zone=api burst=40 nodelay;  proxy_pass http://127.0.0.1:5000; include /etc/nginx/proxy_params; }
+    location /                  { proxy_pass http://127.0.0.1:5000; include /etc/nginx/proxy_params; }
+
+    autoindex off;
+}
