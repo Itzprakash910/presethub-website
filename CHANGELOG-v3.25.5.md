@@ -66,3 +66,9 @@ Based on the PageSpeed Insights reports (mobile + desktop, Nov 6 2026) and a cod
 - **E-mail verification** (soft; `REQUIRE_VERIFIED_EMAIL=on` to enforce), resend action in the account menu.
 - **Account deletion** removes more personal data; broken duplicate delete handler fixed. **Polling** pauses on hidden tabs.
 - New self-tests: ratelimit, hardening (in `npm test` and CI); security-check now 36 checks.
+
+## Pre-launch audit round (see AUDIT.md — delete it after reading)
+- New pages: `copyright-policy.html`, `community-guidelines.html` (footer links on all pages, sitemap).
+- Checkout shows billing terms (one-time, no auto-renewal, refund link); account deletion also removes Boost records and unlinks consent proofs; ad-check timer pauses in hidden tabs and stops after warning.
+- All asset URLs unified to `?v=3.25.5` (they are cached for a year); `backend/.npmrc` (`save-exact`).
+- Still needs you: commit a `package-lock.json`, run `npm audit`, Atlas network rules, `TRUST_PROXY_HOPS`.
