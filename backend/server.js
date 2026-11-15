@@ -8,7 +8,7 @@ const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
+const rateLimit = require('./utils/rateLimit'); // express-rate-limit with MongoDB-backed counters
 const cookieParser = require('cookie-parser');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -242,7 +242,8 @@ try { ensureStructure(); } catch (err) { console.error('ensureStructure error:',
 // ============ APP CONFIG ============
 app.disable('x-powered-by');
 const SITE_HOST = (() => { try { return new URL(SITE_URL).host.toLowerCase(); } catch (_) { return 'presethub.site'; } })();
-app.set('trust proxy', 1);
+// Number of reverse proxies in front of the app (Render = 1; Cloudflare in front of Render = 2). Wrong value = wrong client IP for rate limits.
+app.set('trust proxy', Number.isInteger(Number(process.env.TRUST_PROXY_HOPS)) && process.env.TRUST_PROXY_HOPS !== '' ? Number(process.env.TRUST_PROXY_HOPS) : 1);
 // Force HTTPS in production (Render terminates TLS and sets x-forwarded-proto).
 app.use((req, res, next) => {
   if (process.env.NODE_ENV === 'production' && req.headers['x-forwarded-proto'] === 'http') {
@@ -268,6 +269,9 @@ const allowedOrigins = new Set(
     .map(x => x.replace(/\/+$/, ''))
 );
 
+// Cloudflare Turnstile (CAPTCHA) hosts are allowed in the CSP only when the feature is configured.
+const TURNSTILE_HOSTS = require('./utils/captcha').enabled() ? ['https://challenges.cloudflare.com'] : [];
+
 // ============ SECURITY (Helmet) ============
 app.use(helmet({
   contentSecurityPolicy: {
@@ -280,7 +284,8 @@ app.use(helmet({
         "https://pagead2.googlesyndication.com",
         "https://googleads.g.doubleclick.net",
         "https://sdk.cashfree.com",
-        "https://cdn.ampproject.org"
+        "https://cdn.ampproject.org",
+        ...TURNSTILE_HOSTS
       ],
       // Explicit script-src-elem avoids browsers falling back ambiguously to script-src
       // for AdSense AMP runtime scripts. Keep the allowlist host-specific.
@@ -291,7 +296,8 @@ app.use(helmet({
         "https://pagead2.googlesyndication.com",
         "https://googleads.g.doubleclick.net",
         "https://sdk.cashfree.com",
-        "https://cdn.ampproject.org"
+        "https://cdn.ampproject.org",
+        ...TURNSTILE_HOSTS
       ],
       styleSrc: [
         "'self'",
@@ -318,13 +324,15 @@ app.use(helmet({
         "'self'",
         "https://googleads.g.doubleclick.net",
         "https://*.google.com",
-        "https://*.cashfree.com"
+        "https://*.cashfree.com",
+        ...TURNSTILE_HOSTS
       ],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
       frameAncestors: ["'self'"],
       workerSrc: ["'self'", 'blob:'],
+      reportUri: ['/api/csp-report'],
       upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
     }
   },
@@ -380,7 +388,7 @@ function ensureCsrfCookie(req, res, next) {
       path: '/'
     });
   }
-  if (req.path.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.cookies?.ph_auth) {
+  if (req.path.startsWith('/api/') && req.path !== '/api/csp-report' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.cookies?.ph_auth) {
     const supplied = String(req.get('X-CSRF-Token') || '');
     const expected = String(req.cookies.ph_csrf || '');
     if (!supplied || !expected || supplied !== expected) {
@@ -435,6 +443,19 @@ app.use('/api/reviews', writeLimiter);
 app.use('/api/chat', writeLimiter);
 
 // ============ BODY PARSERS ============
+// Browsers POST Content-Security-Policy violations here (see the `reportUri` directive). Logged, throttled, never trusted.
+app.post('/api/csp-report', express.json({ type: ['application/csp-report', 'application/reports+json', 'application/json'], limit: '10kb' }), (req, res) => {
+  try {
+    const r = (req.body && (req.body['csp-report'] || (Array.isArray(req.body) ? req.body[0]?.body : req.body))) || {};
+    const blocked = String(r['blocked-uri'] || r.blockedURL || r.blockedUri || '').slice(0, 200);
+    const directive = String(r['violated-directive'] || r.effectiveDirective || '').slice(0, 80);
+    // Browser extensions and inline noise are not the site's problem.
+    if (!/^(chrome|moz|safari|edge)-extension|^(about|data|blob|inline|eval)$/i.test(blocked)) {
+      securityAlert(req, 'CSP violation reported by a browser', { directive, blocked, page: String(r['document-uri'] || r.documentURL || '').slice(0, 200) }, 'info', 60 * 60 * 1000);
+    }
+  } catch (_) {}
+  res.status(204).end();
+});
 app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { if (['/api/payments/youpi/webhook', '/api/payments/cashfree/webhook'].includes(String(req.originalUrl || '').split('?')[0])) req.rawBody = Buffer.from(buf); } }));
 app.use(express.urlencoded({ extended: true, limit: '2mb', parameterLimit: 1000 }));
 app.use(securityGuard); // blocks NoSQL/prototype injection + probes and alerts the admin
@@ -594,7 +615,7 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments/cashfree', require('./routes/cashfree'));
 app.use('/api/payments/phonepe', require('./routes/phonepe'));
 app.use('/api/payments', paymentRoutes);
-app.use('/api/admin', adminRoutes);
+app.use('/api/admin', require('./middleware/adminIp'), adminRoutes);
 app.use('/api/ads', adsRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/share', shareRoutes);
@@ -865,6 +886,11 @@ setInterval(() => { require('./routes/cashfree').sweepStaleOrders().catch(e => c
 setInterval(() => { require('./routes/phonepe').sweepStaleOrders().catch(e => console.warn('PhonePe order sweep failed:', e.message)); }, 15 * 60 * 1000).unref?.();
 
 httpServer = app.listen(PORT, '0.0.0.0', async () => {
+  // Slow-client (slowloris) protection. keep-alive must outlive the load balancer's idle timeout (60 s) to avoid sporadic 502s.
+  httpServer.keepAliveTimeout = 65 * 1000;
+  httpServer.headersTimeout = 66 * 1000;
+  httpServer.requestTimeout = 5 * 60 * 1000; // large preset uploads on slow phones still fit
+
       console.log('');
       console.log('═══════════════════════════════════════');
       console.log(`🚀 PresetHub listening on port ${PORT}`);
