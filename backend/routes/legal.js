@@ -1,6 +1,6 @@
 'use strict';
 const express = require('express');
-const rateLimit = require('express-rate-limit');
+const rateLimit = require('../utils/rateLimit');
 const { optionalAuth } = require('../middleware/auth');
 const { ConsentLog } = require('../models');
 const { legalContact, COOKIE_VERSION } = require('../utils/legal');

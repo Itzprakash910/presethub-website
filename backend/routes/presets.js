@@ -323,7 +323,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // ===== SINGLE UPLOAD =====
-router.post('/', auth, uploadLimiter, uploadFields, validate(presetValidation), async (req, res) => {
+router.post('/', auth, require('../utils/emailVerification').requireVerifiedEmail, uploadLimiter, uploadFields, validate(presetValidation), async (req, res) => {
   let fileStorageKey = '';
   let previewStorageKey = '';
   try {

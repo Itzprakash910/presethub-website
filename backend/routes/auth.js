@@ -2,17 +2,19 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const rateLimit = require('express-rate-limit');
-const { User, Preset, Download, Share, ShortLink, ShareClick, Comment, Message, Order } = require('../models');
+const rateLimit = require('../utils/rateLimit');
+const { User, Preset, Download, Share, ShortLink, ShareClick, Comment, Message, Order, TextPost, Collection, SupportRequest, Report } = require('../models');
 const { deleteFromMongo } = require('../config/mongoStorage');
 const { adminAlert, recordFailedLogin, clearFailedLogins, requestInfo } = require('../utils/alerts');
 const { isProUser } = require('../utils/plans');
 const { tickForFollowers } = require('../utils/tick');
 const { isLockedOut, noteLoginFailure, clearLoginFailures, signupLimiter, resetLimiter } = require('../utils/security');
 
+const { isCommonPassword, COMMON_MESSAGE } = require('../utils/passwordPolicy');
+const { honeypot } = require('../utils/honeypot');
 function strongPassword(value) {
   const p = String(value || '');
-  return p.length >= 10 && p.length <= 128 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /\d/.test(p);
+  return p.length >= 10 && p.length <= 128 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /\d/.test(p) && !isCommonPassword(p);
 }
 
 function signUserToken(user) {
@@ -67,7 +69,9 @@ async function generateUniqueUsername(email) {
   return u;
 }
 
-router.post('/signup', signupLimiter, validate(signupValidation), async (req, res) => {
+router.get('/captcha-config', (req, res) => { const c = require('../utils/captcha'); res.json({ enabled: c.enabled(), siteKey: c.siteKey() }); });
+
+router.post('/signup', signupLimiter, honeypot({ success: true }), require('../utils/captcha').requireCaptcha, validate(signupValidation), async (req, res) => {
   try {
     let { email, password, name, username } = req.body;
     email = email.toLowerCase().trim();
@@ -95,6 +99,8 @@ router.post('/signup', signupLimiter, validate(signupValidation), async (req, re
       if (referrer) { user.referral.referredBy = referrer._id; referrerId = referrer._id; }
     }
 
+    // Unverified until the e-mailed link is used; accounts stay fully usable unless REQUIRE_VERIFIED_EMAIL=on.
+    if (require('../utils/emailVerification').enabled()) user.emailVerified = false;
     await user.save();
 
     if (referrerId) {
@@ -111,6 +117,8 @@ router.post('/signup', signupLimiter, validate(signupValidation), async (req, re
       } catch (refErr) { console.warn('Referral reward failed:', refErr.message); }
     }
 
+    require('../utils/emailVerification').sendVerification(user).catch(() => {}); // fire and forget: a mail hiccup must never fail signup
+
     adminAlert({
       type: 'new_user', severity: 'info', title: `New user joined: ${user.name || user.username}`, throttleMs: 1000,
       fingerprint: `new-user-${user._id}`,
@@ -125,7 +133,7 @@ router.post('/signup', signupLimiter, validate(signupValidation), async (req, re
       user: {
         id: user._id.toString(), name: user.name, email: user.email,
         role: user.role, username: user.username, avatar: user.avatar,
-        createdAt: user.createdAt, verified: user.verified
+        createdAt: user.createdAt, verified: user.verified, emailVerified: user.emailVerified
       }
     });
   } catch (e) {
@@ -298,7 +306,7 @@ router.put('/change-password', auth, validate(changePasswordValidation), async (
 
 
 
-router.post('/request-reset', resetLimiter, async (req, res) => {
+router.post('/request-reset', resetLimiter, honeypot({ success: true, message: 'If that email exists, a password reset link has been sent.' }), require('../utils/captcha').requireCaptcha, async (req, res) => {
   try {
     const email = String(req.body.email || '').toLowerCase().trim();
     // Always return the same public response to avoid account enumeration.
@@ -363,6 +371,12 @@ router.delete('/account', auth, async (req, res) => {
       ShortLink.deleteMany({ $or: [{ userId:user._id }, { presetId:{ $in:presetIds } }] }),
       Comment.deleteMany({ $or: [{ userId:user._id }, { presetId:{ $in:presetIds } }] }),
       Message.deleteMany({ $or:[{ senderId:user._id }, { receiverId:user._id }] }),
+      TextPost.deleteMany({ authorId: user._id }),
+      Collection.deleteMany({ userId: user._id }),
+      SupportRequest.deleteMany({ userId: user._id }),
+      Report.deleteMany({ $or: [{ reporterId: user._id }, { targetId: { $in: [user._id, ...presetIds] } }] }),
+      // Reviews this user left on other creators' presets stay (they feed the rating) but lose the name and the link to the person.
+      Preset.updateMany({ 'reviews.userId': user._id }, { $set: { 'reviews.$[r].userName': 'Deleted user', 'reviews.$[r].userId': null } }, { arrayFilters: [{ 'r.userId': user._id }] }),
       // Orders are financial records that the Privacy Policy says we keep as long as the law requires.
       // They hold no name, email or phone; the link to the person disappears with the user record below.
       User.updateMany({ followers:user._id }, { $pull:{ followers:user._id } }),
@@ -377,6 +391,21 @@ router.delete('/account', auth, async (req, res) => {
 
 router.post('/logout', (req, res) => {
   res.clearCookie('ph_auth', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' });
+  res.json({ success: true });
+});
+router.post('/verify-email', async (req, res) => {
+  const ok = await require('../utils/emailVerification').confirm(req.body && req.body.token).catch(() => false);
+  if (!ok) return res.status(400).json({ error: 'This verification link is invalid or has expired. Request a new one from your account menu.' });
+  res.json({ success: true });
+});
+const resendVerifyLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 3, standardHeaders: true, legacyHeaders: false, keyGenerator: req => `u:${req.user?.id || req.ip}`, handler: (req, res) => res.status(429).json({ error: 'Too many requests. Please try again in an hour.' }) });
+router.post('/resend-verification', auth, resendVerifyLimiter, async (req, res) => {
+  const ev = require('../utils/emailVerification');
+  const user = await User.findById(req.user.id).select('email name emailVerified');
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.emailVerified !== false) return res.json({ success: true, alreadyVerified: true });
+  if (!ev.enabled()) return res.status(503).json({ error: 'Email verification is not available right now.' });
+  await ev.sendVerification(user);
   res.json({ success: true });
 });
 router.post('/refresh-token', auth, async (req, res) => {

@@ -89,7 +89,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
   res.json(serialize(t, authors, req.user?.id));
 });
 
-router.post('/', auth, textPostLimiter, async (req, res) => {
+router.post('/', auth, require('../utils/emailVerification').requireVerifiedEmail, textPostLimiter, async (req, res) => {
   const text = cleanText(req.body?.text);
   if (text.length < 5 || text.length > 2000) return res.status(400).json({ error: 'Text must be 5 to 2000 characters.' });
   const title = String(req.body?.title || '').trim().slice(0, 120);

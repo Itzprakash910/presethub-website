@@ -21,7 +21,7 @@ const P = require('../utils/payouts');
 const { adminAlert } = require('../utils/alerts');
 const { createNotification } = require('../utils/notifications');
 const { textPostLimiter } = require('../utils/security');
-const rateLimit = require('express-rate-limit');
+const rateLimit = require('../utils/rateLimit');
 
 const router = express.Router();
 const payoutLimiter = rateLimit({ windowMs: 24 * 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, keyGenerator: r => `u:${r.user?.id || r.ip}`, handler: (req, res) => res.status(429).json({ error: 'Too many payout requests today. Try again tomorrow.' }) });
