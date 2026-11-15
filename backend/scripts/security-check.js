@@ -98,7 +98,7 @@ check('security.txt has a future Expires date', exp && new Date(exp) > new Date(
 // 9. Unauthenticated write routes must be on the known-public list.
 const PUBLIC_WRITES = new Set([
   'auth.js POST /signup', 'auth.js POST /login', 'auth.js POST /logout', 'auth.js POST /forgot-password', 'auth.js POST /request-reset', 'auth.js POST /reset-password',
-  'cashfree.js POST /webhook', 'phonepe.js POST /webhook', 'payments.js POST /webhook', 'payments.js POST /youpi/webhook',
+  'cashfree.js POST /webhook', 'phonepe.js POST /webhook', 'auth.js POST /verify-email', 'payments.js POST /webhook', 'payments.js POST /youpi/webhook',
   'presets.js POST /:id/download', 'presets.js POST /:id/view', 'presets.js POST /:id/ad-impression', 'presets.js POST /:id/share',
   'texts.js POST /:id/view', 'texts.js POST /:id/copy', 'texts.js POST /:id/share',
   'ads.js POST /:id/click', 'features.js POST /track', 'tracking.js POST /', 'legal.js POST /consent'
@@ -123,6 +123,22 @@ for (const f of jsFiles) {
   if (/\beval\(|new Function\(|child_process/.test(s) && !/security-check\.js$/.test(f)) danger.push(rel(f));
 }
 check('No eval / new Function / child_process in backend', danger.length === 0, danger.join(', '));
+
+// 11. v3.25.5 hardening must stay in place (so a later edit cannot silently remove it).
+{
+  const srv = fs.readFileSync(path.join(root, 'backend', 'server.js'), 'utf8');
+  const auth = fs.readFileSync(path.join(root, 'backend', 'routes', 'auth.js'), 'utf8');
+  check('Rate limiters use the shared MongoDB store (no plain express-rate-limit in routes/server)',
+    !jsFiles.filter(f => !/rateLimit\.js$|security-check\.js$|selftest/.test(f)).some(f => /require\('express-rate-limit'\)/.test(fs.readFileSync(f, 'utf8'))));
+  check('Process-level crash handlers are installed', /unhandledRejection/.test(srv) && /uncaughtException/.test(srv));
+  check('Public forms have bot protection (honeypot + optional CAPTCHA)', /honeypot\(/.test(auth) && /requireCaptcha/.test(auth));
+  check('Weak/common passwords are rejected', /isCommonPassword/.test(auth));
+  check('CSP violations are reported to /api/csp-report', /reportUri/.test(srv) && /\/api\/csp-report/.test(srv));
+  check('Admin API has the optional IP allowlist middleware', /middleware\/adminIp/.test(srv));
+  check('HTTP server has slow-client timeouts', /headersTimeout/.test(srv) && /requestTimeout/.test(srv));
+  check('SECURITY.md, security.txt and dependabot config exist',
+    fs.existsSync(path.join(root, 'SECURITY.md')) && fs.existsSync(path.join(root, 'frontend', 'security.txt')) && fs.existsSync(path.join(root, '.github', 'dependabot.yml')));
+}
 
 // 11. Privacy and compliance (India: DPDP Act 2023 / Rules 2025, e-commerce rules).
 const htmlFiles = files.filter(f => /frontend\/[^/]+\.html$/.test(rel(f)));
