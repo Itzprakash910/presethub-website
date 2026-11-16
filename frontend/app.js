@@ -751,6 +751,7 @@
         <div class="pro-hero"><span class="pro-crown"><i class="fas fa-lock"></i></span><h2>Secure checkout</h2><p>${needPhone ? 'Payment ke liye 10-digit mobile number chahiye (profile mein save hoga).' : 'Coupon hai to yahan daalein.'}</p></div>
         ${needPhone ? '<input id="cfPhone" class="feat-input" inputmode="numeric" maxlength="12" autocomplete="tel" placeholder="Mobile number" aria-label="Mobile number" style="width:100%;margin:8px 0">' : ''}
         ${couponKind ? `<div class="feat-row" style="margin:8px 0"><input id="cfCoupon" class="feat-input" maxlength="32" placeholder="Coupon code (optional)" aria-label="Coupon code" autocapitalize="characters" style="flex:1"><button class="btn btn-outline btn-sm" id="cfCouponApply" type="button">Apply</button></div><p id="cfCouponMsg" class="pro-note" role="status"></p>` : ''}
+        <p class="pay-terms" style="font-size:.78rem;opacity:.8;margin:10px 0 6px">One-time payment in INR (taxes included). Nothing renews automatically, so there is nothing to cancel. See our <a href="/refund-policy.html" target="_blank" rel="noopener">Refund &amp; Cancellation Policy</a>.</p>
         <button class="btn btn-primary pro-buy" id="cfGo" type="button">Continue to payment</button></div>`);
       let applied = '';
       const watch = setInterval(() => { if (!$('#cfGo')) { clearInterval(watch); resolve(null); } }, 400);
@@ -2085,12 +2086,15 @@
 
   // अगर कोई विज्ञापन कोड हटाता है तो पेज को रीफ्रेश करने का लूप
   let adCheckCount = 0;
-  setInterval(() => {
+  // Runs only while the tab is visible and stops for good after the first warning (it used to poll every 3 s forever, even in background tabs).
+  const adCheckTimer = setInterval(() => {
+    if (document.hidden) return;
     const adIns = document.querySelectorAll('.adsbygoogle');
     if (adIns.length === 0 && document.body.contains(document.querySelector('#presetGrid'))) {
       adCheckCount++;
       if (adCheckCount > 5) {
         console.warn("AdSense Block Detected. Please disable AdBlocker.");
+        clearInterval(adCheckTimer);
       }
     } else {
       adCheckCount = 0;
