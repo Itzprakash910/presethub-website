@@ -375,6 +375,9 @@ router.delete('/account', auth, async (req, res) => {
       Collection.deleteMany({ userId: user._id }),
       SupportRequest.deleteMany({ userId: user._id }),
       Report.deleteMany({ $or: [{ reporterId: user._id }, { targetId: { $in: [user._id, ...presetIds] } }] }),
+      // Boost records of this person (the paid order itself stays as a financial record) and the link between them and cookie-consent proofs.
+      require('../models').Boost.deleteMany({ $or: [{ userId: user._id }, { targetType: 'profile', targetId: String(user._id) }, { targetType: 'preset', targetId: { $in: presetIds.map(String) } }] }),
+      require('../models').ConsentLog.updateMany({ userId: user._id }, { $set: { userId: null } }),
       // Reviews this user left on other creators' presets stay (they feed the rating) but lose the name and the link to the person.
       Preset.updateMany({ 'reviews.userId': user._id }, { $set: { 'reviews.$[r].userName': 'Deleted user', 'reviews.$[r].userId': null } }, { arrayFilters: [{ 'r.userId': user._id }] }),
       // Orders are financial records that the Privacy Policy says we keep as long as the law requires.
