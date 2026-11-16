@@ -776,7 +776,7 @@ app.get('/sitemap.xml', async (req, res, next) => {
     }
     const { Preset, User } = require('./models');
     const urls = [
-      '/', '/about.html', '/blog.html', '/contact.html', '/faq.html', '/tools.html', '/privacy.html', '/terms.html', '/refund-policy.html', '/cookies.html',
+      '/', '/about.html', '/blog.html', '/contact.html', '/faq.html', '/tools.html', '/privacy.html', '/terms.html', '/refund-policy.html', '/copyright-policy.html', '/community-guidelines.html', '/cookies.html',
       '/creator-program.html', '/download-guide.html', '/lightroom-guide.html', '/download-app.html'
     ];
 
