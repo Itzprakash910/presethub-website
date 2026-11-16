@@ -1,11 +1,11 @@
-const STATIC_CACHE = 'presethub-static-v19';
+const STATIC_CACHE = 'presethub-static-v20';
 const API_CACHE = 'presethub-api-v8';
-const IMAGE_CACHE = 'presethub-images-v7';
+const IMAGE_CACHE = 'presethub-images-v8';
 const CORE = [
-  '/', '/index.html', '/manifest.json', '/icons.css?v=3.25.5', '/style.css?v=3.25.5', '/app.js?v=3.25.5', '/qr.js?v=3.25.5', '/share-card.js?v=3.25.5', '/texts.js?v=3.25.5', '/shayari/',
+  '/', '/index.html', '/manifest.json', '/icons.css?v=3.25.6', '/style.css?v=3.25.6', '/app.js?v=3.25.6', '/qr.js?v=3.25.6', '/share-card.js?v=3.25.6', '/texts.js?v=3.25.6', '/shayari/',
   '/privacy.html', '/terms.html', '/about.html', '/blog.html',
   '/creator-program.html', '/faq.html', '/contact.html',
-  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.js?v=3.25.5', '/download-app.js?v=3.25.5'
+  '/download-guide.html', '/lightroom-guide.html', '/download-app.html', '/cookies.html', '/cookie-consent.js?v=3.25.6', '/download-app.js?v=3.25.6'
 ];
 
 self.addEventListener('install', e => e.waitUntil(

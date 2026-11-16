@@ -1665,3 +1665,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 /* ===== v3.25.5 accessibility: links inside running text/footer must not rely on colour alone ===== */
 .footer-bottom a, .site-footer .footer-bottom a { text-decoration: underline; text-underline-offset: 3px; }
 .footer-bottom .socials a, .site-footer .footer-bottom .socials a { text-decoration: none; }
+
+/* ===== v3.25.6 footer consistency: server-rendered pages (preset, profile, shayari, tags, lists) =====
+   The footer is now placed after </main> (full width, same as Home). Remove the extra bottom spacing the wrapper used to
+   reserve for the footer so the gap above it equals Home's 48px margin. */
+.seo-page { min-height: 60vh; padding-bottom: 0; }
+.seo-page .shayari-page { padding-bottom: 0; }
+.seo-page + footer.site-footer { margin-top: 48px; }
