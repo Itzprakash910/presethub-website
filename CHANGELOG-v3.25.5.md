@@ -72,3 +72,9 @@ Based on the PageSpeed Insights reports (mobile + desktop, Nov 6 2026) and a cod
 - Checkout shows billing terms (one-time, no auto-renewal, refund link); account deletion also removes Boost records and unlinks consent proofs; ad-check timer pauses in hidden tabs and stops after warning.
 - All asset URLs unified to `?v=3.25.5` (they are cached for a year); `backend/.npmrc` (`save-exact`).
 - Still needs you: commit a `package-lock.json`, run `npm audit`, Atlas network rules, `TRUST_PROXY_HOPS`.
+
+## v3.25.6 — footer consistency (all pages look like Home)
+- `content.css`: removed the footer overrides (margin 40px, 15.2px headings, different grid, underlined links, single column on phones) that made every content page differ from Home. All static pages now use the footer rules of `style.css` only.
+- Server-rendered pages (preset view, profile, shayari/text, tags, preset lists; `server.js`, `seo/listPages.js`, `seo/shayariPages.js`): the footer was placed *inside* the page container (narrower, inset by 16px on phones). It now sits after `</main>`, full width, exactly like Home; `style.css` removes the extra bottom spacing so the gap above the footer is Home's 48px.
+- Verified in a real browser at 1280px and 390px: footer width, padding, margin, radius, grid columns, gaps, heading and link sizes are identical to Home on all 15 static pages and on the server-rendered page structures.
+- Assets bumped to `?v=3.25.6` (+ service-worker cache names) so visitors get the new CSS despite the 1-year cache.
