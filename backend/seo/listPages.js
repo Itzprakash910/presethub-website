@@ -36,8 +36,8 @@ ${head}${prev ? `<link rel="prev" href="${esc(prev)}">` : ''}${next ? `<link rel
 </head><body><main class="seo-page"><div class="shayari-page">
 <a class="logo" href="/"><img class="brand-logo" src="/assets/images/presethub-p-logo.jpg" alt="PresetHub logo" width="36" height="36">Preset<span>Hub</span></a>
 ${body}
-${SITE_FOOTER}
-</div></main><script src="/texts.js?v=3.25.5" defer></script><script src="/features.js?v=3.25.5" defer></script><script src="/cookie-consent.js?v=3.25.5" defer></script></body></html>`;
+</div></main>
+${SITE_FOOTER}<script src="/texts.js?v=3.25.6" defer></script><script src="/features.js?v=3.25.6" defer></script><script src="/cookie-consent.js?v=3.25.6" defer></script></body></html>`;
   }
 
   const crumbs = items => ({ '@type': 'BreadcrumbList', itemListElement: items.map((it, i) => ({ '@type': 'ListItem', position: i + 1, name: it[0], item: SITE_URL + it[1] })) });
