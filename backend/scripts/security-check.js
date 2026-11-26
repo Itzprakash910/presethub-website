@@ -85,6 +85,9 @@ check('Redirects do not trust the raw Host header', !/redirect\(301, `https:\/\/
 // 6. Admin router is guarded.
 const admin = read('backend/routes/admin.js');
 check('Admin router requires auth + admin role', /router\.use\(auth,\s*isAdmin\)/.test(admin));
+const adminBootstrap = read('backend/server.js');
+check('Startup never promotes an existing account to admin', !/else if \(existing\.role !== 'admin'\)[\s\S]{0,220}existing\.role = 'admin'/.test(adminBootstrap));
+check('Automatic admin bootstrap requires a 12+ character password', /password\.length < 12/.test(adminBootstrap));
 
 // 7. Service worker caches public API data only.
 const sw = read('frontend/sw.js');

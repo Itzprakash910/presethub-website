@@ -15,5 +15,7 @@ jobs:
       - run: npm install --omit=dev --no-audit --no-fund
       - name: Project security checks
         run: npm run security:check
+      - name: Self-tests (bot, consent, totp, qr, fixes, phonepe, profile, coupon, ratelimit, hardening)
+        run: npm test
       - name: Dependency vulnerabilities (high and critical)
         run: npm audit --omit=dev --audit-level=high

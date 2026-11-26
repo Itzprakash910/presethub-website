@@ -12,15 +12,15 @@ const { User } = require('./models');
     await connectDB();
     let user = await User.findOne({ email });
     const usernameBase = email.split('@')[0].replace(/[^a-z0-9_]/g, '').slice(0, 24) || 'admin';
+    if (user && user.role !== 'admin') throw new Error('The configured email already belongs to a non-admin account. Refusing automatic privilege escalation; verify ownership and use a separate admin email.');
     if (!user) {
       let username = usernameBase;
       for (let i = 1; await User.exists({ username }) && i < 1000; i++) username = `${usernameBase}${i}`;
       user = new User({ email, username, name: 'PresetHub Admin', role: 'admin', verified: true, status: 'active' });
+    } else {
+      throw new Error('An admin account with this email already exists. Use the admin panel password-reset flow instead of overwriting its password from an environment variable.');
     }
     user.password = await bcrypt.hash(password, 12);
-    user.role = 'admin';
-    user.verified = true;
-    user.status = 'active';
     user.sessionVersion = Number(user.sessionVersion || 0) + 1;
     await user.save();
     console.log(`Admin ready: ${email}`);

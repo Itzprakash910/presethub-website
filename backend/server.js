@@ -133,26 +133,27 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 }
 
 async function ensureAdminUser() {
-  if (!process.env.ADMIN_EMAIL) return;
+  const email = String(process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+  if (!email) return;
   const { User } = require('./models');
-  const email = process.env.ADMIN_EMAIL.toLowerCase().trim();
   const existing = await User.findOne({ email });
-  if (!existing) {
-    const usernameBase = email.split('@')[0].replace(/[^a-z0-9_]/g, '').slice(0, 24) || 'admin';
-    let username = usernameBase;
-    let n = 1;
-    while (await User.exists({ username })) username = `${usernameBase}${n++}`;
-    // The admin signs in with the password set from ADMIN_PASSWORD (hashed, never stored in plain text).
-    const password = process.env.ADMIN_PASSWORD ? await bcrypt.hash(process.env.ADMIN_PASSWORD, 12) : '';
-  await User.create({ email, password, name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
-    console.log('✅ Admin account initialized.');
-  } else if (existing.role !== 'admin') {
-    existing.role = 'admin';
-    existing.adminRole = existing.adminRole || 'super';
-    existing.verified = true;
-    await existing.save();
-    console.log('✅ Existing admin email promoted to admin role.');
+  // Never grant or change privileges on an existing account during application startup.
+  // Use the explicit `npm run create-admin` command for a deliberate admin bootstrap.
+  if (existing) {
+    if (existing.role !== 'admin') console.warn('⚠️ ADMIN_EMAIL belongs to a non-admin account; no role changes were made. Use the explicit create-admin command after verifying account ownership.');
+    return;
   }
+  const password = String(process.env.ADMIN_PASSWORD || '');
+  if (password.length < 12) {
+    console.warn('⚠️ Admin account was not auto-created: set a strong ADMIN_PASSWORD (12+ characters) or run the explicit create-admin command.');
+    return;
+  }
+  const usernameBase = email.split('@')[0].replace(/[^a-z0-9_]/g, '').slice(0, 24) || 'admin';
+  let username = usernameBase;
+  let n = 1;
+  while (await User.exists({ username })) username = `${usernameBase}${n++}`;
+  await User.create({ email, password: await bcrypt.hash(password, 12), name: 'PresetHub Admin', username, role: 'admin', adminRole: 'super', status: 'active', verified: true });
+  console.log('✅ Admin account initialized.');
 }
 
 async function autoPublishPendingPresets() {

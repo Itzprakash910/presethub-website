@@ -69,10 +69,10 @@ const bulkUploadFields = multer({
   storage: multer.memoryStorage(),
   fileFilter,
   // Bulk uploads use a smaller per-file limit to prevent multi-GB RAM pressure.
-  limits: { fileSize: 25 * 1024 * 1024, files: 40, fields: 30, parts: 80 }
+  limits: { fileSize: 25 * 1024 * 1024, files: 16, fields: 24, parts: 48 }
 }).fields([
-  { name: 'files', maxCount: 20 },
-  { name: 'previewImages', maxCount: 20 }
+  { name: 'files', maxCount: 8 },
+  { name: 'previewImages', maxCount: 8 }
 ]);
 
 const uploadAdImage = multer({
@@ -97,8 +97,8 @@ function validateParsedUploads(req) {
   ];
   for (const file of all) validateUploadedFile(file);
   const total = all.reduce((sum, file) => sum + Number(file.size || file.buffer?.length || 0), 0);
-  if ((req.files?.files?.length || 0) > 0 && total > 300 * 1024 * 1024) {
-    throw new Error('Bulk upload total size cannot exceed 300MB per request');
+  if ((req.files?.files?.length || 0) > 0 && total > 200 * 1024 * 1024) {
+    throw new Error('Bulk upload total size cannot exceed 200MB per request');
   }
   return true;
 }
