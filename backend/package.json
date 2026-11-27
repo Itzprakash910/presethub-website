@@ -28,7 +28,7 @@
     "axios": "^1.7.9",
     "bcryptjs": "2.4.3",
     "cookie-parser": "^1.4.7",
-    "cors": "2.8.5",
+    "cors": "2.8.6",
     "dotenv": "16.4.7",
     "express": "^4.21.2",
     "express-async-errors": "^3.1.1",
@@ -36,7 +36,7 @@
     "express-validator": "^7.2.1",
     "form-data": "^4.0.1",
     "helmet": "^8.0.0",
-    "jsonwebtoken": "9.0.2",
+    "jsonwebtoken": "9.0.3",
     "mongoose": "^8.9.0",
     "morgan": "^1.10.0",
     "multer": "^2.0.0",
@@ -45,8 +45,8 @@
     "web-push": "^3.6.7"
   },
   "optionalDependencies": {
-    "esbuild": "^0.25.0",
-    "sharp": "^0.33.5"
+    "esbuild": "^0.28.2",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
